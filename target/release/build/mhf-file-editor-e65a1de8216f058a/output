@@ -1,2 +1,0 @@
-cargo:rerun-if-changed=app.rc
-cargo:rustc-link-arg-bins=app.res

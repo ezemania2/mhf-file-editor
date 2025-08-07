@@ -1,1 +1,0 @@
-{"rustc":16591470773350601817,"features":"[]","declared_features":"[]","target":11924314251200954656,"profile":2241668132362809309,"path":6073640019611073209,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug\\.fingerprint\\rctree-61479e340a2abc2f\\dep-lib-rctree","checksum":false}}],"rustflags":["-C","target-feature=+crt-static"],"config":2069994364910194474,"compile_kind":0}

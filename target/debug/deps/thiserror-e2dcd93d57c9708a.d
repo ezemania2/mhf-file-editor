@@ -1,9 +1,0 @@
-C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\target\debug\deps\libthiserror-e2dcd93d57c9708a.rmeta: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\aserror.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\display.rs
-
-C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\target\debug\deps\libthiserror-e2dcd93d57c9708a.rlib: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\aserror.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\display.rs
-
-C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\target\debug\deps\thiserror-e2dcd93d57c9708a.d: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\aserror.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\display.rs
-
-C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\lib.rs:
-C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\aserror.rs:
-C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\display.rs:
