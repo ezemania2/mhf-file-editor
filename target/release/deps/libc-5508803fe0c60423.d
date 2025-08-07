@@ -1,0 +1,11 @@
+C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\target\release\deps\liblibc-5508803fe0c60423.rmeta: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\macros.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\primitives.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\windows\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\windows\msvc\mod.rs
+
+C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\target\release\deps\liblibc-5508803fe0c60423.rlib: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\macros.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\primitives.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\windows\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\windows\msvc\mod.rs
+
+C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\target\release\deps\libc-5508803fe0c60423.d: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\macros.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\primitives.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\windows\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\windows\msvc\mod.rs
+
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\lib.rs:
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\macros.rs:
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\primitives.rs:
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\windows\mod.rs:
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.172\src\windows\msvc\mod.rs:

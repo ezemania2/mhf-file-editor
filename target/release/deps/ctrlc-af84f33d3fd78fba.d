@@ -1,0 +1,11 @@
+C:\Users\qtdou\Documents\Frontier Dev tools\MHJMP_Editor_Rust\target\release\deps\libctrlc-af84f33d3fd78fba.rmeta: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\error.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\platform\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\platform\windows\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\signal.rs
+
+C:\Users\qtdou\Documents\Frontier Dev tools\MHJMP_Editor_Rust\target\release\deps\libctrlc-af84f33d3fd78fba.rlib: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\error.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\platform\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\platform\windows\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\signal.rs
+
+C:\Users\qtdou\Documents\Frontier Dev tools\MHJMP_Editor_Rust\target\release\deps\ctrlc-af84f33d3fd78fba.d: C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\lib.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\error.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\platform\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\platform\windows\mod.rs C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\signal.rs
+
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\lib.rs:
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\error.rs:
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\platform\mod.rs:
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\platform\windows\mod.rs:
+C:\Users\qtdou\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.4.7\src\signal.rs:

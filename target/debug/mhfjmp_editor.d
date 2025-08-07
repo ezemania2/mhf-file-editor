@@ -1,0 +1,1 @@
+C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\target\debug\mhfjmp_editor.exe: C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\src\app.rs C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\src\binio.rs C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\src\main.rs C:\Users\qtdou\Documents\Mezelounge\MHJMP_Editor_Rust\src\model.rs
