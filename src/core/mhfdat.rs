@@ -1195,6 +1195,30 @@ pub fn write_evo_upgrade(writer: &mut impl Write, entry: &EvoUpgrade) -> Result<
     Ok(())
 }
 
+/// Serialize MW upgrade paths followed by sentinel (upgrade_material1 = 0xFFFF)
+pub fn write_mw_upgrades_block(entries: &[MWUpgradePath]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for e in entries {
+        write_mw_upgrade_path(&mut data, e)?;
+    }
+    let mut sentinel = MWUpgradePath::default();
+    sentinel.upgrade_material1 = 0xFFFF;
+    write_mw_upgrade_path(&mut data, &sentinel)?;
+    Ok(data)
+}
+
+/// Serialize RW upgrade paths followed by sentinel (upgrade_material1 = 0xFFFF)
+pub fn write_rw_upgrades_block(entries: &[RWUpgradePath]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for e in entries {
+        write_rw_upgrade_path(&mut data, e)?;
+    }
+    let mut sentinel = RWUpgradePath::default();
+    sentinel.upgrade_material1 = 0xFFFF;
+    write_rw_upgrade_path(&mut data, &sentinel)?;
+    Ok(data)
+}
+
 pub fn extract_ranged_weapon_names<R: Read + Seek>(
     reader: &mut R,
     names_ptr: u32,
@@ -1634,6 +1658,32 @@ pub fn write_equipment_data(melee_weapons: &[MhfdatMeleeWeapon], ranged_weapons:
     Ok(data)
 }
 
+/// Serialize melee weapons followed by a 0xFFFF sentinel
+pub fn write_melee_weapons_block(weapons: &[MhfdatMeleeWeapon]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for weapon in weapons {
+        write_melee_weapon(&mut data, weapon)?;
+    }
+    // Sentinel entry with model_id = 0xFFFF
+    let mut sentinel = MhfdatMeleeWeapon::default();
+    sentinel.model_id = 0xFFFF;
+    write_melee_weapon(&mut data, &sentinel)?;
+    Ok(data)
+}
+
+/// Serialize ranged weapons followed by a 0xFFFF sentinel
+pub fn write_ranged_weapons_block(weapons: &[MhfdatRangedWeapon]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for weapon in weapons {
+        write_ranged_weapon(&mut data, weapon)?;
+    }
+    // Sentinel entry with model_id = 0xFFFF
+    let mut sentinel = MhfdatRangedWeapon::default();
+    sentinel.model_id = 0xFFFF;
+    write_ranged_weapon(&mut data, &sentinel)?;
+    Ok(data)
+}
+
 pub fn save<W: Write + Seek>(
     writer: &mut W,
     melee_weapons: &[MhfdatMeleeWeapon],
@@ -1710,6 +1760,21 @@ pub fn write_armor_data(head_armors: &[MhfdatEquipment], body_armors: &[MhfdatEq
     }
     write_equipment(&mut data, &sentinel)?;
 
+    Ok(data)
+}
+
+/// Serialize a single armor section followed by a sentinel (model_id_male and model_id_female = 0xFFFF)
+pub fn write_armors_block(armors: &[MhfdatEquipment]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for armor in armors {
+        write_equipment(&mut data, armor)?;
+    }
+    let sentinel = MhfdatEquipment {
+        model_id_male: 0xFFFF,
+        model_id_female: 0xFFFF,
+        ..Default::default()
+    };
+    write_equipment(&mut data, &sentinel)?;
     Ok(data)
 }
 
@@ -1889,6 +1954,47 @@ pub fn parse_items(buffer: &[u8]) -> Vec<MhfdatItem> {
     } else {
         vec![]
     }
+}
+
+/// Write a single item entry in the same order as read_item
+pub fn write_item(writer: &mut impl Write, item: &MhfdatItem) -> Result<()> {
+    writer.write_all(&[item.unk00])?;
+    writer.write_all(&[item.unk01])?;
+    writer.write_all(&[item.rarity])?;
+    writer.write_all(&[item.max_stack])?;
+    writer.write_all(&[item.unk04])?;
+    writer.write_all(&[item.icon])?;
+    writer.write_all(&[item.icon_color])?;
+    writer.write_all(&[item.unk07])?;
+    writer.write_all(&item.bottle.to_le_bytes())?;
+    writer.write_all(&item.unk0A.to_le_bytes())?;
+    writer.write_all(&item.buy_price.to_le_bytes())?;
+    writer.write_all(&item.sell_price.to_le_bytes())?;
+    writer.write_all(&item.item_type.to_le_bytes())?;
+    writer.write_all(&item.deco_id.to_le_bytes())?;
+    writer.write_all(&item.unk18.to_le_bytes())?;
+    writer.write_all(&[item.unk1A])?;
+    writer.write_all(&[item.unk1B])?;
+    writer.write_all(&item.equip_type.to_le_bytes())?;
+    writer.write_all(&[item.is_gz])?;
+    writer.write_all(&[item.unk1F])?;
+    writer.write_all(&item.unk20.to_le_bytes())?;
+    writer.write_all(&item.unk22.to_le_bytes())?;
+    Ok(())
+}
+
+/// Serialize items followed by a 0xFFFF sentinel (first two bytes of an item set to 0xFF)
+pub fn write_items_block(items: &[MhfdatItem]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for item in items {
+        write_item(&mut data, item)?;
+    }
+    // Append sentinel: first two bytes 0xFF 0xFF, rest zero to match struct size (0x24)
+    data.push(0xFF);
+    data.push(0xFF);
+    // Item struct size is 0x24; we already wrote 2 bytes, add 0x22 zero bytes
+    data.extend_from_slice(&[0u8; 0x22]);
+    Ok(data)
 }
 
 pub fn extract_item_names<R: Read + Seek>(

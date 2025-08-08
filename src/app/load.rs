@@ -73,7 +73,7 @@ impl MhfdatApp {
         cursor.seek(SeekFrom::Start(0)).unwrap();
         let total_armors = self.head_armors.len() + self.body_armors.len() + self.arms_armors.len() + 
                           self.waist_armors.len() + self.legs_armors.len();
-        if let Ok(descriptions) = extract_armor_descriptions(&mut cursor, EQUIP_DESC_PTR, total_armors) {
+        if let Ok(descriptions) = extract_armor_descriptions(&mut cursor, HEAD_ARMOR_DESC_PTR, total_armors) {
             self.armor_descriptions = descriptions;
         }
 
@@ -218,23 +218,7 @@ impl MhfdatApp {
         self.transmog_entries = entries;
     }
 
-    pub fn load_zenith_entries(&mut self) {
-        let valid_types = [0x00, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
-        let ptr_offset = ZENITH_WEAPON_FORGING_PTR as usize;
-        if self.buffer.len() < ptr_offset + 4 { return; }
-        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
-        let entry_size = size_of::<ShopEntry>();
-        let mut entries = Vec::new();
-        let mut cursor = data_offset;
-        while cursor + entry_size <= self.buffer.len() {
-            let equip_type = self.buffer[cursor];
-            if !valid_types.contains(&equip_type) { break; }
-            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
-            entries.push(entry);
-            cursor += entry_size;
-        }
-        self.zenith_entries = entries;
-    }
+
 
     pub fn read_armor_data(&mut self, cursor: &mut Cursor<&[u8]>, offset: u64) -> Result<(), std::io::Error> {
         // Read the actual data offset from the pointer location

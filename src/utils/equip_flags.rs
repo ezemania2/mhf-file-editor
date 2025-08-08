@@ -173,7 +173,7 @@ impl WeaponType {
         if self.finess_ext { parts.push("Finess Ext"); }
         if self.tower { parts.push("Tower"); }
         if self.gou_gr3 { parts.push("Gou GR3"); }
-        if self.exotique { parts.push("Exotique"); }
+        if self.exotique { parts.push("Exotic"); }
         if self.ravi_z { parts.push("Ravi Z"); }
         if self.zenith { parts.push("Zenith"); }
         if self.ravi_gr_plus { parts.push("Ravi GR+"); }

@@ -7,11 +7,8 @@ pub mod core;
 
 use eframe::{NativeOptions, egui};
 use std::path::PathBuf;
-use std::fs;
 use ico::IconDir;
-use std::env;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use rfd;
 
 // Include resources directly in the binary
@@ -65,6 +62,8 @@ impl eframe::App for RootApp {
             fonts.families.entry(family).or_default().insert(0, "noto".to_owned());
         }
         ctx.set_fonts(fonts);
+
+        
 
         match &mut self.state {
             AppState::FileTypeSelector => {

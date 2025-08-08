@@ -901,7 +901,7 @@ impl MhfdatApp {
             });
             ui.horizontal_wrapped(|ui| {
                 ui.checkbox(&mut weapon_type.gou_gr3, "Gou GR3");
-                ui.checkbox(&mut weapon_type.exotique, "Exotique");
+                ui.checkbox(&mut weapon_type.exotique, "Exotic");
                 ui.checkbox(&mut weapon_type.ravi_z, "Ravi Z");
                 ui.checkbox(&mut weapon_type.prayer_base, "Prayer Base");
                 ui.checkbox(&mut weapon_type.zenith, "Zenith");
@@ -1048,6 +1048,77 @@ impl MhfdatApp {
                 
                 ui.separator();
                 Self::render_melee_weapon_details(ui, weapon);
+
+                // Upgrades (index-aligned: weapon i ↔ upgrade i)
+                ui.separator();
+                ui.collapsing("Upgrade Path", |ui| {
+                    if index < self.mw_upgrade_entries.len() {
+                        // Copy to locals
+                        let (mut mat1, mut qty1, mut mat2, mut qty2, mut mat3, mut qty3, mut to1, mut to2, mut to3, mut to4) = {
+                            let up = &self.mw_upgrade_entries[index];
+                            (up.upgrade_material1, up.num_material1,
+                             up.upgrade_material2, up.num_material2,
+                             up.upgrade_material3, up.num_material3,
+                             up.upgrades_to1, up.upgrades_to2, up.upgrades_to3, up.upgrades_to4)
+                        };
+
+                        let item_name = |id: u16| -> String {
+                            self.item_names.get(id as usize).cloned().unwrap_or_default()
+                        };
+                        let melee_name = |id: usize| -> String {
+                            self.melee_weapon_names.get(id).cloned().unwrap_or_default()
+                        };
+
+                        egui::Grid::new("mw_upgrade_path_grid").striped(true).show(ui, |ui| {
+                            ui.label("Material"); ui.label("Qty"); ui.end_row();
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut mat1));
+                                ui.label(format!("{}", item_name(mat1)));
+                            });
+                            ui.add(egui::DragValue::new(&mut qty1));
+                            ui.end_row();
+
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut mat2));
+                                ui.label(format!("{}", item_name(mat2)));
+                            });
+                            ui.add(egui::DragValue::new(&mut qty2));
+                            ui.end_row();
+
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut mat3));
+                                ui.label(format!("{}", item_name(mat3)));
+                            });
+                            ui.add(egui::DragValue::new(&mut qty3));
+                            ui.end_row();
+                        });
+
+                        ui.separator();
+                        ui.label("Upgrades To (Melee):");
+                        egui::Grid::new("mw_upgrade_targets_grid").striped(true).show(ui, |ui| {
+                            ui.add(egui::DragValue::new(&mut to1)); ui.label(format!("{}", melee_name(to1 as usize))); ui.end_row();
+                            ui.add(egui::DragValue::new(&mut to2)); ui.label(format!("{}", melee_name(to2 as usize))); ui.end_row();
+                            ui.add(egui::DragValue::new(&mut to3)); ui.label(format!("{}", melee_name(to3 as usize))); ui.end_row();
+                            ui.add(egui::DragValue::new(&mut to4)); ui.label(format!("{}", melee_name(to4 as usize))); ui.end_row();
+                        });
+
+                        // Write back
+                        if let Some(entry) = self.mw_upgrade_entries.get_mut(index) {
+                            entry.upgrade_material1 = mat1;
+                            entry.num_material1 = qty1;
+                            entry.upgrade_material2 = mat2;
+                            entry.num_material2 = qty2;
+                            entry.upgrade_material3 = mat3;
+                            entry.num_material3 = qty3;
+                            entry.upgrades_to1 = to1;
+                            entry.upgrades_to2 = to2;
+                            entry.upgrades_to3 = to3;
+                            entry.upgrades_to4 = to4;
+                        }
+                    } else {
+                        ui.label("No upgrade path entry for this weapon index.");
+                    }
+                });
             }
         } else {
             ui.label("No weapon selected");
@@ -1110,6 +1181,77 @@ impl MhfdatApp {
                 
                 ui.separator();
                 Self::render_ranged_weapon_details(ui, weapon);
+
+                // Upgrades (index-aligned: weapon i ↔ upgrade i)
+                ui.separator();
+                ui.collapsing("Upgrade Path", |ui| {
+                    if index < self.rw_upgrade_entries.len() {
+                        // Copy to locals
+                        let (mut mat1, mut qty1, mut mat2, mut qty2, mut mat3, mut qty3, mut to1, mut to2, mut to3, mut to4) = {
+                            let up = &self.rw_upgrade_entries[index];
+                            (up.upgrade_material1, up.num_material1,
+                             up.upgrade_material2, up.num_material2,
+                             up.upgrade_material3, up.num_material3,
+                             up.upgrades_to1, up.upgrades_to2, up.upgrades_to3, up.upgrades_to4)
+                        };
+
+                        let item_name = |id: u16| -> String {
+                            self.item_names.get(id as usize).cloned().unwrap_or_default()
+                        };
+                        let ranged_name = |id: usize| -> String {
+                            self.ranged_weapon_names.get(id).cloned().unwrap_or_default()
+                        };
+
+                        egui::Grid::new("rw_upgrade_path_grid").striped(true).show(ui, |ui| {
+                            ui.label("Material"); ui.label("Qty"); ui.end_row();
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut mat1));
+                                ui.label(format!("{}", item_name(mat1)));
+                            });
+                            ui.add(egui::DragValue::new(&mut qty1));
+                            ui.end_row();
+
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut mat2));
+                                ui.label(format!("{}", item_name(mat2)));
+                            });
+                            ui.add(egui::DragValue::new(&mut qty2));
+                            ui.end_row();
+
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut mat3));
+                                ui.label(format!("{}", item_name(mat3)));
+                            });
+                            ui.add(egui::DragValue::new(&mut qty3));
+                            ui.end_row();
+                        });
+
+                        ui.separator();
+                        ui.label("Upgrades To (Ranged):");
+                        egui::Grid::new("rw_upgrade_targets_grid").striped(true).show(ui, |ui| {
+                            ui.add(egui::DragValue::new(&mut to1)); ui.label(format!("{}", ranged_name(to1 as usize))); ui.end_row();
+                            ui.add(egui::DragValue::new(&mut to2)); ui.label(format!("{}", ranged_name(to2 as usize))); ui.end_row();
+                            ui.add(egui::DragValue::new(&mut to3)); ui.label(format!("{}", ranged_name(to3 as usize))); ui.end_row();
+                            ui.add(egui::DragValue::new(&mut to4)); ui.label(format!("{}", ranged_name(to4 as usize))); ui.end_row();
+                        });
+
+                        // Write back
+                        if let Some(entry) = self.rw_upgrade_entries.get_mut(index) {
+                            entry.upgrade_material1 = mat1;
+                            entry.num_material1 = qty1;
+                            entry.upgrade_material2 = mat2;
+                            entry.num_material2 = qty2;
+                            entry.upgrade_material3 = mat3;
+                            entry.num_material3 = qty3;
+                            entry.upgrades_to1 = to1;
+                            entry.upgrades_to2 = to2;
+                            entry.upgrades_to3 = to3;
+                            entry.upgrades_to4 = to4;
+                        }
+                    } else {
+                        ui.label("No upgrade path entry for this weapon index.");
+                    }
+                });
             }
         } else {
             ui.label("No weapon selected");
