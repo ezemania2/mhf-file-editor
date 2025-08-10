@@ -864,3 +864,22 @@ pub struct EquipmentCounts {
     pub numMeleeW: u16,
     pub numRangedW: u16,
 }
+
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct MhfdatDecoId {
+    pub slot_nb: u8,
+    pub flags: u16,
+    pub price: u32,
+    pub _pad0: u8,
+    pub skill_id1: u8,
+    pub skill_pts1: i8,
+    pub skill_id2: u8,
+    pub skill_pts2: i8,
+    pub skill_id3: u8,
+    pub skill_pts3: i8,
+    pub skill_id4: u8,
+    pub skill_pts4: i8,
+    pub special_flags: u16,
+    pub zenith_skill: u16,
+}

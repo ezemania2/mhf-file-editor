@@ -77,56 +77,6 @@ impl MhfdatApp {
             self.armor_descriptions = descriptions;
         }
 
-        // Initialize individual armor descriptions
-        self.head_armor_descriptions = Vec::new();
-        self.chest_armor_descriptions = Vec::new();
-        self.arms_armor_descriptions = Vec::new();
-        self.waist_armor_descriptions = Vec::new();
-        self.legs_armor_descriptions = Vec::new();
-
-        // Split the descriptions among armor types
-        let mut current_index = 0;
-        
-        // Head armor descriptions
-        for _ in 0..self.head_armors.len() {
-            if current_index < self.armor_descriptions.len() {
-                self.head_armor_descriptions.push(self.armor_descriptions[current_index].clone());
-                current_index += 1;
-            }
-        }
-        
-        // Body armor descriptions
-        for _ in 0..self.body_armors.len() {
-            if current_index < self.armor_descriptions.len() {
-                self.chest_armor_descriptions.push(self.armor_descriptions[current_index].clone());
-                current_index += 1;
-            }
-        }
-        
-        // Arms armor descriptions
-        for _ in 0..self.arms_armors.len() {
-            if current_index < self.armor_descriptions.len() {
-                self.arms_armor_descriptions.push(self.armor_descriptions[current_index].clone());
-                current_index += 1;
-            }
-        }
-        
-        // Waist armor descriptions
-        for _ in 0..self.waist_armors.len() {
-            if current_index < self.armor_descriptions.len() {
-                self.waist_armor_descriptions.push(self.armor_descriptions[current_index].clone());
-                current_index += 1;
-            }
-        }
-        
-        // Legs armor descriptions
-        for _ in 0..self.legs_armors.len() {
-            if current_index < self.armor_descriptions.len() {
-                self.legs_armor_descriptions.push(self.armor_descriptions[current_index].clone());
-                current_index += 1;
-            }
-        }
-
         // === LOG ARMOR DATA POINTERS AND FIRST 3 ENTRIES OF EACH TYPE ===
         let log_path = if let Some(current_file) = &self.current_file {
             let parent = Path::new(current_file).parent().unwrap_or_else(|| Path::new(""));

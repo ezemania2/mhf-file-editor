@@ -28,7 +28,8 @@ use crate::core::mhfdat::{
     read_evo_upgrade_until_sentinel, read_equipments_until_sentinel,
     read_items_until_sentinel, extract_item_names, extract_item_descriptions,
     extract_melee_weapon_names, extract_melee_weapon_descriptions_v2,
-    extract_armor_names, extract_armor_descriptions,
+    extract_armor_names, extract_armor_descriptions, read_deco_id_table,
+    read_deco_shop,
     write_melee_weapon, write_ranged_weapon, write_shop_entry,
     write_deco_shop, write_sigil_tower_table, write_g50_weapon_upgrade,
     write_mw_upgrade_path, write_rw_upgrade_path, write_evo_upgrade,
@@ -46,7 +47,8 @@ use crate::model::mhfdat_pointers::{
     WAIST_ARMOR_PTR, WAIST_ARMOR_NAMES_PTR,
     LEG_ARMOR_PTR, LEG_ARMOR_NAMES_PTR,
     ITEM_DATA_PTR, ITEM_NAMES_PTR, ITEM_DESC_PTR, TRANSMOG_FORGING_PTR,
-    MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
+    MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR, DECO_ID_PTR,
+    DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
 };
 use std::fs::OpenOptions;
 use std::sync::{OnceLock, Mutex};
@@ -91,6 +93,7 @@ impl Default for MainTab {
 #[derive(PartialEq)]
 pub enum WorkshopTab {
     Transmog,
+    Deco,
     Weapon,
     Armor,
 }
@@ -128,7 +131,7 @@ impl Default for ArmorTab {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ViewMode {
     List,
     Details,
@@ -188,11 +191,6 @@ pub struct MhfdatApp {
     pub arms_armor_names: Vec<String>,
     pub waist_armor_names: Vec<String>,
     pub legs_armor_names: Vec<String>,
-    pub head_armor_descriptions: Vec<[String; 3]>,
-    pub chest_armor_descriptions: Vec<[String; 3]>,
-    pub arms_armor_descriptions: Vec<[String; 3]>,
-    pub waist_armor_descriptions: Vec<[String; 3]>,
-    pub legs_armor_descriptions: Vec<[String; 3]>,
     pub selected_armor_index: Option<usize>,
     pub armor_search_query: String,
     pub armor_loaded: bool,
@@ -214,6 +212,23 @@ pub struct MhfdatApp {
     pub selected_item_index: Option<usize>,
     pub item_page: u32,
     pub should_return_to_selector: bool,
+
+    // Decorations (DecoID)
+    pub deco_ids: Vec<crate::model::mhfdat::MhfdatDecoId>,
+    pub deco_page: u32,
+    pub deco_search: String,
+    pub deco_skill_filter: Option<u8>,
+    pub deco_zenith_filter: Option<u16>,
+    pub selected_deco_index: Option<usize>,
+    pub deco_skill_search: String,
+    pub deco_zenith_search: String,
+    pub deco_shop_hr_entries: Vec<crate::model::mhfdat::DecoShop>,
+    pub deco_shop_gr_entries: Vec<crate::model::mhfdat::DecoShop>,
+    pub cuff_shop_entries: Vec<crate::model::mhfdat::DecoShop>,
+    pub cuff_gr_shop_entries: Vec<crate::model::mhfdat::DecoShop>,
+    pub selected_deco_shop_index: Option<usize>,
+    pub deco_shop_search: String,
+    pub deco_shop_page: u32,
 }
 
 impl Default for MhfdatApp {
@@ -272,11 +287,6 @@ impl Default for MhfdatApp {
             arms_armor_names: Vec::new(),
             waist_armor_names: Vec::new(),
             legs_armor_names: Vec::new(),
-            head_armor_descriptions: Vec::new(),
-            chest_armor_descriptions: Vec::new(),
-            arms_armor_descriptions: Vec::new(),
-            waist_armor_descriptions: Vec::new(),
-            legs_armor_descriptions: Vec::new(),
             selected_armor_index: None,
             armor_search_query: String::new(),
             armor_loaded: false,
@@ -298,6 +308,21 @@ impl Default for MhfdatApp {
             selected_item_index: None,
             item_page: 0,
             should_return_to_selector: false,
+            deco_ids: Vec::new(),
+            deco_page: 0,
+            deco_search: String::new(),
+            deco_skill_filter: None,
+            deco_zenith_filter: None,
+            selected_deco_index: None,
+            deco_skill_search: String::new(),
+            deco_zenith_search: String::new(),
+            deco_shop_hr_entries: Vec::new(),
+            deco_shop_gr_entries: Vec::new(),
+            cuff_shop_entries: Vec::new(),
+            cuff_gr_shop_entries: Vec::new(),
+            selected_deco_shop_index: None,
+            deco_shop_search: String::new(),
+            deco_shop_page: 0,
         }
     }
 }
@@ -332,6 +357,12 @@ impl MhfdatApp {
         if let Some(val) = read_ptr(&self.buffer, RANGED_WEAPON_UPGRADE_PATH_PTR) {
             self.debug_logs.push(format!("PTR 0x{:03X} (RW UPGRADES) -> 0x{:08X}", RANGED_WEAPON_UPGRADE_PATH_PTR, val));
         }
+        if let Some(val) = read_ptr(&self.buffer, DECO_ID_PTR) {
+            self.debug_logs.push(format!(
+                "PTR 0x{:03X} (DECOID) -> 0x{:08X}",
+                DECO_ID_PTR, val
+            ));
+        }
         
         // Load weapons
         if let Some((melee_offset, ranged_offset)) = read_mhfdat_offsets(&self.buffer) {
@@ -352,7 +383,7 @@ impl MhfdatApp {
         
         // Load weapon names and descriptions
         {
-            use crate::model::mhfdat_pointers::{MELEE_WEAPON_NAMES_PTR, MELEE_WEAPON_DESC_PTR, RANGED_WEAPON_NAMES_PTR};
+            use crate::model::mhfdat_pointers::{MELEE_WEAPON_NAMES_PTR, MELEE_WEAPON_DESC_PTR, RANGED_WEAPON_NAMES_PTR, RANGED_WEAPON_DESC_PTR};
             use crate::model::mhfdat_pointers::{MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR};
             use crate::core::mhfdat::{extract_melee_weapon_names, extract_melee_weapon_descriptions_v2, extract_ranged_weapon_names};
             
@@ -379,11 +410,70 @@ impl MhfdatApp {
             let mut cursor3 = std::io::Cursor::new(&self.buffer);
             let ranged_names = extract_ranged_weapon_names(&mut cursor3, RANGED_WEAPON_NAMES_PTR, ranged_count).unwrap_or_default();
             self.ranged_weapon_names = ranged_names;
+
+            // Ranged weapon descriptions via header pointer RANGED_WEAPON_DESC_PTR
+            let mut cursor4 = std::io::Cursor::new(&self.buffer);
+            let ranged_descs_full = extract_melee_weapon_descriptions_v2(&mut cursor4, RANGED_WEAPON_DESC_PTR, ranged_count, 4).unwrap_or_default();
+            self.ranged_weapon_descriptions = ranged_descs_full
+                .into_iter()
+                .map(|descs| {
+                    let mut arr = [String::new(), String::new(), String::new()];
+                    for (i, desc) in descs.into_iter().take(3).enumerate() {
+                        arr[i] = desc;
+                    }
+                    arr
+                })
+                .collect();
+            // Strict size synchronization
+            let min_ranged = self.ranged_weapons.len().min(self.ranged_weapon_names.len()).min(self.ranged_weapon_descriptions.len());
+            self.ranged_weapons.truncate(min_ranged);
+            self.ranged_weapon_names.truncate(min_ranged);
+            self.ranged_weapon_descriptions.truncate(min_ranged);
         }
         
         // Load armor data (this also loads items)
         let buffer_ref = self.buffer.clone();
         self.load_armor_data(&buffer_ref);
+
+        // Load decorations (DecoID table)
+        if let Some(deco_off) = read_ptr(&self.buffer, DECO_ID_PTR) {
+            // If the table has a fixed count in the pattern, prefer that to avoid premature stop
+            self.deco_ids = read_deco_id_table(&self.buffer, deco_off as usize, Some(crate::model::mhfdat_pointers::DECO_ID_COUNT));
+            // Debug: log source and small preview
+            self.debug_logs.push(format!(
+                "DecoID: header@0x{:03X} -> data@0x{:08X}, count={}",
+                DECO_ID_PTR,
+                deco_off,
+                self.deco_ids.len()
+            ));
+            // Hex preview of the first bytes at target
+            if (deco_off as usize) < self.buffer.len() {
+                let start = deco_off as usize;
+                let end = (start + 64).min(self.buffer.len());
+                let mut hex = String::new();
+                for b in &self.buffer[start..end] {
+                    use std::fmt::Write as _;
+                    let _ = write!(&mut hex, "{:02X} ", b);
+                }
+                self.debug_logs.push(format!("DecoID bytes[0..{}] @0x{:08X}: {}", end-start, deco_off, hex));
+            } else {
+                self.debug_logs.push(format!("DecoID offset 0x{:08X} is out of buffer range (len={})", deco_off, self.buffer.len()));
+            }
+            for (i, di) in self.deco_ids.iter().take(3).enumerate() {
+                let slots = di.slot_nb as u8;
+                let flags = di.flags as u16;
+                let price = di.price as u32;
+                let s1 = di.skill_id1 as u8; let p1 = di.skill_pts1 as i8;
+                let s2 = di.skill_id2 as u8; let p2 = di.skill_pts2 as i8;
+                let s3 = di.skill_id3 as u8; let p3 = di.skill_pts3 as i8;
+                let s4 = di.skill_id4 as u8; let p4 = di.skill_pts4 as i8;
+                let zen = di.zenith_skill as u16;
+                self.debug_logs.push(format!(
+                    "  [{}] slots={}, flags=0x{:04X}, price={}, skills=({}:{}, {}:{}, {}:{}, {}:{}), zenith={}",
+                    i, slots, flags, price, s1, p1, s2, p2, s3, p3, s4, p4, zen
+                ));
+            }
+        }
 
         // Load upgrade paths for melee and ranged weapons (dereferenced pointers)
         {

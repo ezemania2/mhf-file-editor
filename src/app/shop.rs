@@ -22,13 +22,235 @@ impl MhfdatApp {
     }
 
     pub fn show_shop_tab(&mut self, ui: &mut egui::Ui) {
-        if !self.view_mode.contains_key("shop") {
-            self.view_mode.insert("shop".to_string(), ViewMode::List);
+        // Sub-tabs: Transmog | Deco
+        ui.horizontal(|ui| {
+            if ui.selectable_label(matches!(self.workshop_tab, super::WorkshopTab::Transmog), "Transmog").clicked() {
+                self.workshop_tab = super::WorkshopTab::Transmog;
+                self.view_mode.insert("shop".to_string(), ViewMode::List);
+            }
+            if ui.selectable_label(matches!(self.workshop_tab, super::WorkshopTab::Deco), "Deco").clicked() {
+                self.workshop_tab = super::WorkshopTab::Deco;
+                self.view_mode.insert("shop".to_string(), ViewMode::List);
+            }
+        });
+        ui.separator();
+
+        match self.workshop_tab {
+            super::WorkshopTab::Transmog => {
+                if !self.view_mode.contains_key("shop") {
+                    self.view_mode.insert("shop".to_string(), ViewMode::List);
+                }
+                match self.view_mode.get("shop").unwrap() {
+                    ViewMode::List => self.show_transmog_list(ui),
+                    ViewMode::Details => self.show_transmog_details(ui),
+                }
+            }
+            super::WorkshopTab::Deco => {
+                self.show_deco_shop(ui);
+            }
+            _ => {}
+        }
+    }
+
+    fn show_deco_shop(&mut self, ui: &mut egui::Ui) {
+        // Load from pointers once into separate HR/GR/Cuff/Cuff GR buffers
+        if self.deco_shop_hr_entries.is_empty()
+            && self.deco_shop_gr_entries.is_empty()
+            && self.cuff_shop_entries.is_empty()
+            && self.cuff_gr_shop_entries.is_empty()
+        {
+            let read_ptr = |buf: &Vec<u8>, at: u32| -> Option<u32> {
+                let off = at as usize;
+                if buf.len() >= off + 4 { Some(u32::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3]])) } else { None }
+            };
+            if let Some(off) = read_ptr(&self.buffer, crate::model::mhfdat_pointers::DECO_SHOP_PTR) {
+                self.deco_shop_hr_entries = crate::core::mhfdat::read_deco_shop(&self.buffer, off as usize);
+            }
+            if let Some(off_g) = read_ptr(&self.buffer, crate::model::mhfdat_pointers::DECO_G_SHOP_PTR) {
+                self.deco_shop_gr_entries = crate::core::mhfdat::read_deco_shop(&self.buffer, off_g as usize);
+            }
+            if let Some(off_c) = read_ptr(&self.buffer, crate::model::mhfdat_pointers::CUFF_SHOP_PTR) {
+                self.cuff_shop_entries = crate::core::mhfdat::read_deco_shop(&self.buffer, off_c as usize);
+            }
+            if let Some(off_cg) = read_ptr(&self.buffer, crate::model::mhfdat_pointers::CUFF_GR_SHOP_PTR) {
+                self.cuff_gr_shop_entries = crate::core::mhfdat::read_deco_shop(&self.buffer, off_cg as usize);
+            }
         }
 
-        match self.view_mode.get("shop").unwrap() {
-            ViewMode::List => self.show_transmog_list(ui),
-            ViewMode::Details => self.show_transmog_details(ui),
+        ui.heading("Deco Shop");
+
+        // Ensure we have a view state for deco shop
+        if !self.view_mode.contains_key("deco_shop") {
+            self.view_mode.insert("deco_shop".to_string(), ViewMode::List);
+        }
+
+        // Sub-categories: Deco HR, Deco GR, Cuff, Cuff GR
+        ui.horizontal(|ui| {
+            if ui.selectable_label(self.shop_page == 0, "Decoration HR").clicked() { self.shop_page = 0; }
+            if ui.selectable_label(self.shop_page == 1, "Decoration GR").clicked() { self.shop_page = 1; }
+            if ui.selectable_label(self.shop_page == 2, "Cuff").clicked() { self.shop_page = 2; }
+            if ui.selectable_label(self.shop_page == 3, "Cuff GR").clicked() { self.shop_page = 3; }
+        });
+        ui.separator();
+
+        // Route by view mode
+        match self.view_mode.get("deco_shop").cloned().unwrap_or(ViewMode::List) {
+            ViewMode::List => {
+                // Search
+                ui.horizontal(|ui| {
+                    ui.label("Search:");
+                    ui.text_edit_singleline(&mut self.deco_shop_search);
+                    if ui.button("Export current list to JSON").clicked() {
+                        let (name, data): (&str, &Vec<crate::model::mhfdat::DecoShop>) = match self.shop_page {
+                            0 => ("deco_shop_hr.json", &self.deco_shop_hr_entries),
+                            1 => ("deco_shop_gr.json", &self.deco_shop_gr_entries),
+                            2 => ("cuff_shop.json", &self.cuff_shop_entries),
+                            3 => ("cuff_gr_shop.json", &self.cuff_gr_shop_entries),
+                            _ => ("deco_shop_hr.json", &self.deco_shop_hr_entries),
+                        };
+                        if let Ok(text) = serde_json::to_string_pretty(data) {
+                            let _ = std::fs::write(name, text);
+                        }
+                    }
+                });
+
+        // Choose source by sub-category (clone to avoid borrowing self during UI/mutations)
+        let current_list_owned: Vec<crate::model::mhfdat::DecoShop> = match self.shop_page {
+            0 => self.deco_shop_hr_entries.clone(),
+            1 => self.deco_shop_gr_entries.clone(),
+            2 => self.cuff_shop_entries.clone(),
+            3 => self.cuff_gr_shop_entries.clone(),
+            _ => self.deco_shop_hr_entries.clone(),
+        };
+        let lowered = self.deco_shop_search.to_lowercase();
+        let entries_all: Vec<(usize, &crate::model::mhfdat::DecoShop)> = current_list_owned.iter().enumerate().collect();
+        let entries: Vec<(usize, &crate::model::mhfdat::DecoShop)> = if lowered.is_empty() {
+            entries_all
+        } else {
+            entries_all
+                .into_iter()
+                .filter(|(_, e)| {
+                    // Match deco item name or any material name
+                    let deco_name = self.get_item_name(e.deco_item_id).to_lowercase();
+                    let m1 = self.get_item_name(e.item_id1).to_lowercase();
+                    let m2 = self.get_item_name(e.item_id2).to_lowercase();
+                    let m3 = self.get_item_name(e.item_id3).to_lowercase();
+                    let m4 = self.get_item_name(e.item_id4).to_lowercase();
+                    deco_name.contains(&lowered) || m1.contains(&lowered) || m2.contains(&lowered) || m3.contains(&lowered) || m4.contains(&lowered)
+                })
+                .collect()
+        };
+
+        // Pagination (20 rows/page)
+        let per_page = 20usize;
+        let total = entries.len();
+        let total_pages = (total + per_page - 1) / per_page;
+        let current = (self.deco_shop_page as usize).min(total_pages.saturating_sub(1));
+        if current != self.deco_shop_page as usize { self.deco_shop_page = current as u32; }
+        ui.horizontal(|ui| {
+            let can_prev = current > 0 && total > 0;
+            let can_next = current < total_pages.saturating_sub(1) && total > 0;
+            if ui.button("← Previous").clicked() && can_prev { self.deco_shop_page = (current - 1) as u32; }
+            if total > 0 { ui.label(format!("Page {} of {} ({} entries)", current + 1, total_pages.max(1), total)); } else { ui.label("No results"); }
+            if ui.button("Next →").clicked() && can_next { self.deco_shop_page = (current + 1) as u32; }
+        });
+        let start = current * per_page;
+        let end = (start + per_page).min(total);
+
+        egui::ScrollArea::vertical().max_height(600.0).show(ui, |ui| {
+            egui::Grid::new("deco_shop_grid").striped(true).show(ui, |ui| {
+                ui.label("Idx"); ui.label("Deco Name"); ui.label("Cat");
+                ui.label("Mat1"); ui.label("Qty1");
+                ui.label("Mat2"); ui.label("Qty2");
+                ui.label("Mat3"); ui.label("Qty3");
+                ui.label("Mat4"); ui.label("Qty4");
+                ui.end_row();
+                for (i, e) in entries[start..end].iter().cloned() {
+                    // copy packed fields to locals to avoid unaligned references
+                    let deco_item_id = e.deco_item_id;
+                    let receipt_category = e.receipt_category;
+                    let item_id1 = e.item_id1; let item_qty1 = e.item_qty1;
+                    let item_id2 = e.item_id2; let item_qty2 = e.item_qty2;
+                    let item_id3 = e.item_id3; let item_qty3 = e.item_qty3;
+                    let item_id4 = e.item_id4; let item_qty4 = e.item_qty4;
+
+                    let selected = self.selected_deco_shop_index == Some(i);
+                    if ui.selectable_label(selected, format!("{}", i)).clicked() {
+                        self.selected_deco_shop_index = Some(i);
+                        self.view_mode.insert("deco_shop".to_string(), ViewMode::Details);
+                    }
+                    ui.label(self.get_item_name(deco_item_id));
+                    ui.label(format!("{}", receipt_category));
+                    // Show only IDs for materials, keep name for the Deco item
+                    ui.label(format!("{}", item_id1)); ui.label(format!("{}", item_qty1));
+                    ui.label(format!("{}", item_id2)); ui.label(format!("{}", item_qty2));
+                    ui.label(format!("{}", item_id3)); ui.label(format!("{}", item_qty3));
+                    ui.label(format!("{}", item_id4)); ui.label(format!("{}", item_qty4));
+                    ui.end_row();
+                }
+            });
+        });
+            }
+            ViewMode::Details => {
+                // Back to list
+                if ui.button("← Back to List").clicked() {
+                    self.view_mode.insert("deco_shop".to_string(), ViewMode::List);
+                    return;
+                }
+                // Details editor for selected entry
+                if let Some(sel) = self.selected_deco_shop_index {
+                    let mut entry_opt = match self.shop_page {
+                        0 => self.deco_shop_hr_entries.get(sel).cloned(),
+                        1 => self.deco_shop_gr_entries.get(sel).cloned(),
+                        2 => self.cuff_shop_entries.get(sel).cloned(),
+                        3 => self.cuff_gr_shop_entries.get(sel).cloned(),
+                        _ => None,
+                    };
+                    if let Some(mut entry) = entry_opt.take() {
+                        ui.separator();
+                        ui.heading(format!("Edit {} entry #{}", match self.shop_page {0=>"Deco HR",1=>"Deco GR",2=>"Cuff",3=>"Cuff GR", _=>""}, sel));
+                        ui.horizontal(|ui| {
+                            ui.label("Deco Item ID:");
+                            let mut v = entry.deco_item_id as i32;
+                            if ui.add(egui::DragValue::new(&mut v).speed(1)).changed() {
+                                entry.deco_item_id = v as u16;
+                            }
+                            ui.label(self.get_item_name(entry.deco_item_id));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Category:");
+                            let mut v = entry.receipt_category as i32;
+                            if ui.add(egui::DragValue::new(&mut v).speed(1)).changed() { entry.receipt_category = v as u16; }
+                        });
+                        for idx in 1..=4 {
+                            ui.horizontal(|ui| {
+                                ui.label(format!("Mat{}:", idx));
+                                let mut id_i: i32 = match idx { 1 => entry.item_id1 as i32, 2 => entry.item_id2 as i32, 3 => entry.item_id3 as i32, _ => entry.item_id4 as i32 };
+                                let mut qty_i: i32 = match idx { 1 => entry.item_qty1 as i32, 2 => entry.item_qty2 as i32, 3 => entry.item_qty3 as i32, _ => entry.item_qty4 as i32 };
+                                if ui.add(egui::DragValue::new(&mut id_i).speed(1)).changed() {}
+                                let name_prev = self.get_item_name(id_i as u16);
+                                ui.label(name_prev);
+                                ui.label("Qty:");
+                                if ui.add(egui::DragValue::new(&mut qty_i).speed(1)).changed() {}
+                                match idx {
+                                    1 => { entry.item_id1 = id_i as u16; entry.item_qty1 = qty_i as u8; }
+                                    2 => { entry.item_id2 = id_i as u16; entry.item_qty2 = qty_i as u8; }
+                                    3 => { entry.item_id3 = id_i as u16; entry.item_qty3 = qty_i as u8; }
+                                    _ => { entry.item_id4 = id_i as u16; entry.item_qty4 = qty_i as u8; }
+                                }
+                            });
+                        }
+                        // Write back to the correct list
+                        match self.shop_page {
+                            0 => if let Some(slot) = self.deco_shop_hr_entries.get_mut(sel) { *slot = entry; },
+                            1 => if let Some(slot) = self.deco_shop_gr_entries.get_mut(sel) { *slot = entry; },
+                            2 => if let Some(slot) = self.cuff_shop_entries.get_mut(sel) { *slot = entry; },
+                            3 => if let Some(slot) = self.cuff_gr_shop_entries.get_mut(sel) { *slot = entry; },
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -128,7 +350,7 @@ impl MhfdatApp {
                         ui.label("HR Req");
                         ui.end_row();
 
-                        for (i, (original_idx, entry)) in filtered_entries[start_idx..end_idx].iter().enumerate() {
+                        for (_i, (original_idx, entry)) in filtered_entries[start_idx..end_idx].iter().enumerate() {
                             let equip_type = entry.equip_type;
                             let equip_id = entry.equip_id;
                             let material_id1 = entry.material_id1;
@@ -199,7 +421,7 @@ impl MhfdatApp {
             let entry = &self.transmog_entries[index];
             let equip_type = entry.equip_type;
             let equip_id = entry.equip_id;
-            let mut armor_name = self.get_armor_name(equip_type, equip_id);
+            let armor_name = self.get_armor_name(equip_type, equip_id);
             let mut new_type = equip_type;
             let mut new_id = equip_id;
             
@@ -322,9 +544,7 @@ impl MhfdatApp {
                 });
             }
             
-            if new_type != equip_type || new_id != equip_id {
-                armor_name = self.get_armor_name(new_type, new_id);
-            }
+            // no-op
         }
     }
 } 

@@ -4,7 +4,7 @@ use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom, Result, Read, Cursor};
 use std::fs::File;
 // use crate::model::mhfdat::MhfdatBinEntry;
-use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem};
+use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId};
 use byteorder::{ReadBytesExt, LittleEndian};
 use encoding_rs::SHIFT_JIS;
 use std::env;
@@ -544,6 +544,36 @@ pub fn read_deco_shop(buffer: &[u8], offset: usize) -> Vec<DecoShop> {
     entries
 }
 
+pub fn write_deco_shop(writer: &mut impl Write, entry: &DecoShop) -> Result<()> {
+    writer.write_all(&entry.deco_item_id.to_le_bytes())?;
+    writer.write_all(&entry.receipt_category.to_le_bytes())?;
+    writer.write_all(&entry.item_id1.to_le_bytes())?;
+    writer.write_all(&[entry.item_qty1])?;
+    writer.write_all(&[entry.item_unlock_flag1])?;
+    writer.write_all(&entry.item_id2.to_le_bytes())?;
+    writer.write_all(&[entry.item_qty2])?;
+    writer.write_all(&[entry.item_unlock_flag2])?;
+    writer.write_all(&entry.item_id3.to_le_bytes())?;
+    writer.write_all(&[entry.item_qty3])?;
+    writer.write_all(&[entry.item_unlock_flag3])?;
+    writer.write_all(&entry.item_id4.to_le_bytes())?;
+    writer.write_all(&[entry.item_qty4])?;
+    writer.write_all(&[entry.item_unlock_flag4])?;
+    Ok(())
+}
+
+pub fn write_deco_shop_block(entries: &[DecoShop]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for e in entries {
+        write_deco_shop(&mut data, e)?;
+    }
+    // Sentinel: deco_item_id == 0
+    let mut sentinel = DecoShop::default();
+    sentinel.deco_item_id = 0;
+    write_deco_shop(&mut data, &sentinel)?;
+    Ok(data)
+}
+
 pub fn read_sigil_tower_table(buffer: &[u8], offset: usize) -> Vec<SigilTowerTable> {
     let mut entries = Vec::new();
     let mut cursor = offset;
@@ -554,6 +584,21 @@ pub fn read_sigil_tower_table(buffer: &[u8], offset: usize) -> Vec<SigilTowerTab
         }
         entries.push(entry);
         cursor += size_of::<SigilTowerTable>();
+    }
+    entries
+}
+
+pub fn read_deco_id_table(buffer: &[u8], offset: usize, max_count: Option<usize>) -> Vec<MhfdatDecoId> {
+    let mut entries = Vec::new();
+    let mut cursor = offset;
+    let entry_size = std::mem::size_of::<MhfdatDecoId>();
+    let limit = max_count.unwrap_or(usize::MAX);
+    while cursor + entry_size <= buffer.len() && entries.len() < limit {
+        let entry = unsafe { std::ptr::read_unaligned(buffer.as_ptr().add(cursor) as *const MhfdatDecoId) };
+        // If no fixed count specified, stop on an all-zero style entry; otherwise keep reading
+        if max_count.is_none() && entry.slot_nb == 0 && entry.flags == 0 && entry.price == 0 { break; }
+        entries.push(entry);
+        cursor += entry_size;
     }
     entries
 }
@@ -1070,24 +1115,6 @@ pub fn write_shop_entry(writer: &mut impl Write, entry: &ShopEntry) -> Result<()
     writer.write_all(&entry.padding7)?;
     writer.write_all(&[entry.unk34])?;
     writer.write_all(&entry.padding8)?;
-    Ok(())
-}
-
-pub fn write_deco_shop(writer: &mut impl Write, entry: &DecoShop) -> Result<()> {
-    writer.write_all(&entry.deco_item_id.to_le_bytes())?;
-    writer.write_all(&entry.receipt_category.to_le_bytes())?;
-    writer.write_all(&entry.item_id1.to_le_bytes())?;
-    writer.write_all(&[entry.item_qty1])?;
-    writer.write_all(&[entry.item_unlock_flag1])?;
-    writer.write_all(&entry.item_id2.to_le_bytes())?;
-    writer.write_all(&[entry.item_qty2])?;
-    writer.write_all(&[entry.item_unlock_flag2])?;
-    writer.write_all(&entry.item_id3.to_le_bytes())?;
-    writer.write_all(&[entry.item_qty3])?;
-    writer.write_all(&[entry.item_unlock_flag3])?;
-    writer.write_all(&entry.item_id4.to_le_bytes())?;
-    writer.write_all(&[entry.item_qty4])?;
-    writer.write_all(&[entry.item_unlock_flag4])?;
     Ok(())
 }
 
