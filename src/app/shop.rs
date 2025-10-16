@@ -23,7 +23,7 @@ impl MhfdatApp {
 
     pub fn show_shop_tab(&mut self, ui: &mut egui::Ui) {
         // Sub-tabs: Transmog | Deco
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.selectable_label(matches!(self.workshop_tab, super::WorkshopTab::Transmog), "Transmog").clicked() {
                 self.workshop_tab = super::WorkshopTab::Transmog;
                 self.view_mode.insert("shop".to_string(), ViewMode::List);
@@ -77,7 +77,18 @@ impl MhfdatApp {
             }
         }
 
-        ui.heading("Deco Shop");
+        MhfdatApp::section_header(ui, "Deco Shop", |ui| {
+            if ui.button("Export current list to JSON").clicked() {
+                let (name, data): (&str, &Vec<crate::model::mhfdat::DecoShop>) = match self.shop_page {
+                    0 => ("deco_shop_hr.json", &self.deco_shop_hr_entries),
+                    1 => ("deco_shop_gr.json", &self.deco_shop_gr_entries),
+                    2 => ("cuff_shop.json", &self.cuff_shop_entries),
+                    3 => ("cuff_gr_shop.json", &self.cuff_gr_shop_entries),
+                    _ => ("deco_shop_hr.json", &self.deco_shop_hr_entries),
+                };
+                if let Ok(text) = serde_json::to_string_pretty(data) { let _ = std::fs::write(name, text); }
+            }
+        });
 
         // Ensure we have a view state for deco shop
         if !self.view_mode.contains_key("deco_shop") {
@@ -85,7 +96,7 @@ impl MhfdatApp {
         }
 
         // Sub-categories: Deco HR, Deco GR, Cuff, Cuff GR
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.selectable_label(self.shop_page == 0, "Decoration HR").clicked() { self.shop_page = 0; }
             if ui.selectable_label(self.shop_page == 1, "Decoration GR").clicked() { self.shop_page = 1; }
             if ui.selectable_label(self.shop_page == 2, "Cuff").clicked() { self.shop_page = 2; }
@@ -111,6 +122,33 @@ impl MhfdatApp {
                         if let Ok(text) = serde_json::to_string_pretty(data) {
                             let _ = std::fs::write(name, text);
                         }
+                    }
+                });
+
+                // Add new entry to current subcategory
+                ui.horizontal(|ui| {
+                    if ui.button("Add New").clicked() {
+                        let new_entry = crate::model::mhfdat::DecoShop::default();
+                        let new_index = match self.shop_page {
+                            0 => { self.deco_shop_hr_entries.push(new_entry); self.deco_shop_hr_entries.len() - 1 }
+                            1 => { self.deco_shop_gr_entries.push(new_entry); self.deco_shop_gr_entries.len() - 1 }
+                            2 => { self.cuff_shop_entries.push(new_entry); self.cuff_shop_entries.len() - 1 }
+                            3 => { self.cuff_gr_shop_entries.push(new_entry); self.cuff_gr_shop_entries.len() - 1 }
+                            _ => 0,
+                        };
+                        self.selected_deco_shop_index = Some(new_index);
+                        self.view_mode.insert("deco_shop".to_string(), ViewMode::Details);
+                        // Move to the last page to show the new item
+                        let total_items = match self.shop_page {
+                            0 => self.deco_shop_hr_entries.len(),
+                            1 => self.deco_shop_gr_entries.len(),
+                            2 => self.cuff_shop_entries.len(),
+                            3 => self.cuff_gr_shop_entries.len(),
+                            _ => 0,
+                        };
+                        let per_page = 20usize;
+                        let total_pages = (total_items + per_page - 1) / per_page;
+                        if total_pages > 0 { self.deco_shop_page = (total_pages - 1) as u32; }
                     }
                 });
 
@@ -147,17 +185,11 @@ impl MhfdatApp {
         let total_pages = (total + per_page - 1) / per_page;
         let current = (self.deco_shop_page as usize).min(total_pages.saturating_sub(1));
         if current != self.deco_shop_page as usize { self.deco_shop_page = current as u32; }
-        ui.horizontal(|ui| {
-            let can_prev = current > 0 && total > 0;
-            let can_next = current < total_pages.saturating_sub(1) && total > 0;
-            if ui.button("← Previous").clicked() && can_prev { self.deco_shop_page = (current - 1) as u32; }
-            if total > 0 { ui.label(format!("Page {} of {} ({} entries)", current + 1, total_pages.max(1), total)); } else { ui.label("No results"); }
-            if ui.button("Next →").clicked() && can_next { self.deco_shop_page = (current + 1) as u32; }
-        });
+        MhfdatApp::pagination_controls(ui, &mut self.deco_shop_page, total_pages);
         let start = current * per_page;
         let end = (start + per_page).min(total);
 
-        egui::ScrollArea::vertical().max_height(600.0).show(ui, |ui| {
+        MhfdatApp::list_scroll(ui, "deco_shop_grid_scroll", |ui| {
             egui::Grid::new("deco_shop_grid").striped(true).show(ui, |ui| {
                 ui.label("Idx"); ui.label("Deco Name"); ui.label("Cat");
                 ui.label("Mat1"); ui.label("Qty1");
@@ -255,10 +287,29 @@ impl MhfdatApp {
     }
 
     fn show_transmog_list(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Transmog Shop");
+        MhfdatApp::section_header(ui, "Transmog Shop", |ui| {
+            if ui.button("Add New").clicked() {
+                self.transmog_entries.push(ShopEntry {
+                    equip_type: 0x02, // Default to Head
+                    equip_id: 0,
+                    material_id1: 0,
+                    material_amnt1: 0,
+                    material_id2: 0,
+                    material_amnt2: 0,
+                    material_id3: 0,
+                    material_amnt3: 0,
+                    material_id4: 0,
+                    material_amnt4: 0,
+                    hr_req: 0,
+                    ..Default::default()
+                });
+                self.selected_transmog_index = Some(self.transmog_entries.len() - 1);
+                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+            }
+        });
 
         // Search and filters
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_armor_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -329,10 +380,7 @@ impl MhfdatApp {
         let mut should_switch_view = false;
 
         // Transmog list
-        egui::ScrollArea::vertical()
-            .id_source("transmog_shop_list_scroll")
-            .max_height(600.0)
-            .show(ui, |ui| {
+        MhfdatApp::list_scroll(ui, "transmog_shop_list_scroll", |ui| {
                 egui::Grid::new("transmog_shop_list_grid")
                     .striped(true)
                     .show(ui, |ui| {
@@ -400,15 +448,7 @@ impl MhfdatApp {
         }
 
         // Pagination controls
-        ui.horizontal(|ui| {
-            if ui.button("← Previous").clicked() && current_page > 0 {
-                self.shop_page = (current_page - 1) as u32;
-            }
-            ui.label(format!("Page {} of {}", current_page + 1, total_pages));
-            if ui.button("Next →").clicked() && current_page < total_pages - 1 {
-                self.shop_page = (current_page + 1) as u32;
-            }
-        });
+        MhfdatApp::pagination_controls(ui, &mut self.shop_page, total_pages);
     }
 
     fn show_transmog_details(&mut self, ui: &mut egui::Ui) {

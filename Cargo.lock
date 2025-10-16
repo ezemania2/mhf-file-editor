@@ -2138,6 +2138,8 @@ dependencies = [
  "ico",
  "image",
  "native-dialog",
+ "rand",
+ "rand_chacha",
  "rfd",
  "rsfrontier-core",
  "serde",

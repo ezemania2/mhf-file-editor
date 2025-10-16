@@ -75,6 +75,28 @@ where
     }
 }
 
+/// Compresse un fichier avec JPK Type 4 (sans encryption)
+pub fn compress_file(input_path: &Path, output_path: &Path) -> std::io::Result<()> {
+    let file_buf = std::fs::read(input_path)?;
+    
+    // Compression JPK Type 4 (Huffman + LZ)
+    let compressed_data = rsfrontier_pack_buffer(&file_buf, PackType::Jpk(4));
+    
+    // Écrire le fichier compressé
+    std::fs::write(output_path, compressed_data)
+}
+
+/// Chiffre un fichier avec ECD (sans compression)
+pub fn encrypt_file(input_path: &Path, output_path: &Path) -> std::io::Result<()> {
+    let file_buf = std::fs::read(input_path)?;
+    
+    // Chiffrement ECD
+    let encrypted_data = rsfrontier_pack_buffer(&file_buf, PackType::Ecd);
+    
+    // Écrire le fichier chiffré
+    std::fs::write(output_path, encrypted_data)
+}
+
 /// Compresse et chiffre un buffer
 pub fn pack_buffer(buf: &[u8], pack_type: PackType) -> Vec<u8> {
     rsfrontier_pack_buffer(buf, pack_type)

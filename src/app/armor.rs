@@ -6,11 +6,41 @@ use crate::utils::weapon_patterns::{zenith_skill_name, ZENITH_SKILL_LIST};
 use std::fs::File;
 use std::io::Write;
 use serde_json;
+use crate::core::mhfdat::{read_equipment_counts, write_equipment_counts};
 
 impl MhfdatApp {
+    /// Compute next armor model_id (male/female) from existing entries up to real_count
+    fn next_armor_model_id_from(entries: &[MhfdatEquipment], real_count: usize) -> u16 {
+        entries
+            .iter()
+            .take(real_count)
+            .map(|a| a.model_id_male.max(a.model_id_female))
+            .max()
+            .map(|max_id| max_id.saturating_add(1))
+            .unwrap_or(0)
+    }
+
+    /// Recompute EquipmentCounts strictly from number of entries (max index + 1) for each armor category
+    pub(crate) fn refresh_equipment_counts_from_entries(&mut self) {
+        if let Some(mut counts) = read_equipment_counts(&self.buffer) {
+            counts.numHeadA = self.head_armors.len() as u16;
+            counts.numBodyA = self.body_armors.len() as u16;
+            counts.numArmA = self.arms_armors.len() as u16;
+            counts.numWaistA = self.waist_armors.len() as u16;
+            counts.numLegA = self.legs_armors.len() as u16;
+            let _ = write_equipment_counts(&mut self.buffer, &counts);
+            self.equipment_counts = Some(counts);
+        }
+    }
+
     pub fn show_armor_tab(&mut self, ui: &mut egui::Ui) {
-        // Add armor category tabs
-        ui.horizontal(|ui| {
+        // Initialize view modes if not present
+        if !self.view_mode.contains_key("armor") {
+            self.view_mode.insert("armor".to_string(), ViewMode::List);
+        }
+
+        // Add armor category tabs (wrapped)
+        ui.horizontal_wrapped(|ui| {
             if ui.selectable_label(self.armor_tab == ArmorTab::Head, "Head").clicked() {
                 self.armor_tab = ArmorTab::Head;
             }
@@ -29,8 +59,14 @@ impl MhfdatApp {
         });
         ui.separator();
 
-        let armor_tab = &mut self.armor_tab;
-        let (armors, names) = match *armor_tab {
+        match self.view_mode.get("armor").unwrap() {
+            ViewMode::List => self.show_armor_list_view(ui),
+            ViewMode::Details => self.show_armor_details_view(ui),
+        }
+    }
+
+    pub fn show_armor_list_view(&mut self, ui: &mut egui::Ui) {
+        let (armors, names) = match self.armor_tab {
             ArmorTab::Head => (&mut self.head_armors, &mut self.head_armor_names),
             ArmorTab::Body => (&mut self.body_armors, &mut self.body_armor_names),
             ArmorTab::Arms => (&mut self.arms_armors, &mut self.arms_armor_names),
@@ -38,12 +74,13 @@ impl MhfdatApp {
             ArmorTab::Legs => (&mut self.legs_armors, &mut self.legs_armor_names),
         };
 
-        let search_query = &mut self.search_query;
-        let class_id_filter = self.class_id_filter;
-        let element_filter = self.element_filter;
-        let equip_type_filter = self.equip_type_filter;
-        let selected_armor_index = &mut self.selected_armor_index;
-        let show_dummy_armor = &mut self.show_dummy_weapons;
+        let armor_type = match self.armor_tab {
+            ArmorTab::Head => "Head",
+            ArmorTab::Body => "Body",
+            ArmorTab::Arms => "Arms",
+            ArmorTab::Waist => "Waist",
+            ArmorTab::Legs => "Legs",
+        };
 
         // Compter jusqu'à la première armure avec model_id_male == 0xFFFF
         let mut real_count = 0;
@@ -54,254 +91,185 @@ impl MhfdatApp {
             real_count += 1;
         }
         let max_count = real_count.min(armors.len());
-        let mut all_armors = armors.iter().take(max_count).cloned().collect::<Vec<_>>();
-        let mut all_names = names.iter().take(max_count).cloned().collect::<Vec<_>>();
 
-        // Filter armors based on search and filters first
-        let mut filtered_indices = Vec::new();
-        for i in 0..max_count {
-            if let Some(armor) = all_armors.get(i) {
-                let armor_name = all_names.get(i).cloned().unwrap_or_default();
-                
-                // Copy fields to local variables to avoid unaligned references
-                let model_id_male = armor.model_id_male;
-                let model_id_female = armor.model_id_female;
-                let rarity = armor.rarity;
-                let base_defense = armor.base_defense;
-                let base_slots = armor.base_slots;
-                let max_slots = armor.max_slots;
-                let fire_res = armor.fire_res;
-                let water_res = armor.water_res;
-                let thunder_res = armor.thunder_res;
-                let dragon_res = armor.dragon_res;
-                let ice_res = armor.ice_res;
-                let equipable_by = armor.equipable_by;
-
-                // Dummy armor detection
-                let is_dummy = model_id_male == 0x0000
-                    && model_id_female == 0x0000
-                    && rarity == 0x00
-                    && equipable_by == 0x00
-                    && armor.zenny_cost == 0x00000000
-                    && base_defense == 0x0000
-                    && base_slots == 0x00
-                    && max_slots == 0x00
-                    && fire_res == 0x00
-                    && water_res == 0x00
-                    && thunder_res == 0x00
-                    && dragon_res == 0x00
-                    && ice_res == 0x00
-                    && armor.zenith_skill == 0x0000;
-
-                // Apply dummy filter
-                if *show_dummy_armor {
-                    if !is_dummy { continue; }
-                } else {
-                    if is_dummy { continue; }
-                }
-
-                // Apply other filters
-                if let Some(class_id) = class_id_filter {
-                    if armor.equipable_by != class_id { continue; }
-                }
-                if let Some(element_id_filter) = element_filter {
-                    let has_element = match element_id_filter {
-                        1 => fire_res > 0,
-                        2 => water_res > 0,
-                        3 => thunder_res > 0,
-                        4 => dragon_res > 0,
-                        5 => ice_res > 0,
-                        _ => false,
-                    };
-                    if !has_element { continue; }
-                }
-                if let Some(equip_type_id) = equip_type_filter {
-                    if armor.equipable_by != equip_type_id { continue; }
-                }
-
-                // Apply search filter
-                if !search_query.is_empty() && !armor_name.to_lowercase().contains(&search_query.to_lowercase()) {
-                    continue;
-                }
-
-                filtered_indices.push(i);
+        let armor_type_str = match self.armor_tab { 
+            ArmorTab::Head=>"head", 
+            ArmorTab::Body=>"body", 
+            ArmorTab::Arms=>"arms", 
+            ArmorTab::Waist=>"waist", 
+            ArmorTab::Legs=>"legs" 
+        };
+        
+        MhfdatApp::section_header(ui, &format!("{} Armor (found: {})", armor_type, max_count), |ui| {
+            if ui.button("Export JSON").clicked() {
+                // This will be handled after the closure
             }
-        }
-
-        // Calculate pagination based on filtered results
-        let entries_per_page = 15;
-        let filtered_count = filtered_indices.len();
-        let total_pages = if filtered_count > 0 { 
-            ((filtered_count + entries_per_page - 1) / entries_per_page).max(1)
-        } else { 
-            1 
-        };
-        
-        // Reset to first page when starting a new search or when search results change dramatically
-        if !search_query.is_empty() && !filtered_indices.is_empty() && (self.armor_page as usize) >= total_pages {
-            self.armor_page = 0;
-        }
-        // Also reset to first page when search is cleared
-        if search_query.is_empty() && self.armor_page as usize >= total_pages {
-            self.armor_page = 0;
-        }
-        
-        let current_page = (self.armor_page as usize).min(total_pages.saturating_sub(1));
-        
-        let start_idx = current_page * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(filtered_count);
-
-        // Create slices for the filtered results
-        let page_indices = if filtered_count == 0 {
-            &[]
-        } else if start_idx < filtered_count && end_idx > start_idx {
-            let safe_end = end_idx.min(filtered_count);
-            &filtered_indices[start_idx..safe_end]
-        } else {
-            &[]
-        };
-
-        // Create references to all armors (we'll use indices to access filtered ones)
-        let armors_ref = &mut all_armors;
-        let names_ref = &mut all_names;
-
-        Self::show_armor_list(
-            ui,
-            armors_ref,
-            names_ref,
-            &mut self.armor_descriptions,
-            search_query,
-            class_id_filter,
-            element_filter,
-            equip_type_filter,
-            selected_armor_index,
-            show_dummy_armor,
-            armor_tab,
-            page_indices,
-            current_page,
-            total_pages,
-            filtered_count,
-        );
-
-        // Add "Add a new piece" and export buttons
-        ui.horizontal(|ui| {
-            let armor_type = match *armor_tab {
-                ArmorTab::Head => "head",
-                ArmorTab::Body => "body", 
-                ArmorTab::Arms => "arms",
-                ArmorTab::Waist => "waist",
-                ArmorTab::Legs => "legs",
-            };
-            
-            if ui.button(format!("Add a new {} piece", armor_type)).clicked() {
-                // Create a new default armor piece
-                let mut new_armor = MhfdatEquipment::default();
-                new_armor.model_id_male = 0x0000;
-                new_armor.model_id_female = 0x0000;
-                new_armor.equipable_by = 0x0F; // All flags enabled by default
-                new_armor.base_slots = 0;
-                new_armor.max_slots = 3;
-                
-                // Add to appropriate armor list and print data
-                match *armor_tab {
-                    ArmorTab::Head => {
-                        self.head_armors.insert(real_count, new_armor.clone());
-                        let name = "New Head Armor".to_string();
-                        self.head_armor_names.insert(real_count, name.clone());
-                        // Increment EquipmentCounts
-                        if let Some(counts) = &mut self.equipment_counts {
-                            counts.numHeadA += 1;
-                        }
-                        // Sélectionner la nouvelle pièce
-                        self.selected_armor_index = Some(real_count);
-                        self.armor_page = (real_count / 15) as u32; // Update page to show new armor
-
-                    },
-                    ArmorTab::Body => {
-                        self.body_armors.insert(real_count, new_armor.clone());
-                        let name = "New Body Armor".to_string();
-                        self.body_armor_names.insert(real_count, name.clone());
-                        if let Some(counts) = &mut self.equipment_counts {
-                            counts.numBodyA += 1;
-                        }
-                        self.selected_armor_index = Some(real_count);
-                        self.armor_page = (real_count / 15) as u32;
-
-                    },
-                    ArmorTab::Arms => {
-                        self.arms_armors.insert(real_count, new_armor.clone());
-                        let name = "New Arms Armor".to_string();
-                        self.arms_armor_names.insert(real_count, name.clone());
-                        if let Some(counts) = &mut self.equipment_counts {
-                            counts.numArmA += 1;
-                        }
-                        self.selected_armor_index = Some(real_count);
-                        self.armor_page = (real_count / 15) as u32;
-
-                    },
-                    ArmorTab::Waist => {
-                        self.waist_armors.insert(real_count, new_armor.clone());
-                        let name = "New Waist Armor".to_string();
-                        self.waist_armor_names.insert(real_count, name.clone());
-                        if let Some(counts) = &mut self.equipment_counts {
-                            counts.numWaistA += 1;
-                        }
-                        self.selected_armor_index = Some(real_count);
-                        self.armor_page = (real_count / 15) as u32;
-
-                    },
-                    ArmorTab::Legs => {
-                        self.legs_armors.insert(real_count, new_armor.clone());
-                        let name = "New Legs Armor".to_string();
-                        self.legs_armor_names.insert(real_count, name.clone());
-                        if let Some(counts) = &mut self.equipment_counts {
-                            counts.numLegA += 1;
-                        }
-                        self.selected_armor_index = Some(real_count);
-                        self.armor_page = (real_count / 15) as u32;
-
-                    },
-                }
+            if ui.button("Add New").clicked() {
+                // This will be handled after the closure
             }
         });
+
+        // Handle Export JSON button click
+            if ui.button("Export JSON").clicked() {
+            let export_armors: Vec<ArmorExport> = armors
+                    .iter()
+                    .enumerate()
+                    .map(|(index, armor)| {
+                    let name = names.get(index).cloned().unwrap_or_default();
+                        ArmorExport::from_armor_with_data(armor, &name, index)
+                    })
+                    .collect();
+            let filename = format!("{}_armor.json", armor_type_str);
+                if let Ok(json) = serde_json::to_string_pretty(&export_armors) {
+                    let _ = std::fs::write(&filename, json);
+                }
+            }
+
+        // Handle Add New button click
+        if ui.button("Add New").clicked() {
+            let mut new_armor = MhfdatEquipment::default();
+            let next_model_id = 0;
+            new_armor.model_id_male = 0;
+            new_armor.model_id_female = 0;
+            new_armor.equipable_by = 0x0F; // All flags enabled by default
+            new_armor.base_slots = 0;
+            new_armor.max_slots = 3;
+            
+            armors.insert(real_count, new_armor);
+            names.insert(real_count, format!("New {} Armor", armor_type));
+            // Note: Other self modifications will be handled after the function scope
+        }
+
+        // Search and filters
+        ui.horizontal(|ui| {
+            ui.label("Search:");
+            ui.text_edit_singleline(&mut self.search_query);
+            ui.checkbox(&mut self.show_dummy_weapons, "Show Dummy Armor");
+        });
+
+        if max_count == 0 {
+            ui.colored_label(egui::Color32::YELLOW, format!("Warning: No {} armor found!", armor_type));
+        } else {
+            // Filter armors
+            let query = self.search_query.to_lowercase();
+            let filtered_armors: Vec<(usize, &MhfdatEquipment)> = armors.iter()
+                .enumerate()
+                .take(max_count)
+                .filter(|(i, armor)| {
+                    let armor_name = names.get(*i).cloned().unwrap_or_default();
+                    
+                    // Copy fields to local variables to avoid unaligned references
+                    let model_id_male = armor.model_id_male;
+                    let model_id_female = armor.model_id_female;
+                    let rarity = armor.rarity;
+                    let base_defense = armor.base_defense;
+                    let equipable_by = armor.equipable_by;
+
+                    // Dummy armor detection
+                    let is_dummy = model_id_male == 0x0000
+                        && model_id_female == 0x0000
+                        && rarity == 0x00
+                        && equipable_by == 0x00
+                        && armor.zenny_cost == 0x00000000
+                        && base_defense == 0x0000
+                        && armor.zenith_skill == 0x0000;
+
+                    // Apply dummy filter
+                    if self.show_dummy_weapons {
+                        if !is_dummy { return false; }
+                    } else {
+                        if is_dummy { return false; }
+                    }
+
+                    // Apply search filter
+                    if !query.is_empty() && !armor_name.to_lowercase().contains(&query) {
+                        return false;
+                    }
+
+                    true
+                })
+                .collect();
+
+            // Calculate pagination
+            let entries_per_page = 15;
+            let total_pages = if filtered_armors.is_empty() { 1 } else { 
+                ((filtered_armors.len() + entries_per_page - 1) / entries_per_page).max(1)
+            };
+            let current_page = self.armor_page as usize;
+            let start_idx = current_page * entries_per_page;
+            let end_idx = (start_idx + entries_per_page).min(filtered_armors.len());
+
+            // Armor list
+            MhfdatApp::list_scroll(ui, "armor_list_scroll", |ui| {
+                egui::Grid::new("armor_list_grid")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label("ID");
+                        ui.label("Name");
+                        ui.label("Rarity");
+                        ui.label("Defense");
+                        ui.label("Element");
+                        ui.label("Slots");
+                        ui.label("Type");
+                        ui.end_row();
+
+                        for (original_idx, armor) in filtered_armors[start_idx..end_idx].iter() {
+                            let i = *original_idx;
+                            let armor_name = names.get(i).cloned().unwrap_or_default();
+
+                            // Copy fields to local variables to avoid unaligned references
+                            let model_id_male = armor.model_id_male;
+                            let model_id_female = armor.model_id_female;
+                            let rarity = armor.rarity;
+                            let base_defense = armor.base_defense;
+                            let base_slots = armor.base_slots;
+                            let max_slots = armor.max_slots;
+                            let fire_res = armor.fire_res;
+                            let water_res = armor.water_res;
+                            let thunder_res = armor.thunder_res;
+                            let dragon_res = armor.dragon_res;
+                            let ice_res = armor.ice_res;
+                            let equipable_by = armor.equipable_by;
+
+                            let selected = self.selected_armor_index == Some(i);
+                            if ui.selectable_label(selected, format!("{}", i + 1)).clicked() {
+                                self.selected_armor_index = Some(i);
+                                *self.view_mode.get_mut("armor").unwrap() = ViewMode::Details;
+                            }
+                            ui.label(&armor_name);
+                            ui.label(format!("{}", rarity + 1));
+                            ui.label(format!("{}", base_defense));
+                            ui.label(format!("Fire:{} Water:{} Thunder:{} Dragon:{} Ice:{}", 
+                                fire_res, water_res, thunder_res, 
+                                dragon_res, ice_res));
+                            ui.label(format!("{}/{}", base_slots, max_slots));
+                            ui.label(armor_type_name(equipable_by));
+                            ui.end_row();
+                        }
+                    });
+            });
 
         // Pagination controls
-        ui.horizontal(|ui| {
-            let can_go_previous = current_page > 0 && filtered_count > 0;
-            let can_go_next = current_page < total_pages.saturating_sub(1) && filtered_count > 0;
-            
-            if ui.button("← Previous").clicked() && can_go_previous {
-                self.armor_page = (current_page.saturating_sub(1)) as u32;
-            }
-            if filtered_count > 0 {
-                ui.label(format!("Page {} of {}", current_page + 1, total_pages));
-            } else {
-                ui.label("No results found");
-            }
-            if ui.button("Next →").clicked() && can_go_next {
-                self.armor_page = (current_page + 1) as u32;
-            }
-        });
+            MhfdatApp::pagination_controls(ui, &mut self.armor_page, total_pages);
+        }
     }
 
-    pub fn show_armor_list(
-        ui: &mut egui::Ui,
-        armors: &mut [MhfdatEquipment],
-        names: &mut [String],
-        descriptions: &mut Vec<[String; 3]>,
-        search_query: &mut String,
-        class_id_filter: Option<u8>,
-        element_filter: Option<u8>,
-        equip_type_filter: Option<u8>,
-        selected_armor_index: &mut Option<usize>,
-        show_dummy_armor: &mut bool,
-        armor_tab: &mut ArmorTab,
-        page_indices: &[usize],
-        current_page: usize,
-        total_pages: usize,
-        filtered_count: usize,
-    ) {
-        let armor_type = match armor_tab {
+    pub fn show_armor_details_view(&mut self, ui: &mut egui::Ui) {
+        if ui.button("← Back to List").clicked() {
+            *self.view_mode.get_mut("armor").unwrap() = ViewMode::List;
+            return;
+        }
+
+        if let Some(index) = self.selected_armor_index {
+            let (armors, names) = match self.armor_tab {
+                ArmorTab::Head => (&mut self.head_armors, &mut self.head_armor_names),
+                ArmorTab::Body => (&mut self.body_armors, &mut self.body_armor_names),
+                ArmorTab::Arms => (&mut self.arms_armors, &mut self.arms_armor_names),
+                ArmorTab::Waist => (&mut self.waist_armors, &mut self.waist_armor_names),
+                ArmorTab::Legs => (&mut self.legs_armors, &mut self.legs_armor_names),
+            };
+
+            let armor_type = match self.armor_tab {
             ArmorTab::Head => "Head",
             ArmorTab::Body => "Body",
             ArmorTab::Arms => "Arms",
@@ -309,97 +277,77 @@ impl MhfdatApp {
             ArmorTab::Legs => "Legs",
         };
 
-        ui.heading(format!("{} Armor (found: {})", armor_type, filtered_count));
-
-        // Search and filters
-        ui.horizontal(|ui| {
-            ui.label("Search:");
-            ui.text_edit_singleline(search_query);
-            ui.checkbox(show_dummy_armor, "Show Dummy Armor");
-        });
-
-        // Export buttons
-        ui.horizontal(|ui| {
-            if ui.button(format!("Export {} Armor to JSON", armor_type)).clicked() {
-                // Convert armor to export format with decomposed bitfields
-                let export_armors: Vec<ArmorExport> = armors
-                    .iter()
-                    .enumerate()
-                    .map(|(index, armor)| {
-                        let name = names.get(index).cloned().unwrap_or_default();
-                        ArmorExport::from_armor_with_data(armor, &name, index)
-                    })
-                    .collect();
+            if let Some(armor) = armors.get_mut(index) {
+                let name = names.get(index).cloned().unwrap_or_default();
                 
-                let filename = format!("{}_armor.json", armor_type.to_lowercase());
-                if let Ok(json) = serde_json::to_string_pretty(&export_armors) {
-                    if let Ok(mut file) = File::create(&filename) {
-                        let _ = file.write_all(json.as_bytes());
-                    }
-                }
-            }
-        });
-
-        if filtered_count == 0 {
-            ui.colored_label(egui::Color32::YELLOW, format!("Warning: No {} armor found!", armor_type));
-        } else {
-            // Show selected armor details if any
-            if let Some(index) = selected_armor_index {
-                if let Some(armor) = armors.get_mut(*index) {
-                    let name = names.get(*index).cloned().unwrap_or_default();
-                    let mut current_descriptions = descriptions.get(*index).cloned().unwrap_or_default();
-                    let mut should_return = false;
-                    
-                    egui::Frame::group(ui.style()).show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.heading(format!("Editing {} Armor #{}", armor_type, *index));
-                            if ui.button("← Back to List").clicked() {
-                                should_return = true;
-                            }
-                        });
-                        
-                        ui.add_space(10.0);
-                        
-                        // Basic Info
-                        ui.group(|ui| {
-                            ui.heading("Basic Information");
+                ui.heading(format!("Edit {} Armor #{}", armor_type, index));
+                ui.separator();
+                
+                // Editable name
                             ui.horizontal(|ui| {
                                 ui.label("Name:");
                                 let mut name_edit = name.clone();
                                 if ui.text_edit_singleline(&mut name_edit).changed() {
-                                    if let Some(name_ref) = names.get_mut(*index) {
+                        if let Some(name_ref) = names.get_mut(index) {
                                         *name_ref = name_edit;
                                     }
                                 }
                             });
-                        });
+                
+                ui.separator();
+                Self::render_armor_details(ui, armor, 
+                    &mut self.armor_skill1_search,
+                    &mut self.armor_skill2_search,
+                    &mut self.armor_skill3_search,
+                    &mut self.armor_skill4_search,
+                    &mut self.armor_skill5_search,
+                    &mut self.armor_zenith_skill_search
+                );
+            }
+        } else {
+            ui.label("No armor selected");
+        }
+    }
 
-                        ui.add_space(10.0);
+    pub fn render_armor_details(
+        ui: &mut egui::Ui, 
+        armor: &mut MhfdatEquipment,
+        armor_skill1_search: &mut String,
+        armor_skill2_search: &mut String,
+        armor_skill3_search: &mut String,
+        armor_skill4_search: &mut String,
+        armor_skill5_search: &mut String,
+        armor_zenith_skill_search: &mut String,
+    ) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            // Basic Stats
+            ui.collapsing("Basic Stats", |ui| {
+                let mut model_id_male = armor.model_id_male;
+                let mut model_id_female = armor.model_id_female;
+                let mut rarity = armor.rarity;
+                let mut max_level = armor.max_level;
+                let mut base_defense = armor.base_defense;
 
-                        // Main layout with two columns
-                        ui.horizontal(|ui| {
-                            // Left column - Equipment Flags and Stats
-                            ui.vertical(|ui| {
-                                ui.group(|ui| {
-                                    ui.heading("Equipment Flags");
-                                    
+                Self::render_editable_field(ui, "Model ID Male", &mut model_id_male);
+                Self::render_editable_field(ui, "Model ID Female", &mut model_id_female);
+                Self::render_editable_field(ui, "Rarity", &mut rarity);
+                Self::render_editable_field(ui, "Max Level", &mut max_level);
+                Self::render_editable_field(ui, "Base Defense", &mut base_defense);
+
+                armor.model_id_male = model_id_male;
+                armor.model_id_female = model_id_female;
+                armor.rarity = rarity;
+                armor.max_level = max_level;
+                armor.base_defense = base_defense;
+            });
+
+            // Equipment Flags
+            ui.collapsing("Equipment Flags", |ui| {
                                     let (is_male, is_female, is_blade, is_gunner) = Self::get_equipment_flags(armor.equipable_by);
                                     let mut male = is_male;
                                     let mut female = is_female;
                                     let mut blade = is_blade;
                                     let mut gunner = is_gunner;
-
-                                    // Copy packed fields to local variables
-                                    let model_id_male = armor.model_id_male;
-                                    let model_id_female = armor.model_id_female;
-                                    let rarity = armor.rarity;
-                                    let max_level = armor.max_level;
-                                    let base_defense = armor.base_defense;
-                                    let fire_res = armor.fire_res;
-                                    let water_res = armor.water_res;
-                                    let thunder_res = armor.thunder_res;
-                                    let dragon_res = armor.dragon_res;
-                                    let ice_res = armor.ice_res;
 
                                     ui.horizontal(|ui| {
                                         ui.label("Gender:");
@@ -416,280 +364,234 @@ impl MhfdatApp {
                                             Self::set_equipment_flags(armor, male, female, blade, gunner);
                                         }
                                     });
+            });
 
-                                    ui.add_space(5.0);
+            // Resistances
+            ui.collapsing("Resistances", |ui| {
+                let mut fire_res = armor.fire_res;
+                let mut water_res = armor.water_res;
+                let mut thunder_res = armor.thunder_res;
+                let mut dragon_res = armor.dragon_res;
+                let mut ice_res = armor.ice_res;
 
-                                    ui.horizontal(|ui| {
-                                        ui.label("Model ID Male:");
-                                        let mut male_id = model_id_male;
-                                        if ui.add(egui::DragValue::new(&mut male_id).speed(1.0)).changed() {
-                                            armor.model_id_male = male_id;
-                                        }
-                                    });
+                Self::render_editable_field(ui, "Fire Res", &mut fire_res);
+                Self::render_editable_field(ui, "Water Res", &mut water_res);
+                Self::render_editable_field(ui, "Thunder Res", &mut thunder_res);
+                Self::render_editable_field(ui, "Dragon Res", &mut dragon_res);
+                Self::render_editable_field(ui, "Ice Res", &mut ice_res);
 
-                                    ui.horizontal(|ui| {
-                                        ui.label("Model ID Female:");
-                                        let mut female_id = model_id_female;
-                                        if ui.add(egui::DragValue::new(&mut female_id).speed(1.0)).changed() {
-                                            armor.model_id_female = female_id;
-                                        }
-                                    });
+                armor.fire_res = fire_res;
+                armor.water_res = water_res;
+                armor.thunder_res = thunder_res;
+                armor.dragon_res = dragon_res;
+                armor.ice_res = ice_res;
+            });
 
-                                    ui.add_space(5.0);
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Rarity:");
-                                        let mut rarity_val = rarity;
-                                        if ui.add(egui::DragValue::new(&mut rarity_val).speed(1.0).clamp_range(0..=11)).changed() {
-                                            armor.rarity = rarity_val;
-                                        }
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Max Level:");
-                                        let mut level = max_level;
-                                        if ui.add(egui::DragValue::new(&mut level).speed(1.0).clamp_range(1..=7)).changed() {
-                                            armor.max_level = level;
-                                        }
-                                    });
-
-                                    ui.add_space(5.0);
-
-                                    // Defense section
-                                    ui.horizontal(|ui| {
-                                        ui.label("Base Defense:");
-                                        let mut def = base_defense;
-                                        if ui.add(egui::DragValue::new(&mut def).speed(1.0)).changed() {
-                                            armor.base_defense = def;
-                                        }
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Fire Res:");
-                                        let mut res = fire_res;
-                                        if ui.add(egui::DragValue::new(&mut res).speed(1.0)).changed() {
-                                            armor.fire_res = res;
-                                        }
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Water Res:");
-                                        let mut res = water_res;
-                                        if ui.add(egui::DragValue::new(&mut res).speed(1.0)).changed() {
-                                            armor.water_res = res;
-                                        }
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Thunder Res:");
-                                        let mut res = thunder_res;
-                                        if ui.add(egui::DragValue::new(&mut res).speed(1.0)).changed() {
-                                            armor.thunder_res = res;
-                                        }
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Dragon Res:");
-                                        let mut res = dragon_res;
-                                        if ui.add(egui::DragValue::new(&mut res).speed(1.0)).changed() {
-                                            armor.dragon_res = res;
-                                        }
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Ice Res:");
-                                        let mut res = ice_res;
-                                        if ui.add(egui::DragValue::new(&mut res).speed(1.0)).changed() {
-                                            armor.ice_res = res;
-                                        }
-                                    });
-                                });
-                            });
-
-                            ui.add_space(20.0);
-
-                            // Right column - Skills and Talents
-                            ui.vertical(|ui| {
-                                ui.group(|ui| {
-                                    ui.heading("Skills");
-                                    
-
-                                    
-
+            // Skills
+            ui.collapsing("Skills", |ui| {
+                let mut skill_id1 = armor.skill_id1;
+                let mut skill_pts1 = armor.skill_pts1;
+                let mut skill_id2 = armor.skill_id2;
+                let mut skill_pts2 = armor.skill_pts2;
+                let mut skill_id3 = armor.skill_id3;
+                let mut skill_pts3 = armor.skill_pts3;
+                let mut skill_id4 = armor.skill_id4;
+                let mut skill_pts4 = armor.skill_pts4;
+                let mut skill_id5 = armor.skill_id5;
+                let mut skill_pts5 = armor.skill_pts5;
+                let mut zenith_skill = armor.zenith_skill;
 
                                     // Skill 1
                                     ui.horizontal(|ui| {
                                         ui.label("Skill 1:");
-                                        let mut skill_id1 = armor.skill_id1;
-                                        let mut skill_pts1 = armor.skill_pts1;
-                                        egui::ComboBox::from_id_source("skill1_combo")
-                                            .selected_text(skill_name(skill_id1))
+                    ui.add(egui::TextEdit::singleline(armor_skill1_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = armor_skill1_search.to_lowercase();
+                    let current_text = SKILL_LIST.iter()
+                        .find(|(v, _)| *v == skill_id1)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("Unknown");
+                    
+                    egui::ComboBox::from_id_source("skill1_combo")
+                        .selected_text(current_text)
                                             .show_ui(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
                                                 for (id, name) in SKILL_LIST {
-                                                    if ui.selectable_value(&mut skill_id1, *id, *name).clicked() {}
+                                        if q.is_empty() || name.to_lowercase().contains(&q) {
+                                            ui.selectable_value(&mut skill_id1, *id, format!("{} - {}", id, name));
+                                        }
                                                 }
                                             });
+                        });
                                         
                                         ui.label("Points:");
-                                        ui.add(egui::DragValue::new(&mut skill_pts1).speed(1.0).clamp_range(-10..=10));
-                                        armor.skill_id1 = skill_id1;
-                                        armor.skill_pts1 = skill_pts1;
+                    ui.add(egui::DragValue::new(&mut skill_pts1).speed(1.0).clamp_range(-10..=10));
                                     });
 
                                     // Skill 2
                                     ui.horizontal(|ui| {
                                         ui.label("Skill 2:");
-                                        let mut skill_id = armor.skill_id2;
-                                        let mut skill_pts = armor.skill_pts2;
-                                        egui::ComboBox::from_id_source("skill2_combo")
-                                            .selected_text(skill_name(skill_id))
+                    ui.add(egui::TextEdit::singleline(armor_skill2_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = armor_skill2_search.to_lowercase();
+                    let current_text = SKILL_LIST.iter()
+                        .find(|(v, _)| *v == skill_id2)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("Unknown");
+                    
+                    egui::ComboBox::from_id_source("skill2_combo")
+                        .selected_text(current_text)
                                             .show_ui(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
                                                 for (id, name) in SKILL_LIST {
-                                                    if ui.selectable_value(&mut skill_id, *id, *name).clicked() {}
+                                        if q.is_empty() || name.to_lowercase().contains(&q) {
+                                            ui.selectable_value(&mut skill_id2, *id, format!("{} - {}", id, name));
+                                        }
                                                 }
                                             });
+                        });
                                         
                                         ui.label("Points:");
-                                        ui.add(egui::DragValue::new(&mut skill_pts).speed(1.0).clamp_range(-10..=10));
-                                        armor.skill_id2 = skill_id;
-                                        armor.skill_pts2 = skill_pts;
+                    ui.add(egui::DragValue::new(&mut skill_pts2).speed(1.0).clamp_range(-10..=10));
                                     });
 
                                     // Skill 3
                                     ui.horizontal(|ui| {
                                         ui.label("Skill 3:");
-                                        let mut skill_id = armor.skill_id3;
-                                        let mut skill_pts = armor.skill_pts3;
-                                        egui::ComboBox::from_id_source("skill3_combo")
-                                            .selected_text(skill_name(skill_id))
+                    ui.add(egui::TextEdit::singleline(armor_skill3_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = armor_skill3_search.to_lowercase();
+                    let current_text = SKILL_LIST.iter()
+                        .find(|(v, _)| *v == skill_id3)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("Unknown");
+                    
+                    egui::ComboBox::from_id_source("skill3_combo")
+                        .selected_text(current_text)
                                             .show_ui(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
                                                 for (id, name) in SKILL_LIST {
-                                                    if ui.selectable_value(&mut skill_id, *id, *name).clicked() {}
+                                        if q.is_empty() || name.to_lowercase().contains(&q) {
+                                            ui.selectable_value(&mut skill_id3, *id, format!("{} - {}", id, name));
+                                        }
                                                 }
                                             });
+                        });
                                         
                                         ui.label("Points:");
-                                        ui.add(egui::DragValue::new(&mut skill_pts).speed(1.0).clamp_range(-10..=10));
-                                        armor.skill_id3 = skill_id;
-                                        armor.skill_pts3 = skill_pts;
+                    ui.add(egui::DragValue::new(&mut skill_pts3).speed(1.0).clamp_range(-10..=10));
                                     });
 
                                     // Skill 4
                                     ui.horizontal(|ui| {
                                         ui.label("Skill 4:");
-                                        let mut skill_id = armor.skill_id4;
-                                        let mut skill_pts = armor.skill_pts4;
-                                        egui::ComboBox::from_id_source("skill4_combo")
-                                            .selected_text(skill_name(skill_id))
+                    ui.add(egui::TextEdit::singleline(armor_skill4_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = armor_skill4_search.to_lowercase();
+                    let current_text = SKILL_LIST.iter()
+                        .find(|(v, _)| *v == skill_id4)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("Unknown");
+                    
+                    egui::ComboBox::from_id_source("skill4_combo")
+                        .selected_text(current_text)
                                             .show_ui(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
                                                 for (id, name) in SKILL_LIST {
-                                                    if ui.selectable_value(&mut skill_id, *id, *name).clicked() {}
+                                        if q.is_empty() || name.to_lowercase().contains(&q) {
+                                            ui.selectable_value(&mut skill_id4, *id, format!("{} - {}", id, name));
+                                        }
                                                 }
                                             });
+                        });
                                         
                                         ui.label("Points:");
-                                        ui.add(egui::DragValue::new(&mut skill_pts).speed(1.0).clamp_range(-10..=10));
-                                        armor.skill_id4 = skill_id;
-                                        armor.skill_pts4 = skill_pts;
+                    ui.add(egui::DragValue::new(&mut skill_pts4).speed(1.0).clamp_range(-10..=10));
                                     });
 
                                     // Skill 5
                                     ui.horizontal(|ui| {
                                         ui.label("Skill 5:");
-                                        let mut skill_id = armor.skill_id5;
-                                        let mut skill_pts = armor.skill_pts5;
-                                        egui::ComboBox::from_id_source("skill5_combo")
-                                            .selected_text(skill_name(skill_id))
+                    ui.add(egui::TextEdit::singleline(armor_skill5_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = armor_skill5_search.to_lowercase();
+                    let current_text = SKILL_LIST.iter()
+                        .find(|(v, _)| *v == skill_id5)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("Unknown");
+                    
+                    egui::ComboBox::from_id_source("skill5_combo")
+                        .selected_text(current_text)
                                             .show_ui(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
                                                 for (id, name) in SKILL_LIST {
-                                                    if ui.selectable_value(&mut skill_id, *id, *name).clicked() {}
+                                        if q.is_empty() || name.to_lowercase().contains(&q) {
+                                            ui.selectable_value(&mut skill_id5, *id, format!("{} - {}", id, name));
+                                        }
                                                 }
                                             });
+                        });
                                         
                                         ui.label("Points:");
-                                        ui.add(egui::DragValue::new(&mut skill_pts).speed(1.0).clamp_range(-10..=10));
-                                        armor.skill_id5 = skill_id;
-                                        armor.skill_pts5 = skill_pts;
+                    ui.add(egui::DragValue::new(&mut skill_pts5).speed(1.0).clamp_range(-10..=10));
                                     });
-
-                                    ui.add_space(10.0);
 
                                     // Zenith Skill
                                     ui.horizontal(|ui| {
                                         ui.label("Zenith Skill:");
-                                        let mut zenith = armor.zenith_skill;
-                                        egui::ComboBox::from_id_source("zenith_skill_combo")
-                                            .selected_text(zenith_skill_name(zenith))
+                    ui.add(egui::TextEdit::singleline(armor_zenith_skill_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = armor_zenith_skill_search.to_lowercase();
+                    let current_text = ZENITH_SKILL_LIST.iter()
+                        .find(|(v, _)| *v == zenith_skill)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("Unknown");
+                    
+                    egui::ComboBox::from_id_source("zenith_skill_combo")
+                        .selected_text(current_text)
                                             .show_ui(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
                                                 for (id, name) in ZENITH_SKILL_LIST {
-                                                    if ui.selectable_value(&mut zenith, *id, *name).clicked() {}
+                                        if q.is_empty() || name.to_lowercase().contains(&q) {
+                                            ui.selectable_value(&mut zenith_skill, *id, format!("{} - {}", id, name));
                                                 }
-                                            });
-                                        armor.zenith_skill = zenith;
-                                    });
-                                });
+                                        }
                             });
                         });
                     });
                     
-                    if should_return {
-                        *selected_armor_index = None;
-                    }
-                }
-            } else {
-                // Armor list view
-                egui::ScrollArea::vertical()
-                    .id_source("armor_list_scroll")
-                    .show(ui, |ui| {
-                        egui::Grid::new("armor_list_grid")
-                            .striped(true)
-                            .show(ui, |ui| {
-                                ui.label("ID");
-                                ui.label("Name");
-                                ui.label("Rarity");
-                                ui.label("Defense");
-                                ui.label("Element");
-                                ui.label("Slots");
-                                ui.label("Type");
-                                ui.end_row();
-
-                                for &i in page_indices {
-                                    if let Some(armor) = armors.get_mut(i) {
-                                        let armor_name = names.get(i).cloned().unwrap_or_default();
-
-                                        // Copy fields to local variables to avoid unaligned references
-                                        let model_id_male = armor.model_id_male;
-                                        let model_id_female = armor.model_id_female;
-                                        let rarity = armor.rarity;
-                                        let base_defense = armor.base_defense;
-                                        let base_slots = armor.base_slots;
-                                        let max_slots = armor.max_slots;
-                                        let fire_res = armor.fire_res;
-                                        let water_res = armor.water_res;
-                                        let thunder_res = armor.thunder_res;
-                                        let dragon_res = armor.dragon_res;
-                                        let ice_res = armor.ice_res;
-                                        let equipable_by = armor.equipable_by;
-
-                                        let selected = *selected_armor_index == Some(i);
-                                        if ui.selectable_label(selected, format!("{}", i + 1)).clicked() {
-                                            *selected_armor_index = Some(i);
-                                        }
-                                        ui.label(&armor_name);
-                                        ui.label(format!("{}", rarity + 1));
-                                        ui.label(format!("{}", base_defense));
-                                        ui.label(format!("Fire:{} Water:{} Thunder:{} Dragon:{} Ice:{}", 
-                                            fire_res, water_res, thunder_res, 
-                                            dragon_res, ice_res));
-                                        ui.label(format!("{}/{}", base_slots, max_slots));
-                                        ui.label(armor_type_name(equipable_by));
-                                        ui.end_row();
-                                    }
-                                }
+                // Write back all skill values
+                armor.skill_id1 = skill_id1;
+                armor.skill_pts1 = skill_pts1;
+                armor.skill_id2 = skill_id2;
+                armor.skill_pts2 = skill_pts2;
+                armor.skill_id3 = skill_id3;
+                armor.skill_pts3 = skill_pts3;
+                armor.skill_id4 = skill_id4;
+                armor.skill_pts4 = skill_pts4;
+                armor.skill_id5 = skill_id5;
+                armor.skill_pts5 = skill_pts5;
+                armor.zenith_skill = zenith_skill;
                             });
                     });
-            }
-        }
     }
 
     fn get_equipment_flags(equipable_by: u8) -> (bool, bool, bool, bool) {
@@ -709,8 +611,6 @@ impl MhfdatApp {
         if is_gunner { bitfield |= 1 << 3; }
         armor.equipable_by = bitfield;
     }
-
-
 }
 
 fn armor_type_name(equipable_by: u8) -> &'static str {
@@ -721,4 +621,3 @@ fn armor_type_name(equipable_by: u8) -> &'static str {
         _ => "Unknown",
     }
 }
-

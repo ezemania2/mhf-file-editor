@@ -4,9 +4,9 @@ mod model;
 pub mod utils;
 mod app;
 pub mod core;
+mod randomizer;
 
 use eframe::{NativeOptions, egui};
-use std::path::PathBuf;
 use ico::IconDir;
 use std::sync::atomic::{AtomicBool, Ordering};
 use rfd;
@@ -22,12 +22,12 @@ enum AppState {
     FileTypeSelector,
     Mhfjmp(app::MhfjmpApp),
     Mhfdat(app::MhfdatApp),
+    Randomizer(randomizer::RandomizerApp),
 }
 
 pub struct RootApp {
     state: AppState,
     recent_files: Vec<String>,
-    loaded_file: Option<(PathBuf, Vec<u8>)>, // Store loaded file data
 }
 
 impl Default for RootApp {
@@ -35,7 +35,6 @@ impl Default for RootApp {
         Self {
             state: AppState::FileTypeSelector,
             recent_files: Vec::new(),
-            loaded_file: None,
         }
     }
 }
@@ -70,57 +69,79 @@ impl eframe::App for RootApp {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.heading("Select file type to open:");
 
-                    // File loading section
-                    ui.horizontal(|ui| {
-                        if ui.button("Open File").clicked() {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("Binary Files", &["bin"])
-                                .pick_file() 
-                            {
-                                if let Ok(data) = std::fs::read(&path) {
-                                    self.loaded_file = Some((path.clone(), data));
-                                    let opened_file = path.display().to_string();
-                                    if !self.recent_files.contains(&opened_file) {
-                                        self.recent_files.insert(0, opened_file.clone());
-                                        if self.recent_files.len() > 5 {
-                                            self.recent_files.pop();
+                    // Tools
+                    ui.add_space(10.0);
+                    if ui.button("Open Randomizer").clicked() {
+                        self.state = AppState::Randomizer(randomizer::RandomizerApp::default());
+                    }
+                    ui.separator();
+
+                    // File type selection buttons
+                    if ui.button("Open mhfjmp").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("MHFJMP Files", &["bin"])
+                            .set_title("Select MHFJMP file")
+                            .pick_file() 
+                        {
+                            // Vérifier que le nom du fichier contient "mhfjmp" (insensible à la casse)
+                            if let Some(file_name) = path.file_name() {
+                                let file_name_str = file_name.to_string_lossy().to_lowercase();
+                                if file_name_str.contains("mhfjmp") {
+                                    if let Ok(data) = std::fs::read(&path) {
+                                        let mut app = app::MhfjmpApp::default();
+                                        let state_ptr = self as *mut RootApp;
+                                        app.on_back = Some(Box::new(move || unsafe {
+                                            (*state_ptr).state = AppState::FileTypeSelector;
+                                        }));
+                                        let opened_file = path.display().to_string();
+                                        app.load_file(path, data);
+                                        self.state = AppState::Mhfjmp(app);
+                                        
+                                        // Ajouter aux fichiers récents
+                                        if !self.recent_files.contains(&opened_file) {
+                                            self.recent_files.insert(0, opened_file.clone());
+                                            if self.recent_files.len() > 5 {
+                                                self.recent_files.pop();
+                                            }
                                         }
                                     }
+                                } else {
+                                    // Afficher un message d'erreur si le fichier ne contient pas "mhfjmp" dans le nom
+                                    eprintln!("Error: Selected file must contain 'mhfjmp' in its name");
                                 }
                             }
                         }
-                    });
-
-                    // Show loaded file info if any
-                    if let Some((path, data)) = &self.loaded_file {
-                        ui.label(format!("Loaded file: {}", path.display()));
-                        ui.label(format!("File size: {} bytes", data.len()));
-                        ui.separator();
                     }
-
-                    // File type selection buttons
-                    ui.add_space(10.0);
-                    if ui.button("Open as mhfjmp").clicked() {
-                        if let Some((path, data)) = self.loaded_file.take() {
-                            let mut app = app::MhfjmpApp::default();
-                            let state_ptr = self as *mut RootApp;
-                            app.on_back = Some(Box::new(move || unsafe {
-                                (*state_ptr).state = AppState::FileTypeSelector;
-                            }));
-                            app.load_file(path, data);
-                            self.state = AppState::Mhfjmp(app);
-                        } else {
-                            // Show error or message that no file is loaded
-                        }
-                    }
-                    if ui.button("Open as mhfdat").clicked() {
-                        if let Some((path, data)) = self.loaded_file.take() {
-                            let mut app = app::MhfdatApp::default();
-                            // Load the file data into the app
-                            app.load_file(path, data);
-                            self.state = AppState::Mhfdat(app);
-                        } else {
-                            // Show error or message that no file is loaded
+                    
+                    if ui.button("Open mhfdat").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("MHFDAT Files", &["bin"])
+                            .set_title("Select MHFDAT file")
+                            .pick_file() 
+                        {
+                            // Vérifier que le nom du fichier contient "mhfdat" (insensible à la casse)
+                            if let Some(file_name) = path.file_name() {
+                                let file_name_str = file_name.to_string_lossy().to_lowercase();
+                                if file_name_str.contains("mhfdat") {
+                                    if let Ok(data) = std::fs::read(&path) {
+                                        let mut app = app::MhfdatApp::default();
+                                        let opened_file = path.display().to_string();
+                                        app.load_file(path, data);
+                                        self.state = AppState::Mhfdat(app);
+                                        
+                                        // Ajouter aux fichiers récents
+                                        if !self.recent_files.contains(&opened_file) {
+                                            self.recent_files.insert(0, opened_file.clone());
+                                            if self.recent_files.len() > 5 {
+                                                self.recent_files.pop();
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Afficher un message d'erreur si le fichier ne contient pas "mhfdat" dans le nom
+                                    eprintln!("Error: Selected file must contain 'mhfdat' in its name");
+                                }
+                            }
                         }
                     }
 
@@ -144,6 +165,7 @@ impl eframe::App for RootApp {
                     self.state = AppState::FileTypeSelector;
                 }
             }
+            AppState::Randomizer(app) => app.update(ctx, frame),
         }
     }
 }

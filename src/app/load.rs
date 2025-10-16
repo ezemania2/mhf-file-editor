@@ -77,66 +77,6 @@ impl MhfdatApp {
             self.armor_descriptions = descriptions;
         }
 
-        // === LOG ARMOR DATA POINTERS AND FIRST 3 ENTRIES OF EACH TYPE ===
-        let log_path = if let Some(current_file) = &self.current_file {
-            let parent = Path::new(current_file).parent().unwrap_or_else(|| Path::new(""));
-            parent.join("armor_data.log")
-        } else {
-            Path::new("armor_data.log").to_path_buf()
-        };
-        if let Ok(mut file) = File::create(log_path) {
-            writeln!(file, "=== ARMOR DATA POINTERS ===").ok();
-            let mut cursor = std::io::Cursor::new(&self.buffer);
-            let mut read_offset = |offset: u32| -> u64 {
-                cursor.seek(SeekFrom::Start(offset as u64)).ok();
-                let mut bytes = [0u8; 4];
-                cursor.read_exact(&mut bytes).ok();
-                u32::from_le_bytes(bytes) as u64
-            };
-            writeln!(file, "Head Armor: 0x{:08X}", read_offset(HEAD_ARMOR_PTR)).ok();
-            writeln!(file, "Body Armor: 0x{:08X}", read_offset(BODY_ARMOR_PTR)).ok();
-            writeln!(file, "Arms Armor: 0x{:08X}", read_offset(ARM_ARMOR_PTR)).ok();
-            writeln!(file, "Waist Armor: 0x{:08X}", read_offset(WAIST_ARMOR_PTR)).ok();
-            writeln!(file, "Legs Armor: 0x{:08X}", read_offset(LEG_ARMOR_PTR)).ok();
-            writeln!(file, "").ok();
-            let log_armor = |file: &mut File, label: &str, armors: &Vec<MhfdatEquipment>| {
-                writeln!(file, "=== {} ARMOR (First 3) ===", label).ok();
-                for (i, armor) in armors.iter().take(3).enumerate() {
-                    // Copy packed fields to local variables
-                    let model_id_male = armor.model_id_male;
-                    let model_id_female = armor.model_id_female;
-                    let equipable_by = armor.equipable_by;
-                    let rarity = armor.rarity;
-                    let max_level = armor.max_level;
-                    let zenny_cost = armor.zenny_cost;
-                    let base_defense = armor.base_defense;
-                    let fire_res = armor.fire_res;
-                    let water_res = armor.water_res;
-                    let thunder_res = armor.thunder_res;
-                    let dragon_res = armor.dragon_res;
-                    let ice_res = armor.ice_res;
-                    let base_slots = armor.base_slots;
-                    let max_slots = armor.max_slots;
-                    let zenith_skill = armor.zenith_skill;
-                    writeln!(file, "{}. Model IDs: Male=0x{:04X}, Female=0x{:04X}", i+1, model_id_male, model_id_female).ok();
-                    writeln!(file, "   Flags: 0x{:02X}", equipable_by).ok();
-                    writeln!(file, "   Rarity: {}", rarity).ok();
-                    writeln!(file, "   Max Level: {}", max_level).ok();
-                    writeln!(file, "   Zenny: {}", zenny_cost).ok();
-                    writeln!(file, "   Defense: {}", base_defense).ok();
-                    writeln!(file, "   Resistances: Fire={}, Water={}, Thunder={}, Dragon={}, Ice={}", fire_res, water_res, thunder_res, dragon_res, ice_res).ok();
-                    writeln!(file, "   Slots: Base={}, Max={}", base_slots, max_slots).ok();
-                    writeln!(file, "   Zenith Skill: 0x{:04X}", zenith_skill).ok();
-                    writeln!(file, "").ok();
-                }
-            };
-            log_armor(&mut file, "HEAD", &self.head_armors);
-            log_armor(&mut file, "BODY", &self.body_armors);
-            log_armor(&mut file, "ARMS", &self.arms_armors);
-            log_armor(&mut file, "WAIST", &self.waist_armors);
-            log_armor(&mut file, "LEGS", &self.legs_armors);
-        }
-
         // Load items
         let items = parse_items(&self.buffer);
         self.items = items;

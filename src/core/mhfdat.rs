@@ -2,16 +2,16 @@
 
 use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom, Result, Read, Cursor};
-use std::fs::File;
+// use std::fs::File;
 // use crate::model::mhfdat::MhfdatBinEntry;
-use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId};
+use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill};
 use byteorder::{ReadBytesExt, LittleEndian};
 use encoding_rs::SHIFT_JIS;
 use std::env;
 use std::path::PathBuf;
 use std::mem::size_of;
 use crate::model::mhfdat_pointers::EQUIPEMENT_COUNT_PTR;
-use std::ptr;
+// use std::ptr;
 
 // pub fn append_to_mhfdat_bin<P: AsRef<std::path::Path>>(path: P, entry: &MhfdatBinEntry) -> Result<()> {
 //     let mut file = OpenOptions::new()
@@ -224,7 +224,7 @@ pub fn extract_melee_weapon_names<R: Read + Seek>(
     
     // 4. For each entry, read the pointer to the string, then read the string
     let mut names = Vec::with_capacity(count);
-    for i in 0..count {
+    for _ in 0..count {
         let mut ptr_buf = [0u8; 4];
         reader.read_exact(&mut ptr_buf)?;
         let str_offset = u32::from_le_bytes(ptr_buf);
@@ -574,6 +574,68 @@ pub fn write_deco_shop_block(entries: &[DecoShop]) -> Result<Vec<u8>> {
     Ok(data)
 }
 
+/// Read automatic skills table from buffer at offset
+pub fn read_automatic_skills(buffer: &[u8], offset: usize) -> Vec<AutomaticSkill> {
+    let mut entries = Vec::new();
+    let mut cursor = offset;
+    let entry_size = size_of::<AutomaticSkill>();
+    
+    // Valid eq_type values: 0x00, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
+    let is_valid_eq_type = |eq_type: u8| -> bool {
+        matches!(eq_type, 0x00 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07)
+    };
+    
+    const MAX_SKILL_ID: u16 = 534;
+    
+    while cursor + entry_size <= buffer.len() {
+        let entry = unsafe { std::ptr::read_unaligned(buffer.as_ptr().add(cursor) as *const AutomaticSkill) };
+        
+        // Stop conditions:
+        // - All zeros
+        if entry.unk00 == 0 && entry.eq_type == 0 && entry.equip_id == 0 && entry.skill_id == 0 {
+            break;
+        }
+        // - equipID == 0xFFFF
+        if entry.equip_id == 0xFFFF {
+            break;
+        }
+        // - Invalid eq_type (not in valid list)
+        if !is_valid_eq_type(entry.eq_type) {
+            break;
+        }
+        // - Invalid skill_id (> 534)
+        if entry.skill_id > MAX_SKILL_ID {
+            break;
+        }
+        
+        entries.push(entry);
+        cursor += entry_size;
+    }
+    entries
+}
+
+/// Write a single automatic skill entry
+pub fn write_automatic_skill(writer: &mut impl Write, entry: &AutomaticSkill) -> Result<()> {
+    writer.write_all(&[entry.unk00])?;
+    writer.write_all(&[entry.eq_type])?;
+    writer.write_all(&entry.equip_id.to_le_bytes())?;
+    writer.write_all(&entry.skill_id.to_le_bytes())?;
+    writer.write_all(&entry.padding)?;
+    Ok(())
+}
+
+/// Write a block of automatic skills with sentinel
+pub fn write_automatic_skills_block(entries: &[AutomaticSkill]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for e in entries {
+        write_automatic_skill(&mut data, e)?;
+    }
+    // Sentinel: all zeros
+    let sentinel = AutomaticSkill::default();
+    write_automatic_skill(&mut data, &sentinel)?;
+    Ok(data)
+}
+
 pub fn read_sigil_tower_table(buffer: &[u8], offset: usize) -> Vec<SigilTowerTable> {
     let mut entries = Vec::new();
     let mut cursor = offset;
@@ -783,6 +845,121 @@ pub fn read_shop_entries_until_sentinel<R: Read + Seek>(reader: &mut R, offset: 
         entries.push(entry);
     }
     Ok(entries)
+}
+
+pub fn read_armor_upgrades_until_sentinel<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<Vec<crate::model::mhfdat::ArmorUpgradeRow>> {
+    use crate::model::mhfdat::ArmorUpgradeRow;
+    reader.seek(SeekFrom::Start(offset))?;
+    let mut rows: Vec<ArmorUpgradeRow> = Vec::new();
+    loop {
+        // Read one row (16 bytes)
+        let item_id = reader.read_u16::<LittleEndian>()?;
+        if item_id == 0xFFFF { break; }
+        let lv1 = reader.read_u16::<LittleEndian>()?;
+        let lv2 = reader.read_u16::<LittleEndian>()?;
+        let lv3 = reader.read_u16::<LittleEndian>()?;
+        let lv4 = reader.read_u16::<LittleEndian>()?;
+        let lv5 = reader.read_u16::<LittleEndian>()?;
+        let lv6 = reader.read_u16::<LittleEndian>()?;
+        let lv7 = reader.read_u16::<LittleEndian>()?;
+        rows.push(ArmorUpgradeRow {
+            item_id,
+            lv1_upgrade: lv1,
+            lv2_upgrade: lv2,
+            lv3_upgrade: lv3,
+            lv4_upgrade: lv4,
+            lv5_upgrade: lv5,
+            lv6_upgrade: lv6,
+            lv7_upgrade: lv7,
+        });
+    }
+    Ok(rows)
+}
+
+pub fn read_armor_upgrades_bounded<R: Read + Seek>(
+    reader: &mut R,
+    offset: u64,
+    end: u64,
+) -> Result<Vec<crate::model::mhfdat::ArmorUpgradeRow>> {
+    use crate::model::mhfdat::ArmorUpgradeRow;
+    reader.seek(SeekFrom::Start(offset))?;
+    let mut rows: Vec<ArmorUpgradeRow> = Vec::new();
+    loop {
+        // Ensure we have room for a full row (16 bytes)
+        if reader.stream_position()? + 16 > end { break; }
+        let item_id = reader.read_u16::<LittleEndian>()?;
+        if item_id == 0xFFFF { break; }
+        let lv1 = reader.read_u16::<LittleEndian>()?;
+        let lv2 = reader.read_u16::<LittleEndian>()?;
+        let lv3 = reader.read_u16::<LittleEndian>()?;
+        let lv4 = reader.read_u16::<LittleEndian>()?;
+        let lv5 = reader.read_u16::<LittleEndian>()?;
+        let lv6 = reader.read_u16::<LittleEndian>()?;
+        let lv7 = reader.read_u16::<LittleEndian>()?;
+        rows.push(ArmorUpgradeRow {
+            item_id,
+            lv1_upgrade: lv1,
+            lv2_upgrade: lv2,
+            lv3_upgrade: lv3,
+            lv4_upgrade: lv4,
+            lv5_upgrade: lv5,
+            lv6_upgrade: lv6,
+            lv7_upgrade: lv7,
+        });
+    }
+    Ok(rows)
+}
+
+fn read_armor_upgrade_row_at<R: Read + Seek>(reader: &mut R, at: u64) -> Result<crate::model::mhfdat::ArmorUpgradeRow> {
+    use crate::model::mhfdat::ArmorUpgradeRow;
+    reader.seek(SeekFrom::Start(at))?;
+    let item_id = reader.read_u16::<LittleEndian>()?;
+    let lv1 = reader.read_u16::<LittleEndian>()?;
+    let lv2 = reader.read_u16::<LittleEndian>()?;
+    let lv3 = reader.read_u16::<LittleEndian>()?;
+    let lv4 = reader.read_u16::<LittleEndian>()?;
+    let lv5 = reader.read_u16::<LittleEndian>()?;
+    let lv6 = reader.read_u16::<LittleEndian>()?;
+    let lv7 = reader.read_u16::<LittleEndian>()?;
+    Ok(ArmorUpgradeRow {
+        item_id,
+        lv1_upgrade: lv1,
+        lv2_upgrade: lv2,
+        lv3_upgrade: lv3,
+        lv4_upgrade: lv4,
+        lv5_upgrade: lv5,
+        lv6_upgrade: lv6,
+        lv7_upgrade: lv7,
+    })
+}
+
+pub fn read_armor_upgrades_from_pointer_table<R: Read + Seek>(
+    reader: &mut R,
+    table_off: u64,
+    table_end: u64,
+    file_len: u64,
+    rows_per_ptr: usize,
+) -> Result<Vec<crate::model::mhfdat::ArmorUpgradeRow>> {
+    use crate::model::mhfdat::ArmorUpgradeRow;
+    let mut rows: Vec<ArmorUpgradeRow> = Vec::new();
+    reader.seek(SeekFrom::Start(table_off))?;
+    while reader.stream_position()? + 4 <= table_end {
+        let mut ptr = reader.read_u32::<LittleEndian>()?;
+        if ptr == 0 { break; }
+        // VA rebase if needed
+        if (ptr as u64) >= file_len && ptr >= 0x0180_0000 { ptr -= 0x0180_0000; }
+        let start = ptr as u64;
+        // Ensure we have enough space for fixed rows
+        let need = (rows_per_ptr as u64) * 16;
+        if start + need > file_len { break; }
+        for k in 0..rows_per_ptr {
+            let at = start + (k as u64) * 16;
+            let row = read_armor_upgrade_row_at(reader, at)?;
+            if row.item_id == 0xFFFF { break; }
+            rows.push(row);
+        }
+    }
+    Ok(rows)
 }
 
 // Fonctions de lecture individuelles pour chaque type d'entrée
@@ -1710,6 +1887,9 @@ pub fn write_ranged_weapons_block(weapons: &[MhfdatRangedWeapon]) -> Result<Vec<
     write_ranged_weapon(&mut data, &sentinel)?;
     Ok(data)
 }
+
+/// Write a single RegAUpgradeRow to a writer
+// Armor upgrade writing helpers removed per feature removal
 
 pub fn save<W: Write + Seek>(
     writer: &mut W,

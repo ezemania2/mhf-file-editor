@@ -8,6 +8,33 @@ use std::io::Write;
 use serde_json;
 
 impl MhfdatApp {
+    /// Recompute weapon counts strictly from number of entries (max index + 1)
+    pub(crate) fn refresh_weapon_counts_from_entries(&mut self) {
+        if let Some(mut counts) = read_equipment_counts(&self.buffer) {
+            counts.numMeleeW = self.melee_weapons.len() as u16;
+            counts.numRangedW = self.ranged_weapons.len() as u16;
+            let _ = write_equipment_counts(&mut self.buffer, &counts);
+        }
+    }
+    /// Compute next melee weapon model_id from existing max id (not len)
+    fn next_melee_weapon_model_id(&self) -> u16 {
+        self.melee_weapons
+            .iter()
+            .map(|w| w.model_id)
+            .max()
+            .map(|max_id| max_id.saturating_add(1))
+            .unwrap_or(0)
+    }
+
+    /// Compute next ranged weapon model_id from existing max id (not len)
+    fn next_ranged_weapon_model_id(&self) -> u16 {
+        self.ranged_weapons
+            .iter()
+            .map(|w| w.model_id)
+            .max()
+            .map(|max_id| max_id.saturating_add(1))
+            .unwrap_or(0)
+    }
     pub fn show_weapons_tab(&mut self, ui: &mut egui::Ui) {
         // Initialize view modes if not present
         if !self.view_mode.contains_key("melee_weapons") {
@@ -17,8 +44,8 @@ impl MhfdatApp {
             self.view_mode.insert("ranged_weapons".to_string(), ViewMode::List);
         }
 
-        // Add weapon category tabs
-        ui.horizontal(|ui| {
+        // Add weapon category tabs (wrapped)
+        ui.horizontal_wrapped(|ui| {
             if ui.selectable_label(self.weapon_tab == WeaponTab::Melee, "Melee Weapons").clicked() {
                 self.weapon_tab = WeaponTab::Melee;
             }
@@ -44,46 +71,22 @@ impl MhfdatApp {
         }
     }
 
-    pub fn add_bulk_melee_weapons(&mut self, count: usize) {
-        let start_id = self.melee_weapons.len();
-        for i in 0..count {
-            let mut new_weapon = MhfdatMeleeWeapon::default();
-            new_weapon.model_id = (start_id + i) as u16;
-            self.melee_weapons.push(new_weapon);
-            self.melee_weapon_names.push(format!("New Weapon {}", start_id + i));
-            self.melee_weapon_descriptions.push(["".to_string(), "".to_string(), "".to_string()]);
-        }
-        
-        // Sélectionner la première nouvelle arme et basculer vers la vue détail
-        self.selected_melee_index = Some(start_id);
-        self.melee_weapons_page = (start_id / 15) as u32;
-        *self.view_mode.get_mut("melee_weapons").unwrap() = ViewMode::Details;
-        
-        // Mettre à jour le compteur d'armes
-        if let Some(mut equipment_counts) = read_equipment_counts(&self.buffer) {
-            equipment_counts.numMeleeW = (start_id + count) as u16;
-            write_equipment_counts(&mut self.buffer, &equipment_counts);
-        }
-    }
-
     pub fn add_single_melee_weapon(&mut self) {
-        let next_id = self.melee_weapons.len();
+        let next_model_id = self.next_melee_weapon_model_id();
         let mut new_weapon = MhfdatMeleeWeapon::default();
-        new_weapon.model_id = next_id as u16;
+        new_weapon.model_id = next_model_id;
         self.melee_weapons.push(new_weapon);
-        self.melee_weapon_names.push(format!("New Weapon {}", next_id));
+        self.melee_weapon_names.push(format!("New Weapon {}", next_model_id));
         self.melee_weapon_descriptions.push(["".to_string(), "".to_string(), "".to_string()]);
-        
+
         // Sélectionner la nouvelle arme et basculer vers la vue détail
-        self.selected_melee_index = Some(next_id);
-        self.melee_weapons_page = (next_id / 15) as u32;
+        let new_index = self.melee_weapons.len().saturating_sub(1);
+        self.selected_melee_index = Some(new_index);
+        self.melee_weapons_page = (new_index / 15) as u32;
         *self.view_mode.get_mut("melee_weapons").unwrap() = ViewMode::Details;
-        
-        // Mettre à jour le compteur d'armes
-        if let Some(mut equipment_counts) = read_equipment_counts(&self.buffer) {
-            equipment_counts.numMeleeW = (next_id + 1) as u16;
-            write_equipment_counts(&mut self.buffer, &equipment_counts);
-        }
+
+        // Mettre à jour le compteur d'armes (nombre réel en mémoire)
+        self.refresh_weapon_counts_from_entries();
     }
 
     pub fn show_melee_weapons_list(&mut self, ui: &mut egui::Ui) {
@@ -95,20 +98,50 @@ impl MhfdatApp {
             MELEE_WEAPONS_PTR as usize
         };
 
-        ui.heading(format!("Melee Weapons (found: {})", count));
-
-        // Add button to create new melee weapon
-        ui.horizontal(|ui| {
-            if ui.button("Add New Melee Weapon").clicked() {
-                self.add_single_melee_weapon();
+        MhfdatApp::section_header(ui, &format!("Melee Weapons (found: {})", count), |ui| {
+            if ui.button("Export to JSON").clicked() {
+                // Convert weapons to export format with decomposed bitfields
+                let export_weapons: Vec<MeleeWeaponExport> = self.melee_weapons
+                    .iter()
+                    .enumerate()
+                    .map(|(index, weapon)| {
+                        let name = self.melee_weapon_names.get(index).cloned().unwrap_or_default();
+                        let descriptions = self.melee_weapon_descriptions.get(index).cloned().unwrap_or_default();
+                        MeleeWeaponExport::from_weapon_with_data(weapon, &name, &descriptions, index)
+                    })
+                    .collect();
+                if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
+                    if let Ok(mut file) = File::create("melee_weapons.json") {
+                        let _ = file.write_all(json.as_bytes());
+                    }
+                }
             }
-            if ui.button("Add 250 Melee Weapons").clicked() {
-                self.add_bulk_melee_weapons(250);
+            if ui.button("Extract Names").clicked() {
+                // Extract only weapon names to a text file
+                let mut names_content = String::new();
+                names_content.push_str("# Noms d'armes de melee extraits\n");
+                names_content.push_str(&format!("# Total: {} armes\n", self.melee_weapons.len()));
+                names_content.push_str("# Format: ID: Nom\n\n");
+                
+                for (index, name) in self.melee_weapon_names.iter().enumerate() {
+                    names_content.push_str(&format!("{:5}: {}\n", index, name));
+                }
+                
+                if let Ok(mut file) = File::create("melee_weapon_names.txt") {
+                    if file.write_all(names_content.as_bytes()).is_ok() {
+                        self.error_message = Some(format!("Noms extraits: {} armes sauvées dans 'melee_weapon_names.txt'", self.melee_weapons.len()));
+                    } else {
+                        self.error_message = Some("Erreur lors de l'écriture du fichier de noms".to_string());
+                    }
+                } else {
+                    self.error_message = Some("Erreur lors de la création du fichier de noms".to_string());
+                }
             }
+            if ui.button("Add New").clicked() { self.add_single_melee_weapon(); }
         });
 
         // Search and filters
-        ui.horizontal(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("class_id_filter_combo")
                 .selected_text(self.class_id_filter.map(class_name).unwrap_or("All"))
@@ -174,27 +207,7 @@ impl MhfdatApp {
             ui.checkbox(&mut self.show_dummy_weapons, "Show Dummy Weapons");
         });
 
-        // Add export buttons
-        ui.horizontal(|ui| {
-            if ui.button("Export Melee Weapons to JSON").clicked() {
-                // Convert weapons to export format with decomposed bitfields
-                let export_weapons: Vec<MeleeWeaponExport> = self.melee_weapons
-                    .iter()
-                    .enumerate()
-                    .map(|(index, weapon)| {
-                        let name = self.melee_weapon_names.get(index).cloned().unwrap_or_default();
-                        let descriptions = self.melee_weapon_descriptions.get(index).cloned().unwrap_or_default();
-                        MeleeWeaponExport::from_weapon_with_data(weapon, &name, &descriptions, index)
-                    })
-                    .collect();
-                
-                if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
-                    if let Ok(mut file) = File::create("melee_weapons.json") {
-                        let _ = file.write_all(json.as_bytes());
-                    }
-                }
-            }
-        });
+        // filters
 
         if count == 0 {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No melee weapons found at the expected offset!");
@@ -295,10 +308,7 @@ impl MhfdatApp {
                 filtered_weapons.len()))
                 .default_open(true)
                 .show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_source("weapon_list_scroll")
-                        .max_height(600.0)
-                        .show(ui, |ui| {
+                    MhfdatApp::list_scroll(ui, "weapon_list_scroll", |ui| {
                             egui::Grid::new("weapon_list_grid")
                                 .striped(true)
                                 .show(ui, |ui| {
@@ -345,15 +355,7 @@ impl MhfdatApp {
                 });
 
             // Pagination controls
-            ui.horizontal(|ui| {
-                if ui.button("← Previous").clicked() && current_page > 0 {
-                    self.melee_weapons_page = (current_page - 1) as u32;
-                }
-                ui.label(format!("Page {} of {}", current_page + 1, total_pages));
-                if ui.button("Next →").clicked() && current_page < total_pages.saturating_sub(1) {
-                    self.melee_weapons_page = (current_page + 1) as u32;
-                }
-            });
+            MhfdatApp::pagination_controls(ui, &mut self.melee_weapons_page, total_pages);
         }
     }
 
@@ -365,32 +367,42 @@ impl MhfdatApp {
             0 // Default offset if not found
         };
 
-        ui.heading(format!("Ranged Weapons (found: {})", count));
-
-        // Add button to create new ranged weapon
-        if ui.button("Add New Ranged Weapon").clicked() {
-            let next_id = self.ranged_weapons.len();
-            let mut new_weapon = MhfdatRangedWeapon::default();
-            new_weapon.model_id = next_id as u16;
-            self.ranged_weapons.push(new_weapon);
-            self.ranged_weapon_names.push(format!("New Ranged Weapon {}", next_id));
-            self.ranged_weapon_descriptions.push(["".to_string(), "".to_string(), "".to_string()]);
-            
-            // Sélectionner la nouvelle arme et basculer vers la vue détail
-            self.selected_ranged_index = Some(next_id);
-            self.ranged_weapons_page = (next_id / 15) as u32;
-            *self.view_mode.get_mut("ranged_weapons").unwrap() = ViewMode::Details;
-            
-            // Update equipment count
-            if let Some(equipment_counts) = read_equipment_counts(&self.buffer) {
-                let mut new_counts = equipment_counts.clone();
-                new_counts.numRangedW = (next_id + 1) as u16;
-                write_equipment_counts(&mut self.buffer, &new_counts);
+        MhfdatApp::section_header(ui, &format!("Ranged Weapons (found: {})", count), |ui| {
+            if ui.button("Export to JSON").clicked() {
+                // Convert weapons to export format with decomposed bitfields
+                let export_weapons: Vec<RangedWeaponExport> = self.ranged_weapons
+                    .iter()
+                    .enumerate()
+                    .map(|(index, weapon)| {
+                        let name = self.ranged_weapon_names.get(index).cloned().unwrap_or_default();
+                        let descriptions = self.ranged_weapon_descriptions.get(index).cloned().unwrap_or_default();
+                        RangedWeaponExport::from_weapon_with_data(weapon, &name, &descriptions, index)
+                    })
+                    .collect();
+                if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
+                    if let Ok(mut file) = File::create("ranged_weapons.json") {
+                        let _ = file.write_all(json.as_bytes());
+                    }
+                }
             }
-        }
+        
+            if ui.button("Add New").clicked() {
+                let next_model_id = self.next_ranged_weapon_model_id();
+                let mut new_weapon = MhfdatRangedWeapon::default();
+                new_weapon.model_id = next_model_id;
+                self.ranged_weapons.push(new_weapon);
+                self.ranged_weapon_names.push(format!("New Ranged Weapon {}", next_model_id));
+                self.ranged_weapon_descriptions.push(["".to_string(), "".to_string(), "".to_string()]);
+                let new_index = self.ranged_weapons.len().saturating_sub(1);
+                self.selected_ranged_index = Some(new_index);
+                self.ranged_weapons_page = (new_index / 15) as u32;
+                *self.view_mode.get_mut("ranged_weapons").unwrap() = ViewMode::Details;
+                self.refresh_weapon_counts_from_entries();
+            }
+        });
 
         // Search and filters
-        ui.horizontal(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("class_id_filter_combo")
                 .selected_text(self.class_id_filter.map(class_name).unwrap_or("All"))
@@ -446,27 +458,7 @@ impl MhfdatApp {
             ui.checkbox(&mut self.show_dummy_ranged_weapons, "Show Dummy Weapons");
         });
 
-        // Add export buttons
-        ui.horizontal(|ui| {
-            if ui.button("Export Ranged Weapons to JSON").clicked() {
-                // Convert weapons to export format with decomposed bitfields
-                let export_weapons: Vec<RangedWeaponExport> = self.ranged_weapons
-                    .iter()
-                    .enumerate()
-                    .map(|(index, weapon)| {
-                        let name = self.ranged_weapon_names.get(index).cloned().unwrap_or_default();
-                        let descriptions = self.ranged_weapon_descriptions.get(index).cloned().unwrap_or_default();
-                        RangedWeaponExport::from_weapon_with_data(weapon, &name, &descriptions, index)
-                    })
-                    .collect();
-                
-                if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
-                    if let Ok(mut file) = File::create("ranged_weapons.json") {
-                        let _ = file.write_all(json.as_bytes());
-                    }
-                }
-            }
-        });
+        // filters
 
         if count == 0 {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No ranged weapons found at the expected offset!");
@@ -553,10 +545,7 @@ impl MhfdatApp {
                 filtered_weapons.len()))
                 .default_open(true)
                 .show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_source("ranged_weapon_list_scroll")
-                        .max_height(600.0)
-                        .show(ui, |ui| {
+                    MhfdatApp::list_scroll(ui, "ranged_weapon_list_scroll", |ui| {
                             egui::Grid::new("ranged_weapon_list_grid")
                                 .striped(true)
                                 .show(ui, |ui| {
@@ -603,19 +592,11 @@ impl MhfdatApp {
                 });
 
             // Pagination controls
-            ui.horizontal(|ui| {
-                if ui.button("← Previous").clicked() && current_page > 0 {
-                    self.ranged_weapons_page = (current_page - 1) as u32;
-                }
-                ui.label(format!("Page {} of {}", current_page + 1, total_pages));
-                if ui.button("Next →").clicked() && current_page < total_pages.saturating_sub(1) {
-                    self.ranged_weapons_page = (current_page + 1) as u32;
-                }
-            });
+            MhfdatApp::pagination_controls(ui, &mut self.ranged_weapons_page, total_pages);
         }
     }
 
-    pub fn render_melee_weapon_details(ui: &mut egui::Ui, weapon: &mut MhfdatMeleeWeapon) {
+    pub fn render_melee_weapon_details(ui: &mut egui::Ui, weapon: &mut MhfdatMeleeWeapon, zenith_skill_search: &mut String) {
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Basic Stats
             ui.collapsing("Basic Stats", |ui| {
@@ -712,7 +693,33 @@ impl MhfdatApp {
                 Self::render_editable_field(ui, "Visual Effects", &mut visual_effects);
                 Self::render_editable_field(ui, "Tower G50 Param ID", &mut tower_g50_param_id);
                 Self::render_combo_field(ui, "G Rank", &mut g_rank, &[(0, "Non-G"), (1, "G-Rank")]);
-                Self::render_combo_field(ui, "Zenith Skill", &mut zenith_skill, ZENITH_SKILL_LIST);
+                
+                // Zenith Skill with search
+                ui.horizontal(|ui| {
+                    ui.label("Zenith Skill:");
+                    ui.add(egui::TextEdit::singleline(zenith_skill_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = zenith_skill_search.to_lowercase();
+                    let current_text = ZENITH_SKILL_LIST.iter()
+                        .find(|(v, _)| *v == zenith_skill)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("Unknown");
+                    
+                    egui::ComboBox::from_id_source("melee_zenith_skill_combo")
+                        .selected_text(current_text)
+                        .show_ui(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
+                                    for (id, name) in ZENITH_SKILL_LIST {
+                                        if q.is_empty() || name.to_lowercase().contains(&q) {
+                                            ui.selectable_value(&mut zenith_skill, *id, format!("{} - {}", id, name));
+                                        }
+                                    }
+                                });
+                        });
+                });
 
                 weapon.length = length;
                 weapon.visual_effects = visual_effects;
@@ -723,7 +730,7 @@ impl MhfdatApp {
         });
     }
 
-    pub fn render_ranged_weapon_details(ui: &mut egui::Ui, weapon: &mut MhfdatRangedWeapon) {
+    pub fn render_ranged_weapon_details(ui: &mut egui::Ui, weapon: &mut MhfdatRangedWeapon, zenith_skill_search: &mut String) {
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Basic Stats
             ui.collapsing("Basic Stats", |ui| {
@@ -790,12 +797,55 @@ impl MhfdatApp {
                 Self::render_editable_field(ui, "Weapon Attribute", &mut weapon_attribute);
                 Self::render_equip_type_field(ui, "Equipment Type", &mut equip_type);
                 Self::render_weapon_type_field(ui, "Weapon Type", &mut weapon_type);
-                Self::render_bullet_types_field(ui, "Bullet Types", &mut bullet_types);
 
                 weapon.slots = slots;
                 weapon.weapon_attribute = weapon_attribute;
                 weapon.set_equip_type(equip_type);
                 weapon.set_weapon_type(weapon_type);
+                weapon.set_bullet_types(bullet_types);
+            });
+            
+            // Bullet Types Box - All ammo types with checkboxes
+            ui.collapsing("Ammo Types", |ui| {
+                let mut bullet_types = weapon.get_bullet_types();
+                
+                // All ammo types displayed with checkboxes
+                ui.horizontal_wrapped(|ui| {
+                    ui.checkbox(&mut bullet_types.normal_lv1, "Normal Lv1");
+                    ui.checkbox(&mut bullet_types.normal_lv2, "Normal Lv2");
+                    ui.checkbox(&mut bullet_types.normal_lv3, "Normal Lv3");
+                    ui.checkbox(&mut bullet_types.pierce_lv1, "Pierce Lv1");
+                    ui.checkbox(&mut bullet_types.pierce_lv2, "Pierce Lv2");
+                    ui.checkbox(&mut bullet_types.pierce_lv3, "Pierce Lv3");
+                    ui.checkbox(&mut bullet_types.spread_lv1, "Spread Lv1");
+                    ui.checkbox(&mut bullet_types.spread_lv2, "Spread Lv2");
+                    ui.checkbox(&mut bullet_types.spread_lv3, "Spread Lv3");
+                    ui.checkbox(&mut bullet_types.crag_lv1, "Crag Lv1");
+                    ui.checkbox(&mut bullet_types.crag_lv2, "Crag Lv2");
+                    ui.checkbox(&mut bullet_types.crag_lv3, "Crag Lv3");
+                    ui.checkbox(&mut bullet_types.cluster_lv1, "Cluster Lv1");
+                    ui.checkbox(&mut bullet_types.cluster_lv2, "Cluster Lv2");
+                    ui.checkbox(&mut bullet_types.cluster_lv3, "Cluster Lv3");
+                    ui.checkbox(&mut bullet_types.fire, "Fire");
+                    ui.checkbox(&mut bullet_types.water, "Water");
+                    ui.checkbox(&mut bullet_types.thunder, "Thunder");
+                    ui.checkbox(&mut bullet_types.ice, "Ice");
+                    ui.checkbox(&mut bullet_types.dragon, "Dragon");
+                    ui.checkbox(&mut bullet_types.recovery_lv1, "Recovery Lv1");
+                    ui.checkbox(&mut bullet_types.recovery_lv2, "Recovery Lv2");
+                    ui.checkbox(&mut bullet_types.poison_lv1, "Poison Lv1");
+                    ui.checkbox(&mut bullet_types.poison_lv2, "Poison Lv2");
+                    ui.checkbox(&mut bullet_types.paralysis_lv1, "Paralysis Lv1");
+                    ui.checkbox(&mut bullet_types.paralysis_lv2, "Paralysis Lv2");
+                    ui.checkbox(&mut bullet_types.sleep_lv1, "Sleep Lv1");
+                    ui.checkbox(&mut bullet_types.sleep_lv2, "Sleep Lv2");
+                    ui.checkbox(&mut bullet_types.tranquilizer, "Tranquilizer");
+                    ui.checkbox(&mut bullet_types.paint, "Paint");
+                    ui.checkbox(&mut bullet_types.demon, "Demon");
+                    ui.checkbox(&mut bullet_types.armor, "Armor");
+                });
+                
+                // Update the weapon's bullet types
                 weapon.set_bullet_types(bullet_types);
             });
 
@@ -809,7 +859,34 @@ impl MhfdatApp {
 
                 Self::render_editable_field(ui, "Tower G50 Param ID", &mut tower_g50_param_id);
                 Self::render_combo_field(ui, "G Rank", &mut g_rank, &[(0, "Non-G"), (1, "G-Rank")]);
-                Self::render_combo_field(ui, "Zenith Skill", &mut zenith_skill, ZENITH_SKILL_LIST);
+                
+                // Zenith Skill with search
+                ui.horizontal(|ui| {
+                    ui.label("Zenith Skill:");
+                    ui.add(egui::TextEdit::singleline(zenith_skill_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = zenith_skill_search.to_lowercase();
+                    let current_text = ZENITH_SKILL_LIST.iter()
+                        .find(|(v, _)| *v == zenith_skill)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("Unknown");
+                    
+                    egui::ComboBox::from_id_source("ranged_zenith_skill_combo")
+                        .selected_text(current_text)
+                        .show_ui(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
+                                    for (id, name) in ZENITH_SKILL_LIST {
+                                        if q.is_empty() || name.to_lowercase().contains(&q) {
+                                            ui.selectable_value(&mut zenith_skill, *id, format!("{} - {}", id, name));
+                                        }
+                                    }
+                                });
+                        });
+                });
+                
                 Self::render_editable_field(ui, "Sort Order", &mut sort_order);
                 Self::render_editable_field(ui, "Max Slots", &mut max_slots);
 
@@ -1047,7 +1124,7 @@ impl MhfdatApp {
                 });
                 
                 ui.separator();
-                Self::render_melee_weapon_details(ui, weapon);
+                Self::render_melee_weapon_details(ui, weapon, &mut self.zenith_skill_search);
 
                 // Upgrades (index-aligned: weapon i ↔ upgrade i)
                 ui.separator();
@@ -1180,7 +1257,7 @@ impl MhfdatApp {
                 });
                 
                 ui.separator();
-                Self::render_ranged_weapon_details(ui, weapon);
+                Self::render_ranged_weapon_details(ui, weapon, &mut self.zenith_skill_search);
 
                 // Upgrades (index-aligned: weapon i ↔ upgrade i)
                 ui.separator();

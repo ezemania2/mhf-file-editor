@@ -5,6 +5,7 @@ pub mod shop;
 pub mod save;
 pub mod load;
 pub mod mhfjmp;
+pub mod automatic_skills;
 
 pub use mhfjmp::MhfjmpApp;
 
@@ -16,7 +17,7 @@ use std::io::{Read, Seek, Write, SeekFrom};
 use crate::model::mhfdat::{
     MhfdatMeleeWeapon, MhfdatRangedWeapon, MeleeWeaponExport, RangedWeaponExport, 
     ArmorExport, MhfdatItem, ItemExport, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade,
-    MWUpgradePath, RWUpgradePath, EvoUpgrade,
+    MWUpgradePath, RWUpgradePath, EvoUpgrade, AutomaticSkill,
     MhfdatEquipment, EquipmentCounts
 };
 use crate::utils::weapon_patterns::{class_name, CLASS_ID_LIST, element_name, ELEMENT_ID_LIST, ailment_name, AILMENT_ID_LIST, equip_type_name, EQUIP_TYPE_LIST, weapon_type_name, WEAPON_TYPE_LIST, zenith_skill_name, ZENITH_SKILL_LIST, recoil, RECOIL_LIST, reload, RELOAD_LIST};
@@ -29,12 +30,13 @@ use crate::core::mhfdat::{
     read_items_until_sentinel, extract_item_names, extract_item_descriptions,
     extract_melee_weapon_names, extract_melee_weapon_descriptions_v2,
     extract_armor_names, extract_armor_descriptions, read_deco_id_table,
-    read_deco_shop,
+    read_deco_shop, read_automatic_skills,
     write_melee_weapon, write_ranged_weapon, write_shop_entry,
     write_deco_shop, write_sigil_tower_table, write_g50_weapon_upgrade,
     write_mw_upgrade_path, write_rw_upgrade_path, write_evo_upgrade,
     write_weapon_names, write_ranged_weapon_names, write_armor_data, write_armor_names,
     write_armor_descriptions, write_transmog_data, write_zenith_data,
+    write_automatic_skills_block,
     append_bytes_to_file, read_mhfdat_offsets,
 };
 use crate::core::packing::pack_file;
@@ -49,6 +51,7 @@ use crate::model::mhfdat_pointers::{
     ITEM_DATA_PTR, ITEM_NAMES_PTR, ITEM_DESC_PTR, TRANSMOG_FORGING_PTR,
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR, DECO_ID_PTR,
     DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
+    AUTOMATIC_SKILLS_TABLE_PTR,
 };
 use std::fs::OpenOptions;
 use std::sync::{OnceLock, Mutex};
@@ -82,6 +85,7 @@ pub enum MainTab {
     Armor,
     Items,
     Shop,
+    AutomaticSkills,
 }
 
 impl Default for MainTab {
@@ -159,6 +163,13 @@ pub struct MhfdatApp {
     pub shop_equip_type_filter: Option<u8>,
     pub weapon_type_filter: Option<u32>,
     pub zenith_skill_filter: Option<u16>,
+    pub zenith_skill_search: String,
+    pub armor_skill1_search: String,
+    pub armor_skill2_search: String,
+    pub armor_skill3_search: String,
+    pub armor_skill4_search: String,
+    pub armor_skill5_search: String,
+    pub armor_zenith_skill_search: String,
     pub melee_weapon_names: Vec<String>,
     pub show_dummy_weapons: bool,
     pub show_dummy_ranged_weapons: bool,
@@ -229,6 +240,14 @@ pub struct MhfdatApp {
     pub selected_deco_shop_index: Option<usize>,
     pub deco_shop_search: String,
     pub deco_shop_page: u32,
+    
+    // Automatic Skills Table
+    pub automatic_skills: Vec<AutomaticSkill>,
+    pub automatic_skills_search: String,
+    pub automatic_skills_page: u32,
+    pub selected_automatic_skill_index: Option<usize>,
+    pub automatic_skills_eq_type_filter: Option<u8>,
+    pub automatic_skills_skill_search: String,
 }
 
 impl Default for MhfdatApp {
@@ -255,6 +274,13 @@ impl Default for MhfdatApp {
             shop_equip_type_filter: None,
             weapon_type_filter: None,
             zenith_skill_filter: None,
+            zenith_skill_search: String::new(),
+            armor_skill1_search: String::new(),
+            armor_skill2_search: String::new(),
+            armor_skill3_search: String::new(),
+            armor_skill4_search: String::new(),
+            armor_skill5_search: String::new(),
+            armor_zenith_skill_search: String::new(),
             melee_weapon_names: Vec::new(),
             show_dummy_weapons: false,
             show_dummy_ranged_weapons: false,
@@ -323,6 +349,14 @@ impl Default for MhfdatApp {
             selected_deco_shop_index: None,
             deco_shop_search: String::new(),
             deco_shop_page: 0,
+            
+            // Automatic Skills Table
+            automatic_skills: Vec::new(),
+            automatic_skills_search: String::new(),
+            automatic_skills_page: 0,
+            selected_automatic_skill_index: None,
+            automatic_skills_eq_type_filter: None,
+            automatic_skills_skill_search: String::new(),
         }
     }
 }
@@ -332,37 +366,11 @@ impl MhfdatApp {
         // Load the file data into the app
         self.current_file = Some(path);
         self.buffer = data.clone();
-        // Debug: log header pointers and resolved targets
-        let read_ptr = |buf: &Vec<u8>, at: u32| -> Option<u32> {
-            let off = at as usize;
-            if buf.len() >= off + 4 {
-                Some(u32::from_le_bytes([buf[off], buf[off+1], buf[off+2], buf[off+3]]))
-            } else { None }
-        };
-        if let Some(val) = read_ptr(&self.buffer, MELEE_WEAPONS_PTR) {
-            self.debug_logs.push(format!("PTR 0x{:03X} (MELEE) -> 0x{:08X}", MELEE_WEAPONS_PTR, val));
-        }
-        if let Some(val) = read_ptr(&self.buffer, RANGED_WEAPONS_PTR) {
-            self.debug_logs.push(format!("PTR 0x{:03X} (RANGED) -> 0x{:08X}", RANGED_WEAPONS_PTR, val));
-        }
-        if let Some(val) = read_ptr(&self.buffer, ITEM_DATA_PTR) {
-            self.debug_logs.push(format!("PTR 0x{:03X} (ITEMS) -> 0x{:08X}", ITEM_DATA_PTR, val));
-        }
-        if let Some(val) = read_ptr(&self.buffer, TRANSMOG_FORGING_PTR) {
-            self.debug_logs.push(format!("PTR 0x{:03X} (TRANSMOG) -> 0x{:08X}", TRANSMOG_FORGING_PTR, val));
-        }
-        if let Some(val) = read_ptr(&self.buffer, MELEE_WEAPON_UPGRADE_PATH_PTR) {
-            self.debug_logs.push(format!("PTR 0x{:03X} (MW UPGRADES) -> 0x{:08X}", MELEE_WEAPON_UPGRADE_PATH_PTR, val));
-        }
-        if let Some(val) = read_ptr(&self.buffer, RANGED_WEAPON_UPGRADE_PATH_PTR) {
-            self.debug_logs.push(format!("PTR 0x{:03X} (RW UPGRADES) -> 0x{:08X}", RANGED_WEAPON_UPGRADE_PATH_PTR, val));
-        }
-        if let Some(val) = read_ptr(&self.buffer, DECO_ID_PTR) {
-            self.debug_logs.push(format!(
-                "PTR 0x{:03X} (DECOID) -> 0x{:08X}",
-                DECO_ID_PTR, val
-            ));
-        }
+        // Clear previous logs; only armor-upgrade debug is kept elsewhere on demand
+        self.debug_logs.clear();
+        // Armor Upgrade logs (RegAUpgradeRow) – pointer, offset, count, preview
+        // Armor Upgrade logs: if the pointer region is a table of pointers, each points to 16 raw rows
+        // removed armor-upgrade debug block
         
         // Load weapons
         if let Some((melee_offset, ranged_offset)) = read_mhfdat_offsets(&self.buffer) {
@@ -376,6 +384,13 @@ impl MhfdatApp {
                 self.ranged_weapons = ranged_weapons;
             }
         }
+
+        // After weapons are loaded, refresh counts from entries
+        #[allow(unused)]
+        {
+            // Access refresh fn from weapons module impl
+            self.refresh_weapon_counts_from_entries();
+        }
         
         // Load transmog entries
         self.load_transmog_entries();
@@ -383,7 +398,10 @@ impl MhfdatApp {
         
         // Load weapon names and descriptions
         {
-            use crate::model::mhfdat_pointers::{MELEE_WEAPON_NAMES_PTR, MELEE_WEAPON_DESC_PTR, RANGED_WEAPON_NAMES_PTR, RANGED_WEAPON_DESC_PTR};
+            use crate::model::mhfdat_pointers::{
+                MELEE_WEAPON_NAMES_PTR, MELEE_WEAPON_DESC_PTR,
+                RANGED_WEAPON_NAMES_PTR, RANGED_WEAPON_DESC_PTR
+            };
             use crate::model::mhfdat_pointers::{MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR};
             use crate::core::mhfdat::{extract_melee_weapon_names, extract_melee_weapon_descriptions_v2, extract_ranged_weapon_names};
             
@@ -435,95 +453,45 @@ impl MhfdatApp {
         let buffer_ref = self.buffer.clone();
         self.load_armor_data(&buffer_ref);
 
+        // After armors are loaded, refresh equipment counts from entries
+        #[allow(unused)]
+        {
+            self.refresh_equipment_counts_from_entries();
+        }
+
         // Load decorations (DecoID table)
-        if let Some(deco_off) = read_ptr(&self.buffer, DECO_ID_PTR) {
-            // If the table has a fixed count in the pattern, prefer that to avoid premature stop
+        if let Some(deco_off) = {
+            let off = DECO_ID_PTR as usize;
+            if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
+        } {
             self.deco_ids = read_deco_id_table(&self.buffer, deco_off as usize, Some(crate::model::mhfdat_pointers::DECO_ID_COUNT));
-            // Debug: log source and small preview
-            self.debug_logs.push(format!(
-                "DecoID: header@0x{:03X} -> data@0x{:08X}, count={}",
-                DECO_ID_PTR,
-                deco_off,
-                self.deco_ids.len()
-            ));
-            // Hex preview of the first bytes at target
-            if (deco_off as usize) < self.buffer.len() {
-                let start = deco_off as usize;
-                let end = (start + 64).min(self.buffer.len());
-                let mut hex = String::new();
-                for b in &self.buffer[start..end] {
-                    use std::fmt::Write as _;
-                    let _ = write!(&mut hex, "{:02X} ", b);
-                }
-                self.debug_logs.push(format!("DecoID bytes[0..{}] @0x{:08X}: {}", end-start, deco_off, hex));
-            } else {
-                self.debug_logs.push(format!("DecoID offset 0x{:08X} is out of buffer range (len={})", deco_off, self.buffer.len()));
-            }
-            for (i, di) in self.deco_ids.iter().take(3).enumerate() {
-                let slots = di.slot_nb as u8;
-                let flags = di.flags as u16;
-                let price = di.price as u32;
-                let s1 = di.skill_id1 as u8; let p1 = di.skill_pts1 as i8;
-                let s2 = di.skill_id2 as u8; let p2 = di.skill_pts2 as i8;
-                let s3 = di.skill_id3 as u8; let p3 = di.skill_pts3 as i8;
-                let s4 = di.skill_id4 as u8; let p4 = di.skill_pts4 as i8;
-                let zen = di.zenith_skill as u16;
-                self.debug_logs.push(format!(
-                    "  [{}] slots={}, flags=0x{:04X}, price={}, skills=({}:{}, {}:{}, {}:{}, {}:{}), zenith={}",
-                    i, slots, flags, price, s1, p1, s2, p2, s3, p3, s4, p4, zen
-                ));
-            }
+        }
+
+        // Load automatic skills table
+        if let Some(auto_skills_off) = {
+            let off = AUTOMATIC_SKILLS_TABLE_PTR as usize;
+            if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
+        } {
+            self.automatic_skills = read_automatic_skills(&self.buffer, auto_skills_off as usize);
         }
 
         // Load upgrade paths for melee and ranged weapons (dereferenced pointers)
-        {
-            if let Some(mw_off) = read_ptr(&self.buffer, MELEE_WEAPON_UPGRADE_PATH_PTR) {
-                let mut cur = std::io::Cursor::new(&self.buffer);
-                if let Ok(mw) = read_mw_upgrade_until_sentinel(&mut cur, mw_off as u64) {
-                    self.mw_upgrade_entries = mw;
-                    // Debug: log source and preview
-                    self.debug_logs.push(format!(
-                        "MW upgrades: header@0x{:03X} -> data@0x{:08X}, count={}",
-                        MELEE_WEAPON_UPGRADE_PATH_PTR,
-                        mw_off,
-                        self.mw_upgrade_entries.len()
-                    ));
-                    for (i, up) in self.mw_upgrade_entries.iter().take(3).enumerate() {
-                        let mat1 = up.upgrade_material1; let qty1 = up.num_material1;
-                        let mat2 = up.upgrade_material2; let qty2 = up.num_material2;
-                        let mat3 = up.upgrade_material3; let qty3 = up.num_material3;
-                        let to1 = up.upgrades_to1; let to2 = up.upgrades_to2;
-                        let to3 = up.upgrades_to3; let to4 = up.upgrades_to4;
-                        self.debug_logs.push(format!(
-                            "  [{}] mats: ({}x{}, {}x{}, {}x{}), to: [{}, {}, {}, {}]",
-                            i, mat1, qty1, mat2, qty2, mat3, qty3, to1, to2, to3, to4
-                        ));
-                    }
-                }
+        if let Some(mw_off) = {
+            let off = MELEE_WEAPON_UPGRADE_PATH_PTR as usize;
+            if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
+        } {
+            let mut cur = std::io::Cursor::new(&self.buffer);
+            if let Ok(mw) = read_mw_upgrade_until_sentinel(&mut cur, mw_off as u64) {
+                self.mw_upgrade_entries = mw;
             }
-            if let Some(rw_off) = read_ptr(&self.buffer, RANGED_WEAPON_UPGRADE_PATH_PTR) {
-                let mut cur2 = std::io::Cursor::new(&self.buffer);
-                if let Ok(rw) = read_rw_upgrade_until_sentinel(&mut cur2, rw_off as u64) {
-                    self.rw_upgrade_entries = rw;
-                    // Debug: log source and preview
-                    self.debug_logs.push(format!(
-                        "RW upgrades: header@0x{:03X} -> data@0x{:08X}, count={}",
-                        RANGED_WEAPON_UPGRADE_PATH_PTR,
-                        rw_off,
-                        self.rw_upgrade_entries.len()
-                    ));
-                    for (i, up) in self.rw_upgrade_entries.iter().take(3).enumerate() {
-                        let mat1 = up.upgrade_material1; let qty1 = up.num_material1;
-                        let mat2 = up.upgrade_material2; let qty2 = up.num_material2;
-                        let mat3 = up.upgrade_material3; let qty3 = up.num_material3;
-                        let to1 = up.upgrades_to1; let to2 = up.upgrades_to2;
-                        let to3 = up.upgrades_to3; let to4 = up.upgrades_to4;
-                        self.debug_logs.push(format!(
-                            "  [{}] mats: ({}x{}, {}x{}, {}x{}), to: [{}, {}, {}, {}]",
-                            i, mat1, qty1, mat2, qty2, mat3, qty3, to1, to2, to3, to4
-                        ));
-                    }
-                }
+        }
+        if let Some(rw_off) = {
+            let off = RANGED_WEAPON_UPGRADE_PATH_PTR as usize;
+            if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
+        } {
+            let mut cur2 = std::io::Cursor::new(&self.buffer);
+            if let Ok(rw) = read_rw_upgrade_until_sentinel(&mut cur2, rw_off as u64) {
+                self.rw_upgrade_entries = rw;
             }
         }
         
@@ -567,28 +535,56 @@ impl App for MhfdatApp {
             ui.horizontal(|ui| {
                 if ui.button("Save").clicked() {
                     if let Some(path) = &self.current_file {
+                        // 1. Sauvegarder les données
                         match self.save_modified_data() {
                             Ok(()) => {
-                                self.error_message = Some("File saved successfully.".to_string());
-                            }
-                            Err(e) => {
-                                self.error_message = Some(format!("Failed to save file: {e}"));
-                            }
+                                // 2. Vérifier que les données sont bien écrites
+                                match self.verify_saved_data() {
+                                    Ok(()) => self.error_message = Some("File saved and verified successfully.".to_string()),
+                                    Err(e) => self.error_message = Some(format!("Save ok but verification failed: {e}")),
+                                }
+                            },
+                            Err(e) => self.error_message = Some(format!("Failed to save file: {e}")),
                         }
                     } else {
                         self.error_message = Some("No file loaded.".to_string());
                     }
                 }
-
-                if ui.button("Save (Pack + Encrypt)").clicked() {
-                    if let Some(path) = &self.current_file {
-                        match self.save_with_packing() {
+                
+                // Bouton de compression JPK Type 4
+                if ui.button("Compress").clicked() {
+                    if let Some(_path) = &self.current_file {
+                        match self.compress_file() {
                             Ok(()) => {
-                                self.error_message = Some("File saved with packing and encryption.".to_string());
-                            }
-                            Err(e) => {
-                                self.error_message = Some(format!("Failed to save file: {e}"));
-                            }
+                                if let Some(path) = &self.current_file {
+                                    let file_name = path.file_name()
+                                        .unwrap_or_default().to_string_lossy();
+                                    self.error_message = Some(format!("File {} compressed successfully.", file_name));
+                                } else {
+                                    self.error_message = Some("File compressed successfully.".to_string());
+                                }
+                            },
+                            Err(e) => self.error_message = Some(format!("Compression failed: {e}")),
+                        }
+                    } else {
+                        self.error_message = Some("No file loaded.".to_string());
+                    }
+                }
+                
+                // Bouton d'encryption ECD
+                if ui.button("Encrypt").clicked() {
+                    if let Some(_path) = &self.current_file {
+                        match self.encrypt_file() {
+                            Ok(()) => {
+                                if let Some(path) = &self.current_file {
+                                    let file_name = path.file_name()
+                                        .unwrap_or_default().to_string_lossy();
+                                    self.error_message = Some(format!("File {} encrypted successfully.", file_name));
+                                } else {
+                                    self.error_message = Some("File encrypted successfully.".to_string());
+                                }
+                            },
+                            Err(e) => self.error_message = Some(format!("Encryption failed: {e}")),
                         }
                     } else {
                         self.error_message = Some("No file loaded.".to_string());
@@ -602,8 +598,8 @@ impl App for MhfdatApp {
 
             ui.separator();
 
-            // Main tabs menu
-            ui.horizontal(|ui| {
+            // Main tabs menu (wrapped for responsiveness)
+            ui.horizontal_wrapped(|ui| {
                 if ui.selectable_label(self.main_tab == MainTab::Weapons, "Weapons").clicked() {
                     self.main_tab = MainTab::Weapons;
                 }
@@ -615,6 +611,9 @@ impl App for MhfdatApp {
                 }
                 if ui.selectable_label(self.main_tab == MainTab::Shop, "Shop").clicked() {
                     self.main_tab = MainTab::Shop;
+                }
+                if ui.selectable_label(self.main_tab == MainTab::AutomaticSkills, "Automatic Skills").clicked() {
+                    self.main_tab = MainTab::AutomaticSkills;
                 }
             });
             ui.separator();
@@ -632,6 +631,9 @@ impl App for MhfdatApp {
                 MainTab::Shop => {
                     self.show_shop_tab(ui);
                 }
+                MainTab::AutomaticSkills => {
+                    self.show_automatic_skills_tab(ui);
+                }
             }
 
             // Place Debug Logs at the end of the CentralPanel UI
@@ -643,6 +645,72 @@ impl App for MhfdatApp {
                     }
                 });
         });
+    }
+}
+
+impl MhfdatApp {
+    /// Render a horizontally wrapped row for responsive layouts
+    pub fn responsive_row<F: FnOnce(&mut egui::Ui)>(ui: &mut egui::Ui, add_contents: F) {
+        ui.horizontal_wrapped(|ui| {
+            add_contents(ui);
+        });
+    }
+
+    /// Compute a reasonable max height for list areas based on available space
+    pub fn compute_list_max_height(ui: &egui::Ui) -> f32 {
+        let available = ui.available_height();
+        (available - 150.0).max(240.0)
+    }
+
+    /// Standard vertical scroll with responsive max height
+    pub fn list_scroll<F: FnOnce(&mut egui::Ui)>(ui: &mut egui::Ui, id: &str, add_contents: F) {
+        egui::ScrollArea::vertical()
+            .id_source(id)
+            .max_height(Self::compute_list_max_height(ui))
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                add_contents(ui);
+            });
+    }
+
+    /// Unified pagination controls
+    pub fn pagination_controls(ui: &mut egui::Ui, current_page: &mut u32, total_pages: usize) {
+        let total_pages = total_pages.max(1);
+        ui.horizontal(|ui| {
+            let cp = (*current_page as usize).min(total_pages - 1);
+            
+            // First page button
+            if ui.add_enabled(cp > 0, egui::Button::new("⏮ First")).clicked() {
+                *current_page = 0;
+            }
+            
+            // Previous page button
+            if ui.add_enabled(cp > 0, egui::Button::new("← Previous")).clicked() {
+                *current_page = (cp - 1) as u32;
+            }
+            
+            // Page indicator
+            ui.label(format!("Page {} of {}", cp + 1, total_pages));
+            
+            // Next page button
+            if ui.add_enabled(cp + 1 < total_pages, egui::Button::new("Next →")).clicked() {
+                *current_page = (cp + 1) as u32;
+            }
+            
+            // Last page button
+            if ui.add_enabled(cp + 1 < total_pages, egui::Button::new("Last ⏭")).clicked() {
+                *current_page = (total_pages - 1) as u32;
+            }
+        });
+    }
+
+    /// Unified section header with top-left aligned actions, then title
+    pub fn section_header<F: FnOnce(&mut egui::Ui)>(ui: &mut egui::Ui, title: &str, add_left_actions: F) {
+        ui.horizontal(|ui| {
+            add_left_actions(ui);
+            ui.heading(title);
+        });
+        ui.separator();
     }
 }
 

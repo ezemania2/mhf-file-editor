@@ -53,3 +53,4 @@ pub const CUFF_GR_SHOP_PTR: u32 = 0x750;
 pub const TRANSMOG_FORGING_PTR: u32 = 0xAB8;
 pub const DECO_G_SHOP_PTR: u32 = 0xB48;
 
+pub const AUTOMATIC_SKILLS_TABLE_PTR: u32 = 0x804;

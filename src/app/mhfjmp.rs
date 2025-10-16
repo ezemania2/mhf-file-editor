@@ -1,7 +1,8 @@
 use super::*;
 use egui;
 use crate::model::mhfjmp::{MenuEntry, Area, StringEntry};
-use crate::core::mhfjmp::load_mhfjmp_bin_from_buffer;
+use crate::core::mhfjmp::{load_mhfjmp_bin_from_buffer, save_mhfjmp_bin};
+use crate::core::packing::{compress_file, encrypt_file};
 use std::path::PathBuf;
 use serde_json;
 
@@ -28,6 +29,7 @@ pub struct MhfjmpApp {
     pub selected_string_index: Option<usize>,
     pub current_file: Option<PathBuf>,
     pub error_message: Option<String>,
+    pub should_return_to_selector: bool,
 }
 
 impl Default for MhfjmpApp {
@@ -43,6 +45,7 @@ impl Default for MhfjmpApp {
             selected_string_index: None,
             current_file: None,
             error_message: None,
+            should_return_to_selector: false,
         }
     }
 }
@@ -52,9 +55,9 @@ impl App for MhfjmpApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
-                    if let Some(cb) = &mut self.on_back {
-                        cb();
-                    }
+                    // Prefer flag-based navigation to avoid unsafe callbacks
+                    self.should_return_to_selector = true;
+                    if let Some(cb) = &mut self.on_back { let _ = cb; }
                 }
                 if ui.button("Exporter JSON").clicked() {
                     if let Some(current_file) = &self.current_file {
@@ -94,6 +97,30 @@ impl App for MhfjmpApp {
                         }
                     }
                 }
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        if let Some(current_file) = &self.current_file {
+                            match save_mhfjmp_bin(current_file, &self.entries, &self.areas, &self.strings) {
+                                Ok(()) => {
+                                    self.error_message = Some("File saved successfully.".to_string());
+                                }
+                                Err(e) => {
+                                    self.error_message = Some(format!("Failed to save file: {}", e));
+                                }
+                            }
+                        } else {
+                            self.error_message = Some("No file loaded.".to_string());
+                        }
+                    }
+                    
+                    if ui.button("Compress").clicked() {
+                        self.compress_file();
+                    }
+                    
+                    if ui.button("Encrypt").clicked() {
+                        self.encrypt_file();
+                    }
+                });
             });
             self.show_mhfjmp_tab(ui);
         });
@@ -319,6 +346,44 @@ impl MhfjmpApp {
             Err(e) => {
                 self.error_message = Some(format!("Error loading file: {}", e));
             }
+        }
+    }
+
+    fn compress_file(&mut self) {
+        if let Some(current_file) = &self.current_file {
+            let temp_path = current_file.with_extension("tmp");
+            if let Err(e) = std::fs::copy(current_file, &temp_path) {
+                self.error_message = Some(format!("Error creating temp file for compression: {}", e));
+                return;
+            }
+            if let Err(e) = compress_file(&temp_path, current_file) {
+                self.error_message = Some(format!("Error compressing file: {}", e));
+                let _ = std::fs::remove_file(&temp_path);
+                return;
+            }
+            let _ = std::fs::remove_file(&temp_path);
+            self.error_message = Some("File compressed successfully with JPK Type 4.".to_string());
+        } else {
+            self.error_message = Some("No file loaded.".to_string());
+        }
+    }
+
+    fn encrypt_file(&mut self) {
+        if let Some(current_file) = &self.current_file {
+            let temp_path = current_file.with_extension("tmp");
+            if let Err(e) = std::fs::copy(current_file, &temp_path) {
+                self.error_message = Some(format!("Error creating temp file for encryption: {}", e));
+                return;
+            }
+            if let Err(e) = encrypt_file(&temp_path, current_file) {
+                self.error_message = Some(format!("Error encrypting file: {}", e));
+                let _ = std::fs::remove_file(&temp_path);
+                return;
+            }
+            let _ = std::fs::remove_file(&temp_path);
+            self.error_message = Some("File encrypted successfully with ECD.".to_string());
+        } else {
+            self.error_message = Some("No file loaded.".to_string());
         }
     }
 } 

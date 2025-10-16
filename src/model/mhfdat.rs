@@ -711,6 +711,31 @@ pub struct DecoShop {
     pub item_unlock_flag4: u8,
 }
 
+/// Structure représentant une entrée de la table AutomaticSkills
+/// Cette table associe des équipements spécifiques à des skills automatiques
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct AutomaticSkill {
+    pub unk00: u8,              // Unknown byte
+    pub eq_type: u8,            // Equipment type: 0=Legs, 2=Head, 3=Chest, 4=Arms, 5=Waist, 6=Melee, 7=Ranged
+    pub equip_id: u16,          // ID of the equipment (weapon or armor)
+    pub skill_id: u16,          // Automatic skill ID
+    pub padding: [u8; 2],       // Padding bytes
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ArmorUpgradeRow {
+    pub item_id: u16,
+    pub lv1_upgrade: u16,
+    pub lv2_upgrade: u16,
+    pub lv3_upgrade: u16,
+    pub lv4_upgrade: u16,
+    pub lv5_upgrade: u16,
+    pub lv6_upgrade: u16,
+    pub lv7_upgrade: u16,
+}
+
 #[repr(C, packed)]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SigilTowerTable {
