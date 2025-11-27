@@ -89,10 +89,6 @@ impl eframe::App for RootApp {
                                 if file_name_str.contains("mhfjmp") {
                                     if let Ok(data) = std::fs::read(&path) {
                                         let mut app = app::MhfjmpApp::default();
-                                        let state_ptr = self as *mut RootApp;
-                                        app.on_back = Some(Box::new(move || unsafe {
-                                            (*state_ptr).state = AppState::FileTypeSelector;
-                                        }));
                                         let opened_file = path.display().to_string();
                                         app.load_file(path, data);
                                         self.state = AppState::Mhfjmp(app);
@@ -157,7 +153,13 @@ impl eframe::App for RootApp {
 
                 });
             }
-            AppState::Mhfjmp(app) => app.update(ctx, frame),
+            AppState::Mhfjmp(app) => {
+                app.update(ctx, frame);
+                // Check if user wants to go back to file selector
+                if app.should_return_to_selector {
+                    self.state = AppState::FileTypeSelector;
+                }
+            }
             AppState::Mhfdat(app) => {
                 app.update(ctx, frame);
                 // Check if user wants to go back to file selector
@@ -165,7 +167,15 @@ impl eframe::App for RootApp {
                     self.state = AppState::FileTypeSelector;
                 }
             }
-            AppState::Randomizer(app) => app.update(ctx, frame),
+            AppState::Randomizer(app) => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    app.show(ui);
+                });
+                // Check if user wants to go back to file selector
+                if app.should_return_to_selector {
+                    self.state = AppState::FileTypeSelector;
+                }
+            }
         }
     }
 }

@@ -1,9 +1,10 @@
 use super::*;
 use std::io::{Read, Seek, Write, SeekFrom};
-use crate::core::packing::{pack_file, compress_file, encrypt_file};
+use crate::core::packing::{compress_file, encrypt_file};
 use crate::core::mhfdat::{
     write_melee_weapons_block, write_ranged_weapons_block, write_armors_block, write_items_block, write_transmog_data,
-    write_mw_upgrades_block, write_rw_upgrades_block, write_deco_shop_block, write_automatic_skills_block
+    write_mw_upgrades_block, write_rw_upgrades_block, write_deco_shop_block, write_automatic_skills_block,
+    write_armor_names, write_item_names, write_item_descriptions
 };
 use crate::model::mhfdat_pointers::{
     MELEE_WEAPONS_PTR, RANGED_WEAPONS_PTR,
@@ -11,93 +12,24 @@ use crate::model::mhfdat_pointers::{
     MELEE_WEAPON_DESC_PTR, RANGED_WEAPON_DESC_PTR,
     HEAD_ARMOR_PTR, BODY_ARMOR_PTR, ARM_ARMOR_PTR, WAIST_ARMOR_PTR, LEG_ARMOR_PTR,
     HEAD_ARMOR_NAMES_PTR, BODY_ARMOR_NAMES_PTR, ARM_ARMOR_NAMES_PTR, WAIST_ARMOR_NAMES_PTR, LEG_ARMOR_NAMES_PTR,
-    HEAD_ARMOR_DESC_PTR,
     ITEM_DATA_PTR, ITEM_NAMES_PTR, ITEM_DESC_PTR, TRANSMOG_FORGING_PTR, 
     DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
     AUTOMATIC_SKILLS_TABLE_PTR,
 };
-use crate::model::mhfdat::MhfdatMeleeWeapon;
-use tempfile;
 
 impl MhfdatApp {
-    
-    pub fn verify_saved_data(&self) -> std::io::Result<()> {
-        if let Some(path) = &self.current_file {
-            // Lire le fichier sauvegardé
-            let saved_data = std::fs::read(path)?;
-            
-            // Vérifier que le fichier n'est pas vide
-            if saved_data.is_empty() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Saved file is empty"
-                ));
-            }
-            
-            // Vérifier que les pointeurs sont cohérents
-            use crate::model::mhfdat_pointers::*;
-            
-            // Vérifier les pointeurs d'armes
-            if saved_data.len() >= (MELEE_WEAPONS_PTR + 4) as usize {
-                let melee_ptr = u32::from_le_bytes([
-                    saved_data[MELEE_WEAPONS_PTR as usize],
-                    saved_data[(MELEE_WEAPONS_PTR + 1) as usize],
-                    saved_data[(MELEE_WEAPONS_PTR + 2) as usize],
-                    saved_data[(MELEE_WEAPONS_PTR + 3) as usize],
-                ]);
-                
-                // Le pointeur doit être dans les limites du fichier
-                if melee_ptr as usize >= saved_data.len() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Melee weapons pointer ({}) is beyond file size ({})", melee_ptr, saved_data.len())
-                    ));
-                }
-            }
-            
-            if saved_data.len() >= (RANGED_WEAPONS_PTR + 4) as usize {
-                let ranged_ptr = u32::from_le_bytes([
-                    saved_data[RANGED_WEAPONS_PTR as usize],
-                    saved_data[(RANGED_WEAPONS_PTR + 1) as usize],
-                    saved_data[(RANGED_WEAPONS_PTR + 2) as usize],
-                    saved_data[(RANGED_WEAPONS_PTR + 3) as usize],
-                ]);
-                
-                if ranged_ptr as usize >= saved_data.len() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Ranged weapons pointer ({}) is beyond file size ({})", ranged_ptr, saved_data.len())
-                    ));
-                }
-            }
-            
-            println!("✅ Data verification passed - file size: {} bytes", saved_data.len());
-            Ok(())
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No file path available for verification"
-            ))
-        }
-    }
 
     pub fn save_modified_data(&mut self) -> std::io::Result<()> {
         if let Some(path) = &self.current_file {
-            // 1. Créer un chemin temporaire
-            let temp_path = path.with_extension("tmp");
+            // Ouvrir le fichier en mode read+write pour ajouter à la fin sans copier
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(path)?;
 
-            // 2. Copier le fichier original vers le temporaire
-            std::fs::copy(path, &temp_path)?;
-
-            // 3. Ouvrir le temporaire en écriture
-            let file = std::fs::File::options().read(true).write(true).open(&temp_path)?;
-
-            // 4. Écrire les modifications dans la copie
+            // Écrire les modifications directement à la fin du fichier
             self.save_modified_data_to_writer(file)?;
-
-            // 5. Remplacer l'original par la copie
-            std::fs::rename(&temp_path, path)?;
 
             // 6. IMPORTANT: Mettre à jour seulement les pointeurs dans le buffer existant
             // Lire les nouveaux pointeurs depuis le fichier sauvegardé et les appliquer au buffer
@@ -155,11 +87,41 @@ impl MhfdatApp {
                 self.buffer[LEG_ARMOR_PTR as usize..(LEG_ARMOR_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[LEG_ARMOR_PTR as usize..(LEG_ARMOR_PTR + 4) as usize]);
             }
+
+            // Mettre à jour les pointeurs de noms d'armures
+            if saved_file_data.len() >= (HEAD_ARMOR_NAMES_PTR + 4) as usize {
+                self.buffer[HEAD_ARMOR_NAMES_PTR as usize..(HEAD_ARMOR_NAMES_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[HEAD_ARMOR_NAMES_PTR as usize..(HEAD_ARMOR_NAMES_PTR + 4) as usize]);
+            }
+            if saved_file_data.len() >= (BODY_ARMOR_NAMES_PTR + 4) as usize {
+                self.buffer[BODY_ARMOR_NAMES_PTR as usize..(BODY_ARMOR_NAMES_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[BODY_ARMOR_NAMES_PTR as usize..(BODY_ARMOR_NAMES_PTR + 4) as usize]);
+            }
+            if saved_file_data.len() >= (ARM_ARMOR_NAMES_PTR + 4) as usize {
+                self.buffer[ARM_ARMOR_NAMES_PTR as usize..(ARM_ARMOR_NAMES_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[ARM_ARMOR_NAMES_PTR as usize..(ARM_ARMOR_NAMES_PTR + 4) as usize]);
+            }
+            if saved_file_data.len() >= (WAIST_ARMOR_NAMES_PTR + 4) as usize {
+                self.buffer[WAIST_ARMOR_NAMES_PTR as usize..(WAIST_ARMOR_NAMES_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[WAIST_ARMOR_NAMES_PTR as usize..(WAIST_ARMOR_NAMES_PTR + 4) as usize]);
+            }
+            if saved_file_data.len() >= (LEG_ARMOR_NAMES_PTR + 4) as usize {
+                self.buffer[LEG_ARMOR_NAMES_PTR as usize..(LEG_ARMOR_NAMES_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[LEG_ARMOR_NAMES_PTR as usize..(LEG_ARMOR_NAMES_PTR + 4) as usize]);
+            }
             
             // Mettre à jour les pointeurs d'objets et transmog
             if saved_file_data.len() >= (ITEM_DATA_PTR + 4) as usize {
                 self.buffer[ITEM_DATA_PTR as usize..(ITEM_DATA_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[ITEM_DATA_PTR as usize..(ITEM_DATA_PTR + 4) as usize]);
+            }
+            if saved_file_data.len() >= (ITEM_NAMES_PTR + 4) as usize {
+                self.buffer[ITEM_NAMES_PTR as usize..(ITEM_NAMES_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[ITEM_NAMES_PTR as usize..(ITEM_NAMES_PTR + 4) as usize]);
+            }
+            if saved_file_data.len() >= (ITEM_DESC_PTR + 4) as usize {
+                self.buffer[ITEM_DESC_PTR as usize..(ITEM_DESC_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[ITEM_DESC_PTR as usize..(ITEM_DESC_PTR + 4) as usize]);
             }
             if saved_file_data.len() >= (TRANSMOG_FORGING_PTR + 4) as usize {
                 self.buffer[TRANSMOG_FORGING_PTR as usize..(TRANSMOG_FORGING_PTR + 4) as usize]
@@ -202,18 +164,16 @@ impl MhfdatApp {
     }
 
     pub fn save_modified_data_to_writer<W: Read + Seek + Write >(&self, mut writer: W) -> std::io::Result<()> {
-        // Lire le fichier existant SANS LE MODIFIER
-        let mut buffer = Vec::new();
-        writer.seek(SeekFrom::Start(0))?;
-        writer.read_to_end(&mut buffer)?;
-        
-        // Écrire le buffer original INTACT (sans modifications)
-        writer.seek(SeekFrom::Start(0))?;
-        writer.write_all(&buffer)?;
-        
-        // On se place à la fin du fichier pour ajouter les nouveaux blocs
+        // On se place directement à la fin du fichier pour ajouter SEULEMENT les nouveaux blocs
+        // SANS réécrire les données existantes
         writer.seek(SeekFrom::End(0))?;
 
+        // NE PAS réécrire les blocs de données existants (weapons, armor, items, etc.)
+        // Ces blocs sont déjà dans le fichier et on ne les modifie pas
+        
+        // On ajoute SEULEMENT les nouvelles tables de noms/descriptions
+        
+        // TODO: À corriger - ne pas réécrire les blocs existants
         // 1) Melee weapons data block with 0xFFFF sentinel and pointer at 0x7C
         let melee_data_offset = writer.seek(SeekFrom::Current(0))? as u32;
         let melee_block = write_melee_weapons_block(&self.melee_weapons)?;
@@ -355,6 +315,52 @@ impl MhfdatApp {
             table_start
         } else { 0 };
 
+        // 14) Armor names tables
+        let head_armor_names_offset = if !self.head_armor_names.is_empty() {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_armor_names(&mut writer, &self.head_armor_names)?;
+            current_pos
+        } else { 0 };
+
+        let body_armor_names_offset = if !self.body_armor_names.is_empty() {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_armor_names(&mut writer, &self.body_armor_names)?;
+            current_pos
+        } else { 0 };
+
+        let arms_armor_names_offset = if !self.arms_armor_names.is_empty() {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_armor_names(&mut writer, &self.arms_armor_names)?;
+            current_pos
+        } else { 0 };
+
+        let waist_armor_names_offset = if !self.waist_armor_names.is_empty() {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_armor_names(&mut writer, &self.waist_armor_names)?;
+            current_pos
+        } else { 0 };
+
+        let legs_armor_names_offset = if !self.legs_armor_names.is_empty() {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_armor_names(&mut writer, &self.legs_armor_names)?;
+            current_pos
+        } else { 0 };
+
+        // 15) Item names and descriptions
+        let item_names_count = self.items.len().min(self.item_names.len());
+        let item_names_offset = if item_names_count > 0 {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_item_names(&mut writer, &self.item_names[..item_names_count])?;
+            current_pos
+        } else { 0 };
+
+        let item_desc_count = self.items.len().min(self.item_descriptions.len());
+        let item_desc_offset = if item_desc_count > 0 {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_item_descriptions(&mut writer, &self.item_descriptions[..item_desc_count])?;
+            current_pos
+        } else { 0 };
+
         // Patch header pointers
         
         writer.seek(SeekFrom::Start(MELEE_WEAPONS_PTR as u64))?;
@@ -396,8 +402,29 @@ impl MhfdatApp {
         writer.seek(SeekFrom::Start(LEG_ARMOR_PTR as u64))?;
         writer.write_all(&legs_armor_offset.to_le_bytes())?;
 
+        writer.seek(SeekFrom::Start(HEAD_ARMOR_NAMES_PTR as u64))?;
+        writer.write_all(&head_armor_names_offset.to_le_bytes())?;
+
+        writer.seek(SeekFrom::Start(BODY_ARMOR_NAMES_PTR as u64))?;
+        writer.write_all(&body_armor_names_offset.to_le_bytes())?;
+
+        writer.seek(SeekFrom::Start(ARM_ARMOR_NAMES_PTR as u64))?;
+        writer.write_all(&arms_armor_names_offset.to_le_bytes())?;
+
+        writer.seek(SeekFrom::Start(WAIST_ARMOR_NAMES_PTR as u64))?;
+        writer.write_all(&waist_armor_names_offset.to_le_bytes())?;
+
+        writer.seek(SeekFrom::Start(LEG_ARMOR_NAMES_PTR as u64))?;
+        writer.write_all(&legs_armor_names_offset.to_le_bytes())?;
+
         writer.seek(SeekFrom::Start(ITEM_DATA_PTR as u64))?;
         writer.write_all(&item_data_offset.to_le_bytes())?;
+
+        writer.seek(SeekFrom::Start(ITEM_NAMES_PTR as u64))?;
+        writer.write_all(&item_names_offset.to_le_bytes())?;
+
+        writer.seek(SeekFrom::Start(ITEM_DESC_PTR as u64))?;
+        writer.write_all(&item_desc_offset.to_le_bytes())?;
 
         writer.seek(SeekFrom::Start(TRANSMOG_FORGING_PTR as u64))?;
         writer.write_all(&transmog_data_offset.to_le_bytes())?;
@@ -429,17 +456,9 @@ impl MhfdatApp {
     pub fn compress_file(&mut self) -> std::io::Result<()> {
         if let Some(path) = &self.current_file {
             let path = path.clone(); // Cloner pour éviter les problèmes de borrow
-            
-            // 1. Sauvegarder d'abord les données modifiées
             self.save_modified_data()?;
-            
-            // 2. Créer un fichier temporaire pour la compression
             let temp_path = path.with_extension("tmp");
-            
-            // 3. Copier le fichier actuel vers temporaire
             std::fs::copy(&path, &temp_path)?;
-            
-            // 4. Compresser le fichier temporaire vers le fichier original
             compress_file(&temp_path, &path)?;
             
             // 5. Nettoyer le fichier temporaire
@@ -460,17 +479,9 @@ impl MhfdatApp {
     pub fn encrypt_file(&mut self) -> std::io::Result<()> {
         if let Some(path) = &self.current_file {
             let path = path.clone(); // Cloner pour éviter les problèmes de borrow
-            
-            // 1. Créer un fichier temporaire pour l'encryption
             let temp_path = path.with_extension("tmp");
-            
-            // 2. Copier le fichier actuel vers temporaire
             std::fs::copy(&path, &temp_path)?;
-            
-            // 3. Chiffrer le fichier temporaire vers le fichier original
             encrypt_file(&temp_path, &path)?;
-            
-            // 4. Nettoyer le fichier temporaire
             let _ = std::fs::remove_file(&temp_path);
             
             // 5. Recharger le buffer depuis le fichier chiffré
@@ -485,114 +496,4 @@ impl MhfdatApp {
         }
     }
 
-    pub fn save_with_packing(&mut self) -> std::io::Result<()> {
-        if let Some(path) = &self.current_file {
-            let temp_file = tempfile::NamedTempFile::new()?;
-            self.save_modified_data_to_writer(&temp_file)?;
-            
-            // Always encrypt for this path to match the button label (Pack + Encrypt)
-            pack_file(temp_file.path(), path, true)?;
-            
-            // IMPORTANT: Mettre à jour seulement les pointeurs dans le buffer existant
-            // Lire les nouveaux pointeurs depuis le fichier sauvegardé et les appliquer au buffer
-            let saved_file_data = std::fs::read(path)?;
-            
-            // Copier seulement les pointeurs depuis le fichier sauvegardé vers notre buffer
-            use crate::model::mhfdat_pointers::*;
-            
-            // Mettre à jour les pointeurs d'armes
-            if saved_file_data.len() >= (MELEE_WEAPONS_PTR + 4) as usize {
-                self.buffer[MELEE_WEAPONS_PTR as usize..(MELEE_WEAPONS_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[MELEE_WEAPONS_PTR as usize..(MELEE_WEAPONS_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (RANGED_WEAPONS_PTR + 4) as usize {
-                self.buffer[RANGED_WEAPONS_PTR as usize..(RANGED_WEAPONS_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[RANGED_WEAPONS_PTR as usize..(RANGED_WEAPONS_PTR + 4) as usize]);
-            }
-            
-            // Mettre à jour les pointeurs de noms/descriptions d'armes
-            if saved_file_data.len() >= (MELEE_WEAPON_NAMES_PTR + 4) as usize {
-                self.buffer[MELEE_WEAPON_NAMES_PTR as usize..(MELEE_WEAPON_NAMES_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[MELEE_WEAPON_NAMES_PTR as usize..(MELEE_WEAPON_NAMES_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (MELEE_WEAPON_DESC_PTR + 4) as usize {
-                self.buffer[MELEE_WEAPON_DESC_PTR as usize..(MELEE_WEAPON_DESC_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[MELEE_WEAPON_DESC_PTR as usize..(MELEE_WEAPON_DESC_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (RANGED_WEAPON_NAMES_PTR + 4) as usize {
-                self.buffer[RANGED_WEAPON_NAMES_PTR as usize..(RANGED_WEAPON_NAMES_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[RANGED_WEAPON_NAMES_PTR as usize..(RANGED_WEAPON_NAMES_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (RANGED_WEAPON_DESC_PTR + 4) as usize {
-                self.buffer[RANGED_WEAPON_DESC_PTR as usize..(RANGED_WEAPON_DESC_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[RANGED_WEAPON_DESC_PTR as usize..(RANGED_WEAPON_DESC_PTR + 4) as usize]);
-            }
-            
-            // Mettre à jour les pointeurs d'armures
-            if saved_file_data.len() >= (HEAD_ARMOR_PTR + 4) as usize {
-                self.buffer[HEAD_ARMOR_PTR as usize..(HEAD_ARMOR_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[HEAD_ARMOR_PTR as usize..(HEAD_ARMOR_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (BODY_ARMOR_PTR + 4) as usize {
-                self.buffer[BODY_ARMOR_PTR as usize..(BODY_ARMOR_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[BODY_ARMOR_PTR as usize..(BODY_ARMOR_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (ARM_ARMOR_PTR + 4) as usize {
-                self.buffer[ARM_ARMOR_PTR as usize..(ARM_ARMOR_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[ARM_ARMOR_PTR as usize..(ARM_ARMOR_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (WAIST_ARMOR_PTR + 4) as usize {
-                self.buffer[WAIST_ARMOR_PTR as usize..(WAIST_ARMOR_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[WAIST_ARMOR_PTR as usize..(WAIST_ARMOR_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (LEG_ARMOR_PTR + 4) as usize {
-                self.buffer[LEG_ARMOR_PTR as usize..(LEG_ARMOR_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[LEG_ARMOR_PTR as usize..(LEG_ARMOR_PTR + 4) as usize]);
-            }
-            
-            // Mettre à jour les pointeurs d'objets et transmog
-            if saved_file_data.len() >= (ITEM_DATA_PTR + 4) as usize {
-                self.buffer[ITEM_DATA_PTR as usize..(ITEM_DATA_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[ITEM_DATA_PTR as usize..(ITEM_DATA_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (TRANSMOG_FORGING_PTR + 4) as usize {
-                self.buffer[TRANSMOG_FORGING_PTR as usize..(TRANSMOG_FORGING_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[TRANSMOG_FORGING_PTR as usize..(TRANSMOG_FORGING_PTR + 4) as usize]);
-            }
-            
-            // Mettre à jour les pointeurs de boutiques de décorations
-            if saved_file_data.len() >= (DECO_SHOP_PTR + 4) as usize {
-                self.buffer[DECO_SHOP_PTR as usize..(DECO_SHOP_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[DECO_SHOP_PTR as usize..(DECO_SHOP_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (DECO_G_SHOP_PTR + 4) as usize {
-                self.buffer[DECO_G_SHOP_PTR as usize..(DECO_G_SHOP_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[DECO_G_SHOP_PTR as usize..(DECO_G_SHOP_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (CUFF_SHOP_PTR + 4) as usize {
-                self.buffer[CUFF_SHOP_PTR as usize..(CUFF_SHOP_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[CUFF_SHOP_PTR as usize..(CUFF_SHOP_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (CUFF_GR_SHOP_PTR + 4) as usize {
-                self.buffer[CUFF_GR_SHOP_PTR as usize..(CUFF_GR_SHOP_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[CUFF_GR_SHOP_PTR as usize..(CUFF_GR_SHOP_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (AUTOMATIC_SKILLS_TABLE_PTR + 4) as usize {
-                self.buffer[AUTOMATIC_SKILLS_TABLE_PTR as usize..(AUTOMATIC_SKILLS_TABLE_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[AUTOMATIC_SKILLS_TABLE_PTR as usize..(AUTOMATIC_SKILLS_TABLE_PTR + 4) as usize]);
-            }
-            
-            // Mettre à jour les pointeurs d'upgrades d'armes
-            if saved_file_data.len() >= (MELEE_WEAPON_UPGRADE_PATH_PTR + 4) as usize {
-                self.buffer[MELEE_WEAPON_UPGRADE_PATH_PTR as usize..(MELEE_WEAPON_UPGRADE_PATH_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[MELEE_WEAPON_UPGRADE_PATH_PTR as usize..(MELEE_WEAPON_UPGRADE_PATH_PTR + 4) as usize]);
-            }
-            if saved_file_data.len() >= (RANGED_WEAPON_UPGRADE_PATH_PTR + 4) as usize {
-                self.buffer[RANGED_WEAPON_UPGRADE_PATH_PTR as usize..(RANGED_WEAPON_UPGRADE_PATH_PTR + 4) as usize]
-                    .copy_from_slice(&saved_file_data[RANGED_WEAPON_UPGRADE_PATH_PTR as usize..(RANGED_WEAPON_UPGRADE_PATH_PTR + 4) as usize]);
-            }
-        }
-        Ok(())
-    }
-} 
-
+}

@@ -39,8 +39,12 @@ Or run the built executable from `target/release/mhf-file-editor.exe`.
 4) Save to write changes. Use “Save (Pack + Encrypt)” to JPK-compress and optionally ECD-encrypt the output.
 
 Notes:
-- Keep a backup of your original files.
-- The editor works on decrypted data; “Save (Pack + Encrypt)” re-applies packing/encryption if needed.
+- **Always backup** your original files before editing.
+- Files must be **decrypted** and **decompressed** before opening (Use RsFrontier for it).
+- **Save**: Writes modified data to the binary file.
+- **Compress** (separate button): Compresses the file with JPK Type 4.
+- **Encrypt** (separate button): Encrypts the file with ECD.
+- Compress and encrypt must be done **after** saving, in that order if both are needed.
 
 ## Credits
 

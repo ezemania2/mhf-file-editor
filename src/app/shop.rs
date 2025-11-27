@@ -304,6 +304,10 @@ impl MhfdatApp {
                     ..Default::default()
                 });
                 self.selected_transmog_index = Some(self.transmog_entries.len() - 1);
+                // Initialiser view_mode si nécessaire
+                if !self.view_mode.contains_key("shop") {
+                    self.view_mode.insert("shop".to_string(), ViewMode::List);
+                }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
             }
         });
@@ -348,6 +352,10 @@ impl MhfdatApp {
                     ..Default::default()
                 });
                 self.selected_transmog_index = Some(self.transmog_entries.len() - 1);
+                // Initialiser view_mode si nécessaire
+                if !self.view_mode.contains_key("shop") {
+                    self.view_mode.insert("shop".to_string(), ViewMode::List);
+                }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
             }
         });
@@ -453,6 +461,10 @@ impl MhfdatApp {
 
     fn show_transmog_details(&mut self, ui: &mut egui::Ui) {
         if ui.button("← Back to List").clicked() {
+            // Initialiser view_mode si nécessaire
+            if !self.view_mode.contains_key("shop") {
+                self.view_mode.insert("shop".to_string(), ViewMode::List);
+            }
             *self.view_mode.get_mut("shop").unwrap() = ViewMode::List;
             return;
         }

@@ -10,6 +10,11 @@ use serde_json;
 impl MhfdatApp {
     /// Recompute weapon counts strictly from number of entries (max index + 1)
     pub(crate) fn refresh_weapon_counts_from_entries(&mut self) {
+        // Vérifier que le buffer n'est pas vide avant de lire les counts
+        if self.buffer.is_empty() {
+            return;
+        }
+        
         if let Some(mut counts) = read_equipment_counts(&self.buffer) {
             counts.numMeleeW = self.melee_weapons.len() as u16;
             counts.numRangedW = self.ranged_weapons.len() as u16;
@@ -57,13 +62,13 @@ impl MhfdatApp {
 
         match self.weapon_tab {
             WeaponTab::Melee => {
-                match self.view_mode.get("melee_weapons").unwrap() {
+                match self.view_mode.get("melee_weapons").unwrap_or(&ViewMode::List) {
                     ViewMode::List => self.show_melee_weapons_list(ui),
                     ViewMode::Details => self.show_melee_weapon_details_view(ui),
                 }
             }
             WeaponTab::Ranged => {
-                match self.view_mode.get("ranged_weapons").unwrap() {
+                match self.view_mode.get("ranged_weapons").unwrap_or(&ViewMode::List) {
                     ViewMode::List => self.show_ranged_weapons_list(ui),
                     ViewMode::Details => self.show_ranged_weapon_details_view(ui),
                 }
@@ -75,15 +80,32 @@ impl MhfdatApp {
         let next_model_id = self.next_melee_weapon_model_id();
         let mut new_weapon = MhfdatMeleeWeapon::default();
         new_weapon.model_id = next_model_id;
-        self.melee_weapons.push(new_weapon);
-        self.melee_weapon_names.push(format!("New Weapon {}", next_model_id));
-        self.melee_weapon_descriptions.push(["".to_string(), "".to_string(), "".to_string()]);
+        
+        // Calculer le real_count comme pour les armures
+        let mut real_count = 0;
+        for weapon in self.melee_weapons.iter() {
+            if weapon.model_id == 0xFFFF {
+                break;
+            }
+            real_count += 1;
+        }
+        
+        // Utiliser insert() comme pour les armures
+        self.melee_weapons.insert(real_count, new_weapon);
+        self.melee_weapon_names.insert(real_count, format!("New Weapon {}", next_model_id));
+        self.melee_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string()]);
 
         // Sélectionner la nouvelle arme et basculer vers la vue détail
-        let new_index = self.melee_weapons.len().saturating_sub(1);
-        self.selected_melee_index = Some(new_index);
-        self.melee_weapons_page = (new_index / 15) as u32;
-        *self.view_mode.get_mut("melee_weapons").unwrap() = ViewMode::Details;
+        self.selected_melee_index = Some(real_count);
+        self.melee_weapons_page = (real_count / 15) as u32;
+        
+        // Initialiser view_mode si nécessaire
+        if !self.view_mode.contains_key("melee_weapons") {
+            self.view_mode.insert("melee_weapons".to_string(), ViewMode::List);
+        }
+        if let Some(view_mode) = self.view_mode.get_mut("melee_weapons") {
+            *view_mode = ViewMode::Details;
+        }
 
         // Mettre à jour le compteur d'armes (nombre réel en mémoire)
         self.refresh_weapon_counts_from_entries();
@@ -338,7 +360,13 @@ impl MhfdatApp {
                                         let selected = self.selected_melee_index == Some(i);
                                         if ui.selectable_label(selected, format!("{}", i)).clicked() {
                                             self.selected_melee_index = Some(i);
-                                            *self.view_mode.get_mut("melee_weapons").unwrap() = ViewMode::Details;
+                                            // Initialiser view_mode si nécessaire
+                                            if !self.view_mode.contains_key("melee_weapons") {
+                                                self.view_mode.insert("melee_weapons".to_string(), ViewMode::List);
+                                            }
+                                            if let Some(view_mode) = self.view_mode.get_mut("melee_weapons") {
+                                                *view_mode = ViewMode::Details;
+                                            }
                                         }
                                         ui.label(format!("{}", model_id));
                                         ui.label(&weapon_name);
@@ -390,13 +418,31 @@ impl MhfdatApp {
                 let next_model_id = self.next_ranged_weapon_model_id();
                 let mut new_weapon = MhfdatRangedWeapon::default();
                 new_weapon.model_id = next_model_id;
-                self.ranged_weapons.push(new_weapon);
-                self.ranged_weapon_names.push(format!("New Ranged Weapon {}", next_model_id));
-                self.ranged_weapon_descriptions.push(["".to_string(), "".to_string(), "".to_string()]);
-                let new_index = self.ranged_weapons.len().saturating_sub(1);
-                self.selected_ranged_index = Some(new_index);
-                self.ranged_weapons_page = (new_index / 15) as u32;
-                *self.view_mode.get_mut("ranged_weapons").unwrap() = ViewMode::Details;
+                
+                // Calculer le real_count comme pour les armures
+                let mut real_count = 0;
+                for weapon in self.ranged_weapons.iter() {
+                    if weapon.model_id == 0xFFFF {
+                        break;
+                    }
+                    real_count += 1;
+                }
+                
+                // Utiliser insert() comme pour les armures
+                self.ranged_weapons.insert(real_count, new_weapon);
+                self.ranged_weapon_names.insert(real_count, format!("New Ranged Weapon {}", next_model_id));
+                self.ranged_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string()]);
+                
+                self.selected_ranged_index = Some(real_count);
+                self.ranged_weapons_page = (real_count / 15) as u32;
+                
+                // Initialiser view_mode si nécessaire
+                if !self.view_mode.contains_key("ranged_weapons") {
+                    self.view_mode.insert("ranged_weapons".to_string(), ViewMode::List);
+                }
+                if let Some(view_mode) = self.view_mode.get_mut("ranged_weapons") {
+                    *view_mode = ViewMode::Details;
+                }
                 self.refresh_weapon_counts_from_entries();
             }
         });
@@ -575,7 +621,13 @@ impl MhfdatApp {
                                         let selected = self.selected_ranged_index == Some(i);
                                         if ui.selectable_label(selected, format!("{}", i)).clicked() {
                                             self.selected_ranged_index = Some(i);
-                                            *self.view_mode.get_mut("ranged_weapons").unwrap() = ViewMode::Details;
+                                            // Initialiser view_mode si nécessaire
+                                            if !self.view_mode.contains_key("ranged_weapons") {
+                                                self.view_mode.insert("ranged_weapons".to_string(), ViewMode::List);
+                                            }
+                                            if let Some(view_mode) = self.view_mode.get_mut("ranged_weapons") {
+                                                *view_mode = ViewMode::Details;
+                                            }
                                         }
                                         ui.label(format!("{}", model_id));
                                         ui.label(&weapon_name);
@@ -1071,7 +1123,13 @@ impl MhfdatApp {
 
     pub fn show_melee_weapon_details_view(&mut self, ui: &mut egui::Ui) {
         if ui.button("← Back to List").clicked() {
-            *self.view_mode.get_mut("melee_weapons").unwrap() = ViewMode::List;
+            // Initialiser view_mode si nécessaire
+            if !self.view_mode.contains_key("melee_weapons") {
+                self.view_mode.insert("melee_weapons".to_string(), ViewMode::List);
+            }
+            if let Some(view_mode) = self.view_mode.get_mut("melee_weapons") {
+                *view_mode = ViewMode::List;
+            }
             return;
         }
 
@@ -1204,7 +1262,13 @@ impl MhfdatApp {
 
     pub fn show_ranged_weapon_details_view(&mut self, ui: &mut egui::Ui) {
         if ui.button("← Back to List").clicked() {
-            *self.view_mode.get_mut("ranged_weapons").unwrap() = ViewMode::List;
+            // Initialiser view_mode si nécessaire
+            if !self.view_mode.contains_key("ranged_weapons") {
+                self.view_mode.insert("ranged_weapons".to_string(), ViewMode::List);
+            }
+            if let Some(view_mode) = self.view_mode.get_mut("ranged_weapons") {
+                *view_mode = ViewMode::List;
+            }
             return;
         }
 

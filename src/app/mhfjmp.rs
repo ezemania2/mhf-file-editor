@@ -19,14 +19,11 @@ impl Default for MhfjmpTab {
 }
 
 pub struct MhfjmpApp {
-    pub on_back: Option<Box<dyn FnMut()>>,
     pub tab: MhfjmpTab,
     pub entries: Vec<MenuEntry>,
     pub selected_index: Option<usize>,
     pub areas: Vec<Area>,
-    pub selected_area_index: Option<usize>,
     pub strings: Vec<StringEntry>,
-    pub selected_string_index: Option<usize>,
     pub current_file: Option<PathBuf>,
     pub error_message: Option<String>,
     pub should_return_to_selector: bool,
@@ -35,14 +32,11 @@ pub struct MhfjmpApp {
 impl Default for MhfjmpApp {
     fn default() -> Self {
         MhfjmpApp {
-            on_back: None,
             tab: MhfjmpTab::MenuEntries,
             entries: Vec::new(),
             selected_index: None,
             areas: Vec::new(),
-            selected_area_index: None,
             strings: Vec::new(),
-            selected_string_index: None,
             current_file: None,
             error_message: None,
             should_return_to_selector: false,
@@ -55,9 +49,15 @@ impl App for MhfjmpApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
-                    // Prefer flag-based navigation to avoid unsafe callbacks
+                    // Unload file from memory
+                    self.entries.clear();
+                    self.areas.clear();
+                    self.strings.clear();
+                    self.current_file = None;
+                    self.error_message = None;
+                    self.selected_index = None;
+                    
                     self.should_return_to_selector = true;
-                    if let Some(cb) = &mut self.on_back { let _ = cb; }
                 }
                 if ui.button("Exporter JSON").clicked() {
                     if let Some(current_file) = &self.current_file {
@@ -274,7 +274,7 @@ impl MhfjmpApp {
                                 if ui.add_enabled(j + 1 < len, egui::Button::new("↓")).clicked() {
                                     move_down = Some(j);
                                 }
-                                if ui.button("✕").clicked() {
+                                if ui.button("❌").clicked() {
                                     to_remove = Some(j);
                                 }
                                 ui.end_row();
@@ -299,7 +299,7 @@ impl MhfjmpApp {
                             let mut to_remove = None;
                             for (j, id) in area.stage_ids.iter_mut().enumerate() {
                                 ui.add(egui::DragValue::new(id));
-                                if ui.button("✕").clicked() {
+                                if ui.button("❌").clicked() {
                                     to_remove = Some(j);
                                 }
                                 ui.end_row();

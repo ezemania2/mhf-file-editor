@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::Write;
 use serde_json;
 use serde::Serialize;
-use crate::utils::item_patterns::{ITEM_ICON_LIST, icon_name, equip_type_name, item_type_name, icon_color_name};
+use crate::utils::item_patterns::{ITEM_ICON_LIST, icon_name};
 use crate::utils::skills::skill_name;
 use crate::utils::weapon_patterns::zenith_skill_name;
 
@@ -443,9 +443,6 @@ impl MhfdatApp {
             if let Some(item) = self.items.get(index) {
                 ui.heading("Item Details");
                 
-                let item_name = self.item_names.get(index).cloned().unwrap_or_default();
-                let item_description = self.item_descriptions.get(index).cloned().unwrap_or_default();
-                
                 // Ensure we have valid data for this index
                 if index >= self.item_names.len() {
                     self.item_names.resize(index + 1, String::new());
@@ -471,31 +468,6 @@ impl MhfdatApp {
                  ui.separator();
                  ui.add_space(10.0);
                 
-                // Copy fields to local variables to avoid unaligned references
-                let unk00 = item.unk00;
-                let unk01 = item.unk01;
-                let rarity = item.rarity;
-                let max_stack = item.max_stack;
-                let unk04 = item.unk04;
-                let icon = item.icon;
-                let icon_color = item.icon_color;
-                let unk07 = item.unk07;
-                let bottle = item.bottle;
-                let unk0A = item.unk0A;
-                let buy_price = item.buy_price;
-                let sell_price = item.sell_price;
-                let item_type = item.item_type;
-                let deco_id = item.deco_id;
-                let unk18 = item.unk18;
-                let unk1A = item.unk1A;
-                let unk1B = item.unk1B;
-                let equip_type = item.equip_type;
-                let is_gz = item.is_gz;
-                let unk1F = item.unk1F;
-                let unk20 = item.unk20;
-                let unk22 = item.unk22;
-                
-                                 // Copy fields to local variables to avoid unaligned references
                  let mut unk00 = item.unk00;
                  let mut unk01 = item.unk01;
                  let mut rarity = item.rarity;

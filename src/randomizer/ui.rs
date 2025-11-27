@@ -55,6 +55,7 @@ pub struct RandomizerApp {
     pub armor_options: ArmorOptions,
     pub upgrade_options: UpgradeOptions,
     pub status_message: String,
+    pub should_return_to_selector: bool,
 }
 
 impl Default for RandomizerApp {
@@ -68,6 +69,7 @@ impl Default for RandomizerApp {
             armor_options: ArmorOptions::default(),
             upgrade_options: UpgradeOptions::default(),
             status_message: String::new(),
+            should_return_to_selector: false,
         }
     }
 }
@@ -78,7 +80,22 @@ impl RandomizerApp {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        ui.heading("Monster Hunter Frontier Randomizer");
+        ui.horizontal(|ui| {
+            if ui.button("← Back").clicked() {
+                // Unload files from memory
+                self.files.clear();
+                self.seed_input.clear();
+                self.options = RandomizerOptions::default();
+                self.melee_options = MeleeWeaponOptions::default();
+                self.ranged_options = RangedWeaponOptions::default();
+                self.armor_options = ArmorOptions::default();
+                self.upgrade_options = UpgradeOptions::default();
+                self.status_message.clear();
+                
+                self.should_return_to_selector = true;
+            }
+            ui.heading("Monster Hunter Frontier Randomizer");
+        });
         ui.separator();
 
         // File selection

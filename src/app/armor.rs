@@ -3,6 +3,7 @@ use egui;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use crate::utils::skills::{skill_name, SKILL_LIST};
 use crate::utils::weapon_patterns::{zenith_skill_name, ZENITH_SKILL_LIST};
+use crate::utils::equip_flags::EquipableBy;
 use std::fs::File;
 use std::io::Write;
 use serde_json;
@@ -232,8 +233,12 @@ impl MhfdatApp {
                             let equipable_by = armor.equipable_by;
 
                             let selected = self.selected_armor_index == Some(i);
-                            if ui.selectable_label(selected, format!("{}", i + 1)).clicked() {
+                            if ui.selectable_label(selected, format!("{}", i)).clicked() {
                                 self.selected_armor_index = Some(i);
+                                // Initialiser view_mode si nécessaire
+                                if !self.view_mode.contains_key("armor") {
+                                    self.view_mode.insert("armor".to_string(), ViewMode::List);
+                                }
                                 *self.view_mode.get_mut("armor").unwrap() = ViewMode::Details;
                             }
                             ui.label(&armor_name);
@@ -256,6 +261,10 @@ impl MhfdatApp {
 
     pub fn show_armor_details_view(&mut self, ui: &mut egui::Ui) {
         if ui.button("← Back to List").clicked() {
+            // Initialiser view_mode si nécessaire
+            if !self.view_mode.contains_key("armor") {
+                self.view_mode.insert("armor".to_string(), ViewMode::List);
+            }
             *self.view_mode.get_mut("armor").unwrap() = ViewMode::List;
             return;
         }
@@ -595,29 +604,47 @@ impl MhfdatApp {
     }
 
     fn get_equipment_flags(equipable_by: u8) -> (bool, bool, bool, bool) {
-        match equipable_by {
-            0 => (true, true, true, true),  // All
-            1 => (true, false, true, true), // Male only
-            2 => (false, true, true, true), // Female only
-            _ => (true, true, true, true),  // Default to All
-        }
+        let flags = EquipableBy::from_u8(equipable_by);
+        (flags.male, flags.female, flags.blade, flags.gunner)
     }
 
     fn set_equipment_flags(armor: &mut MhfdatEquipment, is_male: bool, is_female: bool, is_blade: bool, is_gunner: bool) {
-        let mut bitfield = 0u8;
-        if is_male { bitfield |= 1 << 0; }
-        if is_female { bitfield |= 1 << 1; }
-        if is_blade { bitfield |= 1 << 2; }
-        if is_gunner { bitfield |= 1 << 3; }
-        armor.equipable_by = bitfield;
+        let mut flags = EquipableBy::from_u8(armor.equipable_by);
+        flags.male = is_male;
+        flags.female = is_female;
+        flags.blade = is_blade;
+        flags.gunner = is_gunner;
+        armor.equipable_by = flags.to_u8();
     }
 }
 
-fn armor_type_name(equipable_by: u8) -> &'static str {
-    match equipable_by {
-        0 => "All",
-        1 => "Male",
-        2 => "Female",
-        _ => "Unknown",
+fn armor_type_name(equipable_by: u8) -> String {
+    let flags = EquipableBy::from_u8(equipable_by);
+    let mut parts = Vec::new();
+    
+    if flags.male && !flags.female {
+        parts.push("Male");
+    } else if !flags.male && flags.female {
+        parts.push("Female");
+    } else if flags.male && flags.female {
+        parts.push("Both");
+    }
+    
+    if flags.blade && !flags.gunner {
+        parts.push("Blade");
+    } else if !flags.blade && flags.gunner {
+        parts.push("Gunner");
+    } else if flags.blade && flags.gunner {
+        parts.push("Both");
+    }
+    
+    if flags.sp {
+        parts.push("SP");
+    }
+    
+    if parts.is_empty() {
+        "None".to_string()
+    } else {
+        parts.join("/")
     }
 }

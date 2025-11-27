@@ -1,9 +1,5 @@
-// Logique spécifique au format mhfdat 
-
 use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom, Result, Read, Cursor};
-// use std::fs::File;
-// use crate::model::mhfdat::MhfdatBinEntry;
 use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill};
 use byteorder::{ReadBytesExt, LittleEndian};
 use encoding_rs::SHIFT_JIS;
@@ -11,17 +7,6 @@ use std::env;
 use std::path::PathBuf;
 use std::mem::size_of;
 use crate::model::mhfdat_pointers::EQUIPEMENT_COUNT_PTR;
-// use std::ptr;
-
-// pub fn append_to_mhfdat_bin<P: AsRef<std::path::Path>>(path: P, entry: &MhfdatBinEntry) -> Result<()> {
-//     let mut file = OpenOptions::new()
-//         .append(true)
-//         .open(path)?;
-//     file.seek(SeekFrom::End(0))?;
-//     file.write_all(&entry.id.to_le_bytes())?;
-//     file.write_all(&entry.value.to_le_bytes())?;
-//     Ok(())
-// }
 
 fn get_exe_dir() -> PathBuf {
     env::current_exe()
@@ -187,7 +172,6 @@ fn clean_shift_jis_bytes(bytes: &[u8]) -> Vec<u8> {
         let b = bytes[i];
         if is_valid_shift_jis_byte(b) {
             if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xEF) {
-                // C'est un premier byte de kanji, vérifier le second byte
                 if i + 1 < bytes.len() {
                     let b2 = bytes[i + 1];
                     if (b2 >= 0x40 && b2 <= 0xFC) && b2 != 0x7F {
@@ -198,7 +182,6 @@ fn clean_shift_jis_bytes(bytes: &[u8]) -> Vec<u8> {
                     }
                 }
             } else {
-                // Byte ASCII ou katakana valide
                 result.push(b);
             }
         }
@@ -212,17 +195,11 @@ pub fn extract_melee_weapon_names<R: Read + Seek>(
     names_ptr: u32,
     count: usize,
 ) -> std::io::Result<Vec<String>> {
-    // 1. Seek to the pointer table offset (names_ptr)
     reader.seek(SeekFrom::Start(names_ptr as u64))?;
-    // 2. Read the pointer to the real table of string pointers
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
     let table_offset = u32::from_le_bytes(buf);
-    
-    // 3. Seek to the real table
     reader.seek(SeekFrom::Start(table_offset as u64))?;
-    
-    // 4. For each entry, read the pointer to the string, then read the string
     let mut names = Vec::with_capacity(count);
     for _ in 0..count {
         let mut ptr_buf = [0u8; 4];
@@ -331,26 +308,19 @@ pub fn write_melee_weapon(writer: &mut impl Write, weapon: &MhfdatMeleeWeapon) -
 pub fn write_weapon_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> Result<u32> {
     let mut name_offsets = Vec::new();
     let mut name_data = Vec::new();
-    
-    // First, write all the names and collect their offsets
     for name in names {
         let offset = name_data.len() as u32;
         name_offsets.push(offset);
-        
-        // Encoder en Shift-JIS avec vérification
         let (sjis_bytes, _, had_errors) = SHIFT_JIS.encode(name);
         if had_errors {
             println!("Warning: Shift-JIS encoding had errors for name: {}", name);
         }
-        
-        // Vérifier que les bytes sont valides en Shift-JIS
         let mut valid_bytes = Vec::new();
         let mut i = 0;
         while i < sjis_bytes.len() {
             let b = sjis_bytes[i];
             if is_valid_shift_jis_byte(b) {
                 if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xEF) {
-                    // C'est un premier byte de kanji, vérifier le second byte
                     if i + 1 < sjis_bytes.len() {
                         let b2 = sjis_bytes[i + 1];
                         if (b2 >= 0x40 && b2 <= 0xFC) && b2 != 0x7F {
@@ -361,7 +331,6 @@ pub fn write_weapon_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> 
                         }
                     }
                 } else {
-                    // Byte ASCII ou katakana valide
                     valid_bytes.push(b);
                 }
             }
@@ -369,16 +338,12 @@ pub fn write_weapon_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> 
         }
         
         name_data.extend_from_slice(&valid_bytes);
-        name_data.push(0); // null terminator
+        name_data.push(0);
     }
-    
-    // Write the name offsets table
     let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
     for offset in &name_offsets {
         writer.write_all(&(offset + table_offset + (names.len() as u32 * 4)).to_le_bytes())?;
     }
-    
-    // Write the actual name data
     writer.write_all(&name_data)?;
     
     Ok(table_offset)
@@ -390,13 +355,10 @@ pub fn extract_melee_weapon_descriptions<R: Read + Seek>(
     count: usize,
     buffer_len: usize,
 ) -> std::io::Result<Vec<[String; 4]>> {
-    // 1. Aller à l'offset 0x8C et lire le pointeur vers la table de descriptions
     reader.seek(SeekFrom::Start(desc_ptr_offset))?;
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
     let desc_table_offset = u32::from_le_bytes(buf);
-
-    // 2. Aller à la table de descriptions
     reader.seek(SeekFrom::Start(desc_table_offset as u64))?;
 
     let mut descriptions = Vec::with_capacity(count);
@@ -1428,17 +1390,11 @@ pub fn extract_ranged_weapon_names<R: Read + Seek>(
     names_ptr: u32,
     count: usize,
 ) -> std::io::Result<Vec<String>> {
-    // 1. Seek to the pointer table offset (names_ptr)
     reader.seek(SeekFrom::Start(names_ptr as u64))?;
-    // 2. Read the pointer to the real table of string pointers
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
     let table_offset = u32::from_le_bytes(buf);
-    
-    // 3. Seek to the real table
     reader.seek(SeekFrom::Start(table_offset as u64))?;
-    
-    // 4. For each entry, read the pointer to the string, then read the string
     let mut names = Vec::with_capacity(count);
     for i in 0..count {
         let mut ptr_buf = [0u8; 4];
@@ -1477,26 +1433,19 @@ pub fn extract_ranged_weapon_names<R: Read + Seek>(
 pub fn write_ranged_weapon_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> Result<u32> {
     let mut name_offsets = Vec::new();
     let mut name_data = Vec::new();
-    
-    // First, write all the names and collect their offsets
     for name in names {
         let offset = name_data.len() as u32;
         name_offsets.push(offset);
-        
-        // Encoder en Shift-JIS avec vérification
         let (sjis_bytes, _, had_errors) = SHIFT_JIS.encode(name);
         if had_errors {
             println!("Warning: Shift-JIS encoding had errors for name: {}", name);
         }
-        
-        // Vérifier que les bytes sont valides en Shift-JIS
         let mut valid_bytes = Vec::new();
         let mut i = 0;
         while i < sjis_bytes.len() {
             let b = sjis_bytes[i];
             if is_valid_shift_jis_byte(b) {
                 if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xEF) {
-                    // C'est un premier byte de kanji, vérifier le second byte
                     if i + 1 < sjis_bytes.len() {
                         let b2 = sjis_bytes[i + 1];
                         if (b2 >= 0x40 && b2 <= 0xFC) && b2 != 0x7F {
@@ -1507,7 +1456,6 @@ pub fn write_ranged_weapon_names<W: Write + Seek>(writer: &mut W, names: &[Strin
                         }
                     }
                 } else {
-                    // Byte ASCII ou katakana valide
                     valid_bytes.push(b);
                 }
             }
@@ -1515,16 +1463,12 @@ pub fn write_ranged_weapon_names<W: Write + Seek>(writer: &mut W, names: &[Strin
         }
         
         name_data.extend_from_slice(&valid_bytes);
-        name_data.push(0); // null terminator
+        name_data.push(0);
     }
-    
-    // Write the name offsets table
     let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
     for offset in &name_offsets {
         writer.write_all(&(offset + table_offset + (names.len() as u32 * 4)).to_le_bytes())?;
     }
-    
-    // Write the actual name data
     writer.write_all(&name_data)?;
     
     Ok(table_offset)
@@ -1646,50 +1590,52 @@ pub fn read_equipment<R: Read>(r: &mut R) -> Result<MhfdatEquipment> {
 }
 
 pub fn write_equipment<W: Write>(w: &mut W, eq: &MhfdatEquipment) -> Result<()> {
-    w.write_all(&eq.model_id_male.to_le_bytes())?;
-    w.write_all(&eq.model_id_female.to_le_bytes())?;
-    w.write_all(&[eq.equipable_by])?;
-    w.write_all(&[eq.rarity])?;
-    w.write_all(&[eq.max_level])?;
-    w.write_all(&[eq.unk07])?;
-    w.write_all(&eq.unk08.to_le_bytes())?;
-    w.write_all(&eq.unk0A.to_le_bytes())?;
-    w.write_all(&eq.zenny_cost.to_le_bytes())?;
-    w.write_all(&eq.unk10.to_le_bytes())?;
-    w.write_all(&eq.base_defense.to_le_bytes())?;
-    w.write_all(&[eq.fire_res as u8])?;
-    w.write_all(&[eq.water_res as u8])?;
-    w.write_all(&[eq.thunder_res as u8])?;
-    w.write_all(&[eq.dragon_res as u8])?;
-    w.write_all(&[eq.ice_res as u8])?;
-    w.write_all(&[eq.unk19])?;
-    w.write_all(&[eq.unk1A])?;
-    w.write_all(&[eq.base_slots])?;
-    w.write_all(&[eq.max_slots])?;
-    w.write_all(&[eq.sth_event_crown])?;
-    w.write_all(&eq.unk1E.to_le_bytes())?;
-    w.write_all(&eq.equip_id.to_le_bytes())?;
-    w.write_all(&eq.unk22.to_le_bytes())?;
-    w.write_all(&eq.unk24.to_le_bytes())?;
-    w.write_all(&eq.unk28.to_le_bytes())?;
-    w.write_all(&[eq.skill_id1])?;
-    w.write_all(&[eq.skill_pts1 as u8])?;
-    w.write_all(&[eq.skill_id2])?;
-    w.write_all(&[eq.skill_pts2 as u8])?;
-    w.write_all(&[eq.skill_id3])?;
-    w.write_all(&[eq.skill_pts3 as u8])?;
-    w.write_all(&[eq.skill_id4])?;
-    w.write_all(&[eq.skill_pts4 as u8])?;
-    w.write_all(&[eq.skill_id5])?;
-    w.write_all(&[eq.skill_pts5 as u8])?;
-    w.write_all(&eq.sth_hidden.to_le_bytes())?;
-    w.write_all(&eq.unk38.to_le_bytes())?;
-    w.write_all(&eq.unk3C.to_le_bytes())?;
-    w.write_all(&[eq.unk3E])?;
-    w.write_all(&[eq.zero_f])?;
-    w.write_all(&eq.unk40.to_le_bytes())?;
-    w.write_all(&eq.unk44.to_le_bytes())?;
-    w.write_all(&eq.zenith_skill.to_le_bytes())?;
+    use byteorder::WriteBytesExt;
+    
+    w.write_u16::<LittleEndian>(eq.model_id_male)?;
+    w.write_u16::<LittleEndian>(eq.model_id_female)?;
+    w.write_u8(eq.equipable_by)?;
+    w.write_u8(eq.rarity)?;
+    w.write_u8(eq.max_level)?;
+    w.write_u8(eq.unk07)?;
+    w.write_u16::<LittleEndian>(eq.unk08)?;
+    w.write_u16::<LittleEndian>(eq.unk0A)?;
+    w.write_u32::<LittleEndian>(eq.zenny_cost)?;
+    w.write_u16::<LittleEndian>(eq.unk10)?;
+    w.write_u16::<LittleEndian>(eq.base_defense)?;
+    w.write_i8(eq.fire_res)?;
+    w.write_i8(eq.water_res)?;
+    w.write_i8(eq.thunder_res)?;
+    w.write_i8(eq.dragon_res)?;
+    w.write_i8(eq.ice_res)?;
+    w.write_u8(eq.unk19)?;
+    w.write_u8(eq.unk1A)?;
+    w.write_u8(eq.base_slots)?;
+    w.write_u8(eq.max_slots)?;
+    w.write_u8(eq.sth_event_crown)?;
+    w.write_u16::<LittleEndian>(eq.unk1E)?;
+    w.write_u16::<LittleEndian>(eq.equip_id)?;
+    w.write_u16::<LittleEndian>(eq.unk22)?;
+    w.write_u32::<LittleEndian>(eq.unk24)?;
+    w.write_u16::<LittleEndian>(eq.unk28)?;
+    w.write_u8(eq.skill_id1)?;
+    w.write_i8(eq.skill_pts1)?;
+    w.write_u8(eq.skill_id2)?;
+    w.write_i8(eq.skill_pts2)?;
+    w.write_u8(eq.skill_id3)?;
+    w.write_i8(eq.skill_pts3)?;
+    w.write_u8(eq.skill_id4)?;
+    w.write_i8(eq.skill_pts4)?;
+    w.write_u8(eq.skill_id5)?;
+    w.write_i8(eq.skill_pts5)?;
+    w.write_u32::<LittleEndian>(eq.sth_hidden)?;
+    w.write_u32::<LittleEndian>(eq.unk38)?;
+    w.write_u16::<LittleEndian>(eq.unk3C)?;
+    w.write_u8(eq.unk3E)?;
+    w.write_u8(eq.zero_f)?;
+    w.write_u32::<LittleEndian>(eq.unk40)?;
+    w.write_u16::<LittleEndian>(eq.unk44)?;
+    w.write_u16::<LittleEndian>(eq.zenith_skill)?;
     Ok(())
 }
 
@@ -1712,17 +1658,11 @@ pub fn extract_armor_names<R: Read + Seek>(
     names_ptr: u32,
     count: usize,
 ) -> std::io::Result<Vec<String>> {
-    // 1. Seek to the pointer table offset (names_ptr)
     reader.seek(SeekFrom::Start(names_ptr as u64))?;
-    // 2. Read the pointer to the real table of string pointers
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
     let table_offset = u32::from_le_bytes(buf);
-    
-    // 3. Seek to the real table
     reader.seek(SeekFrom::Start(table_offset as u64))?;
-    
-    // 4. For each entry, read the pointer to the string, then read the string
     let mut names = Vec::with_capacity(count);
     for _ in 0..count {
         let mut ptr_buf = [0u8; 4];
@@ -1733,21 +1673,16 @@ pub fn extract_armor_names<R: Read + Seek>(
             names.push(String::new());
             continue;
         }
-        // Save current position
         let cur = reader.seek(SeekFrom::Current(0))?;
-        // Go to string offset
         reader.seek(SeekFrom::Start(str_offset as u64))?;
-        // Read bytes until null terminator
         let mut bytes = Vec::new();
         let mut b = [0u8; 1];
         while reader.read_exact(&mut b).is_ok() && b[0] != 0 {
             bytes.push(b[0]);
         }
-        // Clean and decode
         let cleaned_bytes = clean_shift_jis_bytes(&bytes);
         let (cow, _, _) = SHIFT_JIS.decode(&cleaned_bytes);
         names.push(cow.to_string());
-        // Restore position
         reader.seek(SeekFrom::Start(cur))?;
     }
     Ok(names)
@@ -1973,9 +1908,15 @@ pub fn write_armor_data(head_armors: &[MhfdatEquipment], body_armors: &[MhfdatEq
 /// Serialize a single armor section followed by a sentinel (model_id_male and model_id_female = 0xFFFF)
 pub fn write_armors_block(armors: &[MhfdatEquipment]) -> Result<Vec<u8>> {
     let mut data = Vec::new();
+    // Only write armors that are not sentinels (filter out any 0xFFFF entries)
     for armor in armors {
+        // Skip sentinel entries that might be in the Vec
+        if armor.model_id_male == 0xFFFF && armor.model_id_female == 0xFFFF {
+            continue;
+        }
         write_equipment(&mut data, armor)?;
     }
+    // Add the sentinel at the end
     let sentinel = MhfdatEquipment {
         model_id_male: 0xFFFF,
         model_id_female: 0xFFFF,
@@ -1986,39 +1927,47 @@ pub fn write_armors_block(armors: &[MhfdatEquipment]) -> Result<Vec<u8>> {
 }
 
 pub fn write_armor_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> Result<u32> {
-    let mut data = Vec::new();
-    let mut cursor = Cursor::new(&mut data);
-    
-    // Write the pointer table
-    let mut string_offsets = Vec::new();
-    let mut strings_data = Vec::new();
-    
-    // Calculate string offsets
-    let mut current_offset = 4 + (names.len() * 4) as u32; // 4 bytes for table pointer + 4 bytes per string pointer
-    
+    let mut name_offsets = Vec::new();
+    let mut name_data = Vec::new();
     for name in names {
-        string_offsets.push(current_offset);
-        let encoded = SHIFT_JIS.encode(name).0;
-        strings_data.extend_from_slice(&encoded);
-        strings_data.push(0); // null terminator
-        current_offset += encoded.len() as u32 + 1;
+        let offset = name_data.len() as u32;
+        name_offsets.push(offset);
+        let (sjis_bytes, _, had_errors) = SHIFT_JIS.encode(name);
+        if had_errors {
+            println!("Warning: Shift-JIS encoding had errors for armor name: {}", name);
+        }
+        let mut valid_bytes = Vec::new();
+        let mut i = 0;
+        while i < sjis_bytes.len() {
+            let b = sjis_bytes[i];
+            if is_valid_shift_jis_byte(b) {
+                if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xEF) {
+                    if i + 1 < sjis_bytes.len() {
+                        let b2 = sjis_bytes[i + 1];
+                        if (b2 >= 0x40 && b2 <= 0xFC) && b2 != 0x7F {
+                            valid_bytes.push(b);
+                            valid_bytes.push(b2);
+                            i += 2;
+                            continue;
+                        }
+                    }
+                } else {
+                    valid_bytes.push(b);
+                }
+            }
+            i += 1;
+        }
+        
+        name_data.extend_from_slice(&valid_bytes);
+        name_data.push(0);
     }
-    
-    // Write the table pointer (points to the string pointer table)
-    cursor.write_all(&(4u32).to_le_bytes())?;
-    
-    // Write string pointers
-    for offset in string_offsets {
-        cursor.write_all(&offset.to_le_bytes())?;
+    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    for offset in &name_offsets {
+        writer.write_all(&(offset + table_offset + (names.len() as u32 * 4)).to_le_bytes())?;
     }
+    writer.write_all(&name_data)?;
     
-    // Write the actual strings
-    cursor.write_all(&strings_data)?;
-    
-    // Write the data to the writer
-    writer.write_all(&data)?;
-    
-    Ok(4) // Return the offset where the table pointer was written
+    Ok(table_offset)
 }
 
 pub fn write_transmog_data(transmog_entries: &[ShopEntry]) -> Result<Vec<u8>> {
@@ -2072,7 +2021,7 @@ pub fn write_armor_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &
             entry_offsets.push(current_offset);
             let encoded = SHIFT_JIS.encode(field).0;
             strings_data.extend_from_slice(&encoded);
-            strings_data.push(0); // null terminator
+            strings_data.push(0);
             current_offset += encoded.len() as u32 + 1;
         }
         field_offsets.extend(entry_offsets);
@@ -2136,6 +2085,8 @@ pub fn read_item_offsets(buffer: &[u8]) -> Option<(u32, u32, u32)> {
     Some((data_offset, names_offset, desc_offset))
 }
 
+const MAX_ITEMS: usize = 16700;
+
 pub fn read_items_until_sentinel<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<Vec<MhfdatItem>> {
     let mut items = Vec::new();
     reader.seek(SeekFrom::Start(offset))?;
@@ -2146,6 +2097,12 @@ pub fn read_items_until_sentinel<R: Read + Seek>(reader: &mut R, offset: u64) ->
             break;
         }
         items.push(item);
+        
+        // Limit maximum number of items to prevent memory issues
+        if items.len() >= MAX_ITEMS {
+            println!("Warning: Maximum item limit ({}) reached", MAX_ITEMS);
+            break;
+        }
     }
     Ok(items)
 }
@@ -2192,6 +2149,14 @@ pub fn write_item(writer: &mut impl Write, item: &MhfdatItem) -> Result<()> {
 
 /// Serialize items followed by a 0xFFFF sentinel (first two bytes of an item set to 0xFF)
 pub fn write_items_block(items: &[MhfdatItem]) -> Result<Vec<u8>> {
+    // Enforce maximum item limit
+    if items.len() > MAX_ITEMS {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Too many items: {} (maximum is {})", items.len(), MAX_ITEMS)
+        ));
+    }
+    
     let mut data = Vec::new();
     for item in items {
         write_item(&mut data, item)?;
@@ -2209,27 +2174,17 @@ pub fn extract_item_names<R: Read + Seek>(
     names_ptr: u32,
     count: usize,
 ) -> std::io::Result<Vec<String>> {
-    // 1. Seek to the pointer table offset (names_ptr)
     reader.seek(SeekFrom::Start(names_ptr as u64))?;
-    // 2. Read the pointer to the real table of string pointers
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
     let table_offset = u32::from_le_bytes(buf);
-    
-    // 3. Seek to the real table
     reader.seek(SeekFrom::Start(table_offset as u64))?;
-    
-    // 4. For each entry, read the pointer to the string, then read the string
     let mut names = Vec::with_capacity(count);
     for _ in 0..count {
         let mut ptr_buf = [0u8; 4];
         reader.read_exact(&mut ptr_buf)?;
         let string_ptr = u32::from_le_bytes(ptr_buf);
-        
-        // Save current position
         let current_pos = reader.seek(SeekFrom::Current(0))?;
-        
-        // Seek to string and read it
         reader.seek(SeekFrom::Start(string_ptr as u64))?;
         let mut string_bytes = Vec::new();
         let mut byte = [0u8; 1];
@@ -2245,8 +2200,6 @@ pub fn extract_item_names<R: Read + Seek>(
         let (cow, _, _) = SHIFT_JIS.decode(&string_bytes);
         let name = cow.into_owned();
         names.push(name);
-        
-        // Restore position
         reader.seek(SeekFrom::Start(current_pos))?;
     }
     
@@ -2258,27 +2211,17 @@ pub fn extract_item_descriptions<R: Read + Seek>(
     desc_ptr: u32,
     count: usize,
 ) -> std::io::Result<Vec<String>> {
-    // 1. Seek to the pointer table offset (desc_ptr)
     reader.seek(SeekFrom::Start(desc_ptr as u64))?;
-    // 2. Read the pointer to the real table of string pointers
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
     let table_offset = u32::from_le_bytes(buf);
-    
-    // 3. Seek to the real table (add 0x60 as per pattern)
     reader.seek(SeekFrom::Start((table_offset + 0x60) as u64))?;
-    
-    // 4. For each entry, read the pointer to the string, then read the string
     let mut descriptions = Vec::with_capacity(count);
     for _ in 0..count {
         let mut ptr_buf = [0u8; 4];
         reader.read_exact(&mut ptr_buf)?;
         let string_ptr = u32::from_le_bytes(ptr_buf);
-        
-        // Save current position
         let current_pos = reader.seek(SeekFrom::Current(0))?;
-        
-        // Seek to string and read it
         reader.seek(SeekFrom::Start(string_ptr as u64))?;
         let mut string_bytes = Vec::new();
         let mut byte = [0u8; 1];
@@ -2294,12 +2237,111 @@ pub fn extract_item_descriptions<R: Read + Seek>(
         let (cow, _, _) = SHIFT_JIS.decode(&string_bytes);
         let description = cow.into_owned();
         descriptions.push(description);
-        
-        // Restore position
         reader.seek(SeekFrom::Start(current_pos))?;
     }
     
     Ok(descriptions)
+}
+
+pub fn write_item_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> Result<u32> {
+    let mut name_offsets = Vec::new();
+    let mut name_data = Vec::new();
+    for name in names {
+        let offset = name_data.len() as u32;
+        name_offsets.push(offset);
+        let (sjis_bytes, _, had_errors) = SHIFT_JIS.encode(name);
+        if had_errors {
+            println!("Warning: Shift-JIS encoding had errors for item name: {}", name);
+        }
+        let mut valid_bytes = Vec::new();
+        let mut i = 0;
+        while i < sjis_bytes.len() {
+            let b = sjis_bytes[i];
+            if is_valid_shift_jis_byte(b) {
+                if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xEF) {
+                    if i + 1 < sjis_bytes.len() {
+                        let b2 = sjis_bytes[i + 1];
+                        if (b2 >= 0x40 && b2 <= 0xFC) && b2 != 0x7F {
+                            valid_bytes.push(b);
+                            valid_bytes.push(b2);
+                            i += 2;
+                            continue;
+                        }
+                    }
+                } else {
+                    valid_bytes.push(b);
+                }
+            }
+            i += 1;
+        }
+        
+        name_data.extend_from_slice(&valid_bytes);
+        name_data.push(0);
+    }
+    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    for offset in &name_offsets {
+        writer.write_all(&(offset + table_offset + (names.len() as u32 * 4)).to_le_bytes())?;
+    }
+    writer.write_all(&name_data)?;
+    
+    Ok(table_offset)
+}
+
+pub fn write_item_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[String]) -> Result<u32> {
+    let mut desc_offsets = Vec::new();
+    let mut desc_data = Vec::new();
+    for desc in descriptions {
+        let offset = desc_data.len() as u32;
+        desc_offsets.push(offset);
+        let (sjis_bytes, _, had_errors) = SHIFT_JIS.encode(desc);
+        if had_errors {
+            println!("Warning: Shift-JIS encoding had errors for item description: {}", desc);
+        }
+        let mut valid_bytes = Vec::new();
+        let mut i = 0;
+        while i < sjis_bytes.len() {
+            let b = sjis_bytes[i];
+            if is_valid_shift_jis_byte(b) {
+                if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xEF) {
+                    if i + 1 < sjis_bytes.len() {
+                        let b2 = sjis_bytes[i + 1];
+                        if (b2 >= 0x40 && b2 <= 0xFC) && b2 != 0x7F {
+                            valid_bytes.push(b);
+                            valid_bytes.push(b2);
+                            i += 2;
+                            continue;
+                        }
+                    }
+                } else {
+                    valid_bytes.push(b);
+                }
+            }
+            i += 1;
+        }
+        
+        desc_data.extend_from_slice(&valid_bytes);
+        desc_data.push(0);
+    }
+    
+    // Item descriptions have a special structure with 0x60 bytes padding
+    let start_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    
+    // Write the first pointer (points to the start of padding area, not the table directly)
+    let padding_start = start_offset + 4;
+    writer.write_all(&padding_start.to_le_bytes())?;
+    
+    // Write 0x60 bytes of padding
+    const PADDING_SIZE: usize = 0x60;
+    writer.write_all(&vec![0u8; PADDING_SIZE])?;
+    
+    // Write the description offsets table (after padding)
+    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    for offset in &desc_offsets {
+        writer.write_all(&(offset + table_offset + (descriptions.len() as u32 * 4)).to_le_bytes())?;
+    }
+    writer.write_all(&desc_data)?;
+    
+    Ok(start_offset)
 }
 
 pub fn parse_item_names(buffer: &[u8], count: usize) -> Vec<String> {

@@ -143,7 +143,6 @@ pub enum ViewMode {
 
 pub struct MhfdatApp {
     pub error_message: Option<String>,
-    pub on_back: Option<Box<dyn FnMut()>>,
     pub current_file: Option<PathBuf>,
     pub buffer: Vec<u8>,
     pub selected_category: WeaponCategory,
@@ -254,7 +253,6 @@ impl Default for MhfdatApp {
     fn default() -> Self {
         Self {
             error_message: None,
-            on_back: None,
             current_file: None,
             buffer: Vec::new(),
             selected_category: WeaponCategory::Melee,
@@ -497,6 +495,87 @@ impl MhfdatApp {
         
         self.error_message = Some("File loaded successfully.".to_string());
     }
+
+    pub fn unload_file(&mut self) {
+        // Clear all file data from memory
+        self.buffer.clear();
+        self.current_file = None;
+        self.error_message = None;
+        
+        // Clear weapons
+        self.melee_weapons.clear();
+        self.ranged_weapons.clear();
+        self.melee_weapon_names.clear();
+        self.ranged_weapon_names.clear();
+        self.melee_weapon_descriptions.clear();
+        self.ranged_weapon_descriptions.clear();
+        self.selected_melee_index = None;
+        self.selected_ranged_index = None;
+        self.selected_weapon_view = None;
+        
+        // Clear armors
+        self.head_armors.clear();
+        self.body_armors.clear();
+        self.arms_armors.clear();
+        self.waist_armors.clear();
+        self.legs_armors.clear();
+        self.head_armor_names.clear();
+        self.body_armor_names.clear();
+        self.arms_armor_names.clear();
+        self.waist_armor_names.clear();
+        self.legs_armor_names.clear();
+        self.armor_descriptions.clear();
+        self.selected_armor_index = None;
+        
+        // Clear items
+        self.items.clear();
+        self.item_names.clear();
+        self.item_descriptions.clear();
+        
+        // Clear shop/upgrade entries
+        self.workshop_entries.clear();
+        self.transmog_entries.clear();
+        self.zenith_entries.clear();
+        self.deco_shop_entries.clear();
+        self.sigil_tower_entries.clear();
+        self.g50_weapon_entries.clear();
+        self.mw_upgrade_entries.clear();
+        self.rw_upgrade_entries.clear();
+        self.evo_upgrade_entries.clear();
+        
+        // Clear decorations and automatic skills
+        self.deco_ids.clear();
+        self.automatic_skills.clear();
+        
+        // Clear equipment descriptions
+        self.equip_descs.clear();
+        self.equip_desc_names.clear();
+        
+        // Clear search/filter states
+        self.search_query.clear();
+        self.armor_search_query.clear();
+        self.zenith_skill_search.clear();
+        self.armor_skill1_search.clear();
+        self.armor_skill2_search.clear();
+        self.armor_skill3_search.clear();
+        self.armor_skill4_search.clear();
+        self.armor_skill5_search.clear();
+        self.armor_zenith_skill_search.clear();
+        self.class_id_filter = None;
+        self.element_filter = None;
+        self.ailment_filter = None;
+        self.equip_type_filter = None;
+        self.shop_equip_type_filter = None;
+        self.weapon_type_filter = None;
+        self.zenith_skill_filter = None;
+        
+        // Reset pages
+        self.shop_page = 0;
+        self.armor_page = 0;
+        
+        // Clear debug logs
+        self.debug_logs.clear();
+    }
 }
 
 impl App for MhfdatApp {
@@ -527,8 +606,8 @@ impl App for MhfdatApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if ui.button("Back").clicked() {
-                self.selected_melee_index = None;
-                self.selected_weapon_view = None;
+                // Unload file from memory
+                self.unload_file();
                 self.should_return_to_selector = true;
             }
             
@@ -538,11 +617,7 @@ impl App for MhfdatApp {
                         // 1. Sauvegarder les données
                         match self.save_modified_data() {
                             Ok(()) => {
-                                // 2. Vérifier que les données sont bien écrites
-                                match self.verify_saved_data() {
-                                    Ok(()) => self.error_message = Some("File saved and verified successfully.".to_string()),
-                                    Err(e) => self.error_message = Some(format!("Save ok but verification failed: {e}")),
-                                }
+                                self.error_message = Some("File saved successfully.".to_string());
                             },
                             Err(e) => self.error_message = Some(format!("Failed to save file: {e}")),
                         }
