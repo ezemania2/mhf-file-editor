@@ -54,7 +54,3 @@ Notes:
 ## Issues & contributions
 
 - Please open issues for bugs and feature requests. Pull requests are welcome.
-
-## License
-
-Specify your license (e.g. MIT, Apache-2.0).
