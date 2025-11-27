@@ -5,11 +5,14 @@ use crate::core::mhfjmp::{load_mhfjmp_bin_from_buffer, save_mhfjmp_bin};
 use crate::core::packing::{compress_file, encrypt_file};
 use std::path::PathBuf;
 use serde_json;
+use std::io::{Read, Write, Seek, SeekFrom};
+use std::fs::File;
 
 pub enum MhfjmpTab {
     MenuEntries,
     Areas,
     Strings,
+    Handlers,
 }
 
 impl Default for MhfjmpTab {
@@ -18,28 +21,55 @@ impl Default for MhfjmpTab {
     }
 }
 
+#[derive(Clone)]
+pub struct HandlerEntry {
+    pub index: u8,
+    pub name: String,
+    pub address: u32,
+    pub description: String,
+}
+
 pub struct MhfjmpApp {
     pub tab: MhfjmpTab,
     pub entries: Vec<MenuEntry>,
     pub selected_index: Option<usize>,
     pub areas: Vec<Area>,
     pub strings: Vec<StringEntry>,
+    pub handlers: Vec<HandlerEntry>,
     pub current_file: Option<PathBuf>,
     pub error_message: Option<String>,
     pub should_return_to_selector: bool,
+    pub dll_file: Option<PathBuf>,
+    pub dll_loaded: bool,
 }
 
 impl Default for MhfjmpApp {
     fn default() -> Self {
+        let default_handlers = vec![
+            HandlerEntry { index: 0, name: "teleport_coords".to_string(), address: 0x10410E50, description: "Direct coordinate teleportation".to_string() },
+            HandlerEntry { index: 1, name: "lobby_specific".to_string(), address: 0x10410F50, description: "Specific lobby teleportation".to_string() },
+            HandlerEntry { index: 2, name: "change_land".to_string(), address: 0x10410FB0, description: "Land/Salon change handler".to_string() },
+            HandlerEntry { index: 3, name: "change_lobby_type".to_string(), address: 0x10410FD0, description: "Lobby type change".to_string() },
+            HandlerEntry { index: 4, name: "zone_with_loading".to_string(), address: 0x10410FF0, description: "Zone with loading (to guild)".to_string() },
+            HandlerEntry { index: 5, name: "area_classic".to_string(), address: 0x104110E0, description: "Classic area transition".to_string() },
+            HandlerEntry { index: 6, name: "area_with_npc_dialogue".to_string(), address: 0x104111A0, description: "Area with NPC dialogue".to_string() },
+            HandlerEntry { index: 7, name: "area_change".to_string(), address: 0x10411270, description: "Standard area change".to_string() },
+            HandlerEntry { index: 8, name: "hardcoded_area".to_string(), address: 0x10411310, description: "Hardcoded area (house)".to_string() },
+
+        ];
+        
         MhfjmpApp {
             tab: MhfjmpTab::MenuEntries,
             entries: Vec::new(),
             selected_index: None,
             areas: Vec::new(),
             strings: Vec::new(),
+            handlers: default_handlers,
             current_file: None,
             error_message: None,
             should_return_to_selector: false,
+            dll_file: None,
+            dll_loaded: false,
         }
     }
 }
@@ -140,12 +170,16 @@ impl MhfjmpApp {
                 if ui.selectable_label(matches!(self.tab, MhfjmpTab::Strings), "Strings").clicked() {
                     self.tab = MhfjmpTab::Strings;
                 }
+                if ui.selectable_label(matches!(self.tab, MhfjmpTab::Handlers), "Handlers (DLL)").clicked() {
+                    self.tab = MhfjmpTab::Handlers;
+                }
             });
         });
         match self.tab {
             MhfjmpTab::MenuEntries => self.show_menu_entries_tab(ui),
             MhfjmpTab::Areas => self.show_areas_tab(ui),
             MhfjmpTab::Strings => self.show_strings_tab(ui),
+            MhfjmpTab::Handlers => self.show_handlers_tab(ui),
         }
     }
 
@@ -385,5 +419,199 @@ impl MhfjmpApp {
         } else {
             self.error_message = Some("No file loaded.".to_string());
         }
+    }
+
+    fn load_dll(&mut self) {
+        const HANDLER_TABLE_OFFSET: u64 = 0x019227B0;
+        const HANDLER_COUNT: usize = 24;
+        const HANDLER_SIZE: usize = 4;
+        
+        if let Some(result) = rfd::FileDialog::new()
+            .add_filter("DLL", &["dll"])
+            .set_file_name("mhfo-hd.dll")
+            .pick_file()
+        {
+            match File::open(&result) {
+                Ok(mut file) => {
+                    if let Err(e) = file.seek(SeekFrom::Start(HANDLER_TABLE_OFFSET)) {
+                        self.error_message = Some(format!("Error seeking to handler table: {}", e));
+                        return;
+                    }
+                    
+                    let mut buffer = vec![0u8; HANDLER_COUNT * HANDLER_SIZE];
+                    match file.read_exact(&mut buffer) {
+                        Ok(_) => {
+                            self.handlers.clear();
+                            for i in 0..HANDLER_COUNT {
+                                let offset = i * HANDLER_SIZE;
+                                let address = u32::from_le_bytes([
+                                    buffer[offset],
+                                    buffer[offset + 1],
+                                    buffer[offset + 2],
+                                    buffer[offset + 3],
+                                ]);
+                                
+                                let (name, description) = match i {
+                                    0 => ("teleport_coords".to_string(), "Direct coordinate teleportation".to_string()),
+                                    1 => ("lobby_specific".to_string(), "Specific lobby teleportation".to_string()),
+                                    2 => ("change_land".to_string(), "Land change handler".to_string()),
+                                    3 => ("change_lobby_type".to_string(), "Lobby type change".to_string()),
+                                    4 => ("zone_with_loading".to_string(), "Zone with loading (to guild)".to_string()),
+                                    5 => ("area_classic".to_string(), "Classic area transition".to_string()),
+                                    6 => ("area_with_npc_dialogue".to_string(), "Area with NPC dialogue".to_string()),
+                                    7 => ("area_change".to_string(), "Standard area change".to_string()),
+                                    8 => ("hardcoded_area".to_string(), "Hardcoded area (house)".to_string()),
+                                    _ => (format!("handler_{}", i), format!("Handler {} (unknown)", i)),
+                                };
+                                
+                                self.handlers.push(HandlerEntry {
+                                    index: i as u8,
+                                    name,
+                                    address,
+                                    description,
+                                });
+                            }
+                            
+                            self.dll_file = Some(result);
+                            self.dll_loaded = true;
+                            self.error_message = Some("DLL loaded successfully! You can now edit the handlers.".to_string());
+                        }
+                        Err(e) => {
+                            self.error_message = Some(format!("Error reading handler table: {}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    self.error_message = Some(format!("Error opening DLL: {}", e));
+                }
+            }
+        }
+    }
+
+    fn save_dll(&mut self) {
+        const HANDLER_TABLE_OFFSET: u64 = 0x019227B0;
+        
+        if let Some(dll_path) = &self.dll_file {
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(dll_path)
+            {
+                Ok(mut file) => {
+                    if let Err(e) = file.seek(SeekFrom::Start(HANDLER_TABLE_OFFSET)) {
+                        self.error_message = Some(format!("Error seeking to handler table: {}", e));
+                        return;
+                    }
+                    
+                    for handler in &self.handlers {
+                        let bytes = handler.address.to_le_bytes();
+                        if let Err(e) = file.write_all(&bytes) {
+                            self.error_message = Some(format!("Error writing handler {}: {}", handler.index, e));
+                            return;
+                        }
+                    }
+                    
+                    self.error_message = Some("Handler table saved successfully!".to_string());
+                }
+                Err(e) => {
+                    self.error_message = Some(format!("Error opening DLL for writing: {}", e));
+                }
+            }
+        } else {
+            self.error_message = Some("No DLL file loaded. Please load mhfo-hd.dll first.".to_string());
+        }
+    }
+
+    fn show_handlers_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Teleportation Handlers Editor (mhfo-hd.dll)");
+        ui.separator();
+        
+        ui.horizontal(|ui| {
+            if ui.button("mhfo-hd.dll").clicked() {
+                self.load_dll();
+            }
+            
+            ui.separator();
+            
+            if self.dll_loaded {
+                if ui.button("Save Changes").clicked() {
+                    self.save_dll();
+                }
+                
+                ui.separator();
+                
+                if let Some(dll_path) = &self.dll_file {
+                    ui.label(format!("Loaded: {}", dll_path.file_name().unwrap_or_default().to_string_lossy()));
+                }
+            } else {
+                ui.label("Load mhfo-hd.dll to edit handlers");
+            }
+        });
+        
+        ui.add_space(10.0);
+        
+        if !self.dll_loaded {
+            ui.group(|ui| {
+                ui.heading("Instructions");
+                ui.separator();
+                ui.label("1. Click 'Load mhfo-hd.dll' and select your mhfo-hd.dll file");
+                ui.label("2. The editor will automatically read the handler table at offset 0x019227B0");
+                ui.label("3. Modify handler addresses directly in the table below");
+                ui.label("4. Click 'Save Changes' to write modifications to the DLL");
+                ui.add_space(10.0);
+                ui.label("IMPORTANT:");
+                ui.label("• Always backup mhfo-hd.dll before modification");
+                ui.label("• Invalid addresses will crash the game");
+                ui.label("• Test in a backup game directory first");
+            });
+            return;
+        }
+        
+        ui.add_space(10.0);
+        
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label("Handler Table - DLL Offset:");
+                ui.monospace("0x019227B0");
+                ui.separator();
+                ui.label("24 × u32 (96 bytes total)");
+            });
+        });
+        
+        ui.add_space(10.0);
+        
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            let known_handlers = [
+                (0x10410E50, "teleport_coords"),
+                (0x10410F50, "lobby_specific"),
+                (0x10410FB0, "change_land"),
+                (0x10410FD0, "change_lobby_type"),
+                (0x10410FF0, "zone_with_loading"),
+                (0x104110E0, "area_classic"),
+                (0x104111A0, "area_with_npc_dialogue"),
+                (0x10411270, "area_change"),
+                (0x10411310, "hardcoded_area"),
+            ];
+            
+            for i in 0..self.handlers.len() {
+                ui.horizontal(|ui| {
+                    ui.monospace(format!("{:2}", i));
+                    
+                    let current_name = known_handlers.iter()
+                        .find(|(addr, _)| *addr == self.handlers[i].address)
+                        .map(|(_, name)| *name)
+                        .unwrap_or("unknown");
+                    
+                    egui::ComboBox::from_id_source(format!("handler_{}", i))
+                        .selected_text(current_name)
+                        .show_ui(ui, |ui| {
+                            for (addr, name) in &known_handlers {
+                                if ui.selectable_value(&mut self.handlers[i].address, *addr, *name).clicked() {
+                                }
+                            }
+                        });
+                });
+            }
+        });
     }
 } 
