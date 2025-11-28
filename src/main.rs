@@ -87,18 +87,23 @@ impl eframe::App for RootApp {
                             if let Some(file_name) = path.file_name() {
                                 let file_name_str = file_name.to_string_lossy().to_lowercase();
                                 if file_name_str.contains("mhfjmp") {
-                                    if let Ok(data) = std::fs::read(&path) {
-                                        let mut app = app::MhfjmpApp::default();
-                                        let opened_file = path.display().to_string();
-                                        app.load_file(path, data);
-                                        self.state = AppState::Mhfjmp(app);
-                                        
-                                        // Ajouter aux fichiers récents
-                                        if !self.recent_files.contains(&opened_file) {
-                                            self.recent_files.insert(0, opened_file.clone());
-                                            if self.recent_files.len() > 5 {
-                                                self.recent_files.pop();
+                                    match crate::core::packing::unpack_file(&path) {
+                                        Ok(data) => {
+                                            let mut app = app::MhfjmpApp::default();
+                                            let opened_file = path.display().to_string();
+                                            app.load_file(path, data);
+                                            self.state = AppState::Mhfjmp(app);
+                                            
+                                            // Ajouter aux fichiers récents
+                                            if !self.recent_files.contains(&opened_file) {
+                                                self.recent_files.insert(0, opened_file.clone());
+                                                if self.recent_files.len() > 5 {
+                                                    self.recent_files.pop();
+                                                }
                                             }
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Error loading file: {}", e);
                                         }
                                     }
                                 } else {
@@ -119,18 +124,23 @@ impl eframe::App for RootApp {
                             if let Some(file_name) = path.file_name() {
                                 let file_name_str = file_name.to_string_lossy().to_lowercase();
                                 if file_name_str.contains("mhfdat") {
-                                    if let Ok(data) = std::fs::read(&path) {
-                                        let mut app = app::MhfdatApp::default();
-                                        let opened_file = path.display().to_string();
-                                        app.load_file(path, data);
-                                        self.state = AppState::Mhfdat(app);
-                                        
-                                        // Ajouter aux fichiers récents
-                                        if !self.recent_files.contains(&opened_file) {
-                                            self.recent_files.insert(0, opened_file.clone());
-                                            if self.recent_files.len() > 5 {
-                                                self.recent_files.pop();
+                                    match crate::core::packing::unpack_file(&path) {
+                                        Ok(data) => {
+                                            let mut app = app::MhfdatApp::default();
+                                            let opened_file = path.display().to_string();
+                                            app.load_file(path, data);
+                                            self.state = AppState::Mhfdat(app);
+                                            
+                                            // Ajouter aux fichiers récents
+                                            if !self.recent_files.contains(&opened_file) {
+                                                self.recent_files.insert(0, opened_file.clone());
+                                                if self.recent_files.len() > 5 {
+                                                    self.recent_files.pop();
+                                                }
                                             }
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Error loading file: {}", e);
                                         }
                                     }
                                 } else {
