@@ -679,8 +679,8 @@ impl MhfdatApp {
                 Self::render_editable_field(ui, "Raw Damage", &mut raw_damage);
                 Self::render_editable_field(ui, "Defense", &mut defense);
                 Self::render_editable_field(ui, "Affinity", &mut affinity);
-                Self::render_editable_field(ui, "Sharpness ID", &mut sharpness_id);
-                Self::render_editable_field(ui, "Sharpness Max", &mut sharpness_max);
+                Self::render_editable_u8_field_with_max(ui, "Sharpness ID", &mut sharpness_id, 128);
+                Self::render_editable_u8_field_with_max(ui, "Sharpness Max", &mut sharpness_max, 4);
 
                 weapon.raw_damage = raw_damage;
                 weapon.defense = defense;
@@ -697,9 +697,9 @@ impl MhfdatApp {
                 let mut ail_damage = weapon.ail_damage;
 
                 Self::render_combo_field(ui, "Element", &mut element_id, ELEMENT_ID_LIST);
-                Self::render_editable_field(ui, "Element Damage", &mut ele_damage);
+                Self::render_editable_u8_field(ui, "Element Damage", &mut ele_damage);
                 Self::render_combo_field(ui, "Ailment", &mut ailment_id, AILMENT_ID_LIST);
-                Self::render_editable_field(ui, "Ailment Damage", &mut ail_damage);
+                Self::render_editable_u8_field(ui, "Ailment Damage", &mut ail_damage);
 
                 weapon.element_id = element_id;
                 weapon.ele_damage = ele_damage;
@@ -718,8 +718,8 @@ impl MhfdatApp {
                 let mut equip_type = weapon.get_equip_type();
                 let mut weapon_type = weapon.get_weapon_type();
 
-                Self::render_editable_field(ui, "Slots", &mut slots);
-                Self::render_editable_field(ui, "Weapon Attribute", &mut weapon_attribute);
+                Self::render_editable_u8_field(ui, "Slots", &mut slots);
+                Self::render_editable_u8_field(ui, "Weapon Attribute", &mut weapon_attribute);
                 Self::render_equip_type_field(ui, "Equipment Type", &mut equip_type);
                 Self::render_weapon_type_field(ui, "Weapon Type", &mut weapon_type);
                 Self::render_editable_field(ui, "Upgrade Path", &mut upgrade_path);
@@ -829,7 +829,7 @@ impl MhfdatApp {
                 let mut ele_damage = weapon.ele_damage;
 
                 Self::render_combo_field(ui, "Element", &mut element_id, ELEMENT_ID_LIST);
-                Self::render_editable_field(ui, "Element Damage", &mut ele_damage);
+                Self::render_editable_u8_field(ui, "Element Damage", &mut ele_damage);
 
                 weapon.element_id = element_id;
                 weapon.ele_damage = ele_damage;
@@ -845,8 +845,8 @@ impl MhfdatApp {
                 let mut weapon_type = weapon.get_weapon_type();
                 let mut bullet_types = weapon.get_bullet_types();
 
-                Self::render_editable_field(ui, "Slots", &mut slots);
-                Self::render_editable_field(ui, "Weapon Attribute", &mut weapon_attribute);
+                Self::render_editable_u8_field(ui, "Slots", &mut slots);
+                Self::render_editable_u8_field(ui, "Weapon Attribute", &mut weapon_attribute);
                 Self::render_equip_type_field(ui, "Equipment Type", &mut equip_type);
                 Self::render_weapon_type_field(ui, "Weapon Type", &mut weapon_type);
 
@@ -939,8 +939,8 @@ impl MhfdatApp {
                         });
                 });
                 
-                Self::render_editable_field(ui, "Sort Order", &mut sort_order);
-                Self::render_editable_field(ui, "Max Slots", &mut max_slots);
+                Self::render_editable_u8_field(ui, "Sort Order", &mut sort_order);
+                Self::render_editable_u8_field(ui, "Max Slots", &mut max_slots);
 
                 weapon.tower_g50_param_id = tower_g50_param_id;
                 weapon.g_rank = g_rank;
@@ -961,6 +961,35 @@ impl MhfdatApp {
             let mut temp = *value;
             if ui.add(egui::DragValue::new(&mut temp)).changed() {
                 *value = temp;
+            }
+        });
+    }
+    
+    pub fn render_editable_u8_field(
+        ui: &mut egui::Ui,
+        label: &str,
+        value: &mut u8
+    ) {
+        ui.horizontal(|ui| {
+            ui.label(label);
+            let mut temp = *value as u32;
+            if ui.add(egui::DragValue::new(&mut temp)).changed() {
+                *value = temp.min(255) as u8;
+            }
+        });
+    }
+    
+    pub fn render_editable_u8_field_with_max(
+        ui: &mut egui::Ui,
+        label: &str,
+        value: &mut u8,
+        max_value: u8
+    ) {
+        ui.horizontal(|ui| {
+            ui.label(label);
+            let mut temp = *value as u32;
+            if ui.add(egui::DragValue::new(&mut temp)).changed() {
+                *value = temp.min(max_value as u32) as u8;
             }
         });
     }

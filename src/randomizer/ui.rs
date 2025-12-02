@@ -15,7 +15,6 @@ pub struct RandomizerOptions {
     pub randomize_armor: bool,
     pub randomize_upgrades: bool,
     pub randomize_auto_skills: bool,
-    pub auto_skills_chance: f32,
 }
 
 impl Default for RandomizerOptions {
@@ -26,7 +25,6 @@ impl Default for RandomizerOptions {
             randomize_armor: false,
             randomize_upgrades: false,
             randomize_auto_skills: false,
-            auto_skills_chance: 0.5,
         }
     }
 }
@@ -210,17 +208,6 @@ impl RandomizerApp {
             });
         }
 
-        if self.options.randomize_auto_skills {
-            ui.collapsing("Automatic Skills Options", |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Chance:");
-                    ui.add(egui::Slider::new(&mut self.options.auto_skills_chance, 0.0..=1.0)
-                        .text("%")
-                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
-                });
-            });
-        }
-
         ui.separator();
 
         // Action buttons
@@ -311,7 +298,7 @@ impl RandomizerApp {
                         let off = AUTOMATIC_SKILLS_TABLE_PTR as usize;
                         if buffer.len() >= off + 4 {
                             let auto_skills_offset = u32::from_le_bytes(buffer[off..off+4].try_into().unwrap()) as usize;
-                            if let Ok(_) = randomize_auto_skills_buffer(&mut buffer, &mut rng, self.options.auto_skills_chance, auto_skills_offset) {
+                            if let Ok(_) = randomize_auto_skills_buffer(&mut buffer, &mut rng, auto_skills_offset) {
                                 file_processed = true;
                             }
                         }

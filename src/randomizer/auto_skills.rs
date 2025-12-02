@@ -7,7 +7,6 @@ use crate::utils::automatic_skills::AUTO_SKILL_LIST;
 pub fn randomize_auto_skills_buffer(
     buffer: &mut Vec<u8>,
     rng: &mut ChaCha8Rng,
-    chance: f32,
     offset: usize,
 ) -> Result<usize> {
     let mut skills = read_automatic_skills(buffer, offset);
@@ -46,19 +45,17 @@ pub fn randomize_auto_skills_buffer(
     
     let mut changed = 0;
     for skill in skills.iter_mut() {
-        if rng.gen::<f32>() < chance {
-            // Pick a random valid eq_type (one that has equipment)
-            let (new_eq_type, max_id) = valid_eq_types[rng.gen_range(0..valid_eq_types.len())];
-            skill.eq_type = new_eq_type;
-            
-            // Randomize equip_id within valid range [0, max_id)
-            skill.equip_id = rng.gen_range(0..max_id);
-            
-            // Randomize skill_id
-            if let Some(&skill_id) = valid_skills.get(rng.gen_range(0..valid_skills.len())) {
-                skill.skill_id = skill_id;
-                changed += 1;
-            }
+        // Pick a random valid eq_type (one that has equipment)
+        let (new_eq_type, max_id) = valid_eq_types[rng.gen_range(0..valid_eq_types.len())];
+        skill.eq_type = new_eq_type;
+        
+        // Randomize equip_id within valid range [0, max_id)
+        skill.equip_id = rng.gen_range(0..max_id);
+        
+        // Randomize skill_id
+        if let Some(&skill_id) = valid_skills.get(rng.gen_range(0..valid_skills.len())) {
+            skill.skill_id = skill_id;
+            changed += 1;
         }
     }
     
