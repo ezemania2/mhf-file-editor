@@ -1,5 +1,3 @@
-#![windows_subsystem = "windows"]
-
 mod model;
 pub mod utils;
 mod app;
