@@ -5,14 +5,30 @@ use super::{RandomizerSeed};
 use super::weapons::{randomize_melee_buffer_with_options, randomize_ranged_buffer_with_options, MeleeWeaponOptions as WeaponMeleeOptions, RangedWeaponOptions as WeaponRangedOptions};
 use super::armor::{randomize_armor_buffer_with_options, ArmorOptions as ArmorOptionsInternal};
 use super::upgrades::{randomize_upgrades_buffer_with_options, UpgradeOptions as UpgradeOptionsInternal};
+use super::auto_skills::randomize_auto_skills_buffer;
 use crate::core::packing::{compress_file, encrypt_file};
+use crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_TABLE_PTR;
 
-#[derive(Default)]
 pub struct RandomizerOptions {
     pub randomize_melee: bool,
     pub randomize_ranged: bool,
     pub randomize_armor: bool,
     pub randomize_upgrades: bool,
+    pub randomize_auto_skills: bool,
+    pub auto_skills_chance: f32,
+}
+
+impl Default for RandomizerOptions {
+    fn default() -> Self {
+        Self {
+            randomize_melee: false,
+            randomize_ranged: false,
+            randomize_armor: false,
+            randomize_upgrades: false,
+            randomize_auto_skills: false,
+            auto_skills_chance: 0.5,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -154,6 +170,7 @@ impl RandomizerApp {
         ui.checkbox(&mut self.options.randomize_ranged, "Randomize Ranged Weapons");
         ui.checkbox(&mut self.options.randomize_armor, "Randomize Armor");
         ui.checkbox(&mut self.options.randomize_upgrades, "Randomize Upgrades");
+        ui.checkbox(&mut self.options.randomize_auto_skills, "Randomize Automatic Skills");
 
         ui.separator();
 
@@ -190,6 +207,17 @@ impl RandomizerApp {
             ui.collapsing("Upgrade Options", |ui| {
                 ui.checkbox(&mut self.upgrade_options.randomize_materials, "Materials");
                 ui.checkbox(&mut self.upgrade_options.randomize_targets, "Targets");
+            });
+        }
+
+        if self.options.randomize_auto_skills {
+            ui.collapsing("Automatic Skills Options", |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Chance:");
+                    ui.add(egui::Slider::new(&mut self.options.auto_skills_chance, 0.0..=1.0)
+                        .text("%")
+                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
+                });
             });
         }
 
@@ -276,6 +304,16 @@ impl RandomizerApp {
                         };
                         if let Ok(_) = randomize_upgrades_buffer_with_options(&mut buffer, &mut rng, &options) {
                             file_processed = true;
+                        }
+                    }
+
+                    if self.options.randomize_auto_skills {
+                        let off = AUTOMATIC_SKILLS_TABLE_PTR as usize;
+                        if buffer.len() >= off + 4 {
+                            let auto_skills_offset = u32::from_le_bytes(buffer[off..off+4].try_into().unwrap()) as usize;
+                            if let Ok(_) = randomize_auto_skills_buffer(&mut buffer, &mut rng, self.options.auto_skills_chance, auto_skills_offset) {
+                                file_processed = true;
+                            }
                         }
                     }
 
