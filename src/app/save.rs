@@ -260,16 +260,18 @@ impl MhfdatApp {
             current_pos
         } else { 0 };
 
-        // Melee descriptions: table of pointers (3 per entry) followed by SJIS strings
+        // Melee descriptions: table of pointers (4 per entry: 3 descriptions + 1 null) followed by SJIS strings
         let melee_desc_table_offset = if melee_names_count > 0 {
             let table_start = writer.seek(SeekFrom::Current(0))? as u32;
-            let num_ptrs = melee_names_count * 3;
+            let num_ptrs = melee_names_count * 4;
+            // Only 3 strings per weapon, 4th pointer is always null
             let strings_start = table_start + (num_ptrs as u32) * 4;
             // Build pointer values and string blob in memory
             let mut ptr_values: Vec<u32> = Vec::with_capacity(num_ptrs);
             let mut strings_blob: Vec<u8> = Vec::new();
             for descs in &self.melee_weapon_descriptions[..melee_names_count] {
-                for desc in descs.iter() {
+                // Write 3 description pointers
+                for desc in descs.iter().take(3) {
                     let desc_str: String = desc.chars().take(28).collect();
                     let (sjis_bytes, _, _) = encoding_rs::SHIFT_JIS.encode(&desc_str);
                     let absolute_ptr = strings_start + strings_blob.len() as u32;
@@ -277,6 +279,8 @@ impl MhfdatApp {
                     strings_blob.extend_from_slice(&sjis_bytes);
                     strings_blob.push(0);
                 }
+                // 4th pointer is always null (0x00000000)
+                ptr_values.push(0);
             }
             // Write pointer table
             for p in ptr_values { writer.write_all(&p.to_le_bytes())?; }
@@ -293,15 +297,17 @@ impl MhfdatApp {
             current_pos
         } else { 0 };
 
-        // Ranged descriptions: table of pointers (3 per entry) followed by SJIS strings
+        // Ranged descriptions: table of pointers (4 per entry: 3 descriptions + 1 null) followed by SJIS strings
         let ranged_desc_table_offset = if ranged_names_count > 0 {
             let table_start = writer.seek(SeekFrom::Current(0))? as u32;
-            let num_ptrs = ranged_names_count * 3;
+            let num_ptrs = ranged_names_count * 4;
+            // Only 3 strings per weapon, 4th pointer is always null
             let strings_start = table_start + (num_ptrs as u32) * 4;
             let mut ptr_values: Vec<u32> = Vec::with_capacity(num_ptrs);
             let mut strings_blob: Vec<u8> = Vec::new();
             for descs in &self.ranged_weapon_descriptions[..ranged_names_count] {
-                for desc in descs.iter() {
+                // Write 3 description pointers
+                for desc in descs.iter().take(3) {
                     let desc_str: String = desc.chars().take(28).collect();
                     let (sjis_bytes, _, _) = encoding_rs::SHIFT_JIS.encode(&desc_str);
                     let absolute_ptr = strings_start + strings_blob.len() as u32;
@@ -309,6 +315,8 @@ impl MhfdatApp {
                     strings_blob.extend_from_slice(&sjis_bytes);
                     strings_blob.push(0);
                 }
+                // 4th pointer is always null (0x00000000)
+                ptr_values.push(0);
             }
             for p in ptr_values { writer.write_all(&p.to_le_bytes())?; }
             writer.write_all(&strings_blob)?;

@@ -111,7 +111,7 @@ pub struct MhfdatApp {
     pub melee_weapon_names: Vec<String>,
     pub show_dummy_weapons: bool,
     pub show_dummy_ranged_weapons: bool,
-    pub melee_weapon_descriptions: Vec<[String; 3]>,
+    pub melee_weapon_descriptions: Vec<[String; 4]>,
     pub should_encrypt: bool,
     pub should_pack: bool,
     pub workshop_tab: WorkshopTab,
@@ -127,7 +127,7 @@ pub struct MhfdatApp {
     pub zenith_open: Vec<bool>,
     pub weapon_tab: WeaponTab,
     pub ranged_weapon_names: Vec<String>,
-    pub ranged_weapon_descriptions: Vec<[String; 3]>,
+    pub ranged_weapon_descriptions: Vec<[String; 4]>,
     pub armor_tab: ArmorTab,
     pub head_armors: Vec<MhfdatEquipment>,
     pub chest_armors: Vec<MhfdatEquipment>,
@@ -308,11 +308,11 @@ impl App for MhfdatApp {
                                 self.melee_weapon_names = names;
                                 let mut cursor2 = std::io::Cursor::new(&self.buffer);
                                 let descs_full = extract_melee_weapon_descriptions_v2(&mut cursor2, MELEE_WEAPON_DESC_PTR, count, 4).unwrap_or_default();
-                                // Convert to Vec<[String; 3]> ignoring the last field (mhfY)
+                                // Convert to Vec<[String; 4]> including mhfY field
                                 self.melee_weapon_descriptions = descs_full.into_iter()
                                     .map(|descs| {
-                                        let mut arr = [String::new(), String::new(), String::new()];
-                                        for (i, desc) in descs.into_iter().take(3).enumerate() {
+                                        let mut arr = [String::new(), String::new(), String::new(), String::new()];
+                                        for (i, desc) in descs.into_iter().take(4).enumerate() {
                                             arr[i] = desc;
                                         }
                                         arr
@@ -452,27 +452,31 @@ impl MhfdatApp {
             );
             write_weapon_names(&mut file, &self.melee_weapon_names[..min_count])?;
 
-            // Write pointer to melee descriptions table (after names, before descriptions)
-            let melee_desc_ptr_pos = file.seek(SeekFrom::Current(0))?;
-            let melee_desc_table_offset = melee_desc_ptr_pos as u32 + (min_count as u32 * 4);
-            file.write_all(&melee_desc_table_offset.to_le_bytes())?;
-
-            // Write the table of description pointers (placeholders)
-            for _ in 0..min_count {
-                for _ in 0..3 {
-                    file.write_all(&0u32.to_le_bytes())?;
-                }
-            }
-
-            // Write descriptions after the table
+            // Write melee descriptions table (4 pointers per weapon: 3 real + 1 null)
+            let table_start = file.seek(SeekFrom::Current(0))? as u32;
+            let num_ptrs = min_count * 4;
+            let strings_start = table_start + (num_ptrs as u32) * 4;
+            
+            // Build pointer values and string blob in memory
+            let mut ptr_values: Vec<u32> = Vec::with_capacity(num_ptrs);
+            let mut strings_blob: Vec<u8> = Vec::new();
             for descs in &self.melee_weapon_descriptions[..min_count] {
-                for desc in descs.iter() {
+                // Write 3 description pointers
+                for desc in descs.iter().take(3) {
                     let desc_str: String = desc.chars().take(28).collect();
                     let (sjis_bytes, _, _) = encoding_rs::SHIFT_JIS.encode(&desc_str);
-                    file.write_all(&sjis_bytes)?;
-                    file.write_all(&[0])?;
+                    let absolute_ptr = strings_start + strings_blob.len() as u32;
+                    ptr_values.push(absolute_ptr);
+                    strings_blob.extend_from_slice(&sjis_bytes);
+                    strings_blob.push(0);
                 }
+                // 4th pointer is always null
+                ptr_values.push(0);
             }
+            // Write pointer table
+            for p in &ptr_values { file.write_all(&p.to_le_bytes())?; }
+            // Write strings
+            file.write_all(&strings_blob)?;
 
             // Write ranged weapons data
             for weapon in &self.ranged_weapons {
@@ -490,27 +494,31 @@ impl MhfdatApp {
             let min_count = self.ranged_weapons.len().min(self.ranged_weapon_names.len()).min(self.ranged_weapon_descriptions.len());
             write_weapon_names(&mut file, &self.ranged_weapon_names[..min_count])?;
 
-            // Write pointer to ranged descriptions table
-            let ranged_desc_ptr_pos = file.seek(SeekFrom::Current(0))?;
-            let ranged_desc_table_offset = ranged_desc_ptr_pos as u32 + (min_count as u32 * 4);
-            file.write_all(&ranged_desc_table_offset.to_le_bytes())?;
-
-            // Write the table of description pointers (placeholders)
-            for _ in 0..min_count {
-                for _ in 0..3 {
-                    file.write_all(&0u32.to_le_bytes())?;
-                }
-            }
-
-            // Write ranged weapon descriptions
+            // Write ranged descriptions table (4 pointers per weapon: 3 real + 1 null)
+            let ranged_table_start = file.seek(SeekFrom::Current(0))? as u32;
+            let ranged_num_ptrs = min_count * 4;
+            let ranged_strings_start = ranged_table_start + (ranged_num_ptrs as u32) * 4;
+            
+            // Build pointer values and string blob in memory
+            let mut ranged_ptr_values: Vec<u32> = Vec::with_capacity(ranged_num_ptrs);
+            let mut ranged_strings_blob: Vec<u8> = Vec::new();
             for descs in &self.ranged_weapon_descriptions[..min_count] {
-                for desc in descs.iter() {
+                // Write 3 description pointers
+                for desc in descs.iter().take(3) {
                     let desc_str: String = desc.chars().take(28).collect();
                     let (sjis_bytes, _, _) = encoding_rs::SHIFT_JIS.encode(&desc_str);
-                    file.write_all(&sjis_bytes)?;
-                    file.write_all(&[0])?;
+                    let absolute_ptr = ranged_strings_start + ranged_strings_blob.len() as u32;
+                    ranged_ptr_values.push(absolute_ptr);
+                    ranged_strings_blob.extend_from_slice(&sjis_bytes);
+                    ranged_strings_blob.push(0);
                 }
+                // 4th pointer is always null
+                ranged_ptr_values.push(0);
             }
+            // Write pointer table
+            for p in &ranged_ptr_values { file.write_all(&p.to_le_bytes())?; }
+            // Write strings
+            file.write_all(&ranged_strings_blob)?;
             
             // Set specific offsets
             file.seek(SeekFrom::Start(0x7C))?;
@@ -539,22 +547,27 @@ impl MhfdatApp {
         writer.write_all(&separator)?;
         let min_count = self.melee_weapons.len().min(self.melee_weapon_names.len()).min(self.melee_weapon_descriptions.len());
         write_weapon_names(&mut writer, &self.melee_weapon_names[..min_count])?;
-        let melee_desc_ptr_pos = writer.seek(std::io::SeekFrom::Current(0))?;
-        let melee_desc_table_offset = melee_desc_ptr_pos as u32 + (min_count as u32 * 4);
-        writer.write_all(&melee_desc_table_offset.to_le_bytes())?;
-        for _ in 0..min_count {
-            for _ in 0..3 {
-                writer.write_all(&0u32.to_le_bytes())?;
-            }
-        }
+        
+        // Write melee descriptions table (4 pointers per weapon: 3 real + 1 null)
+        let table_start = writer.seek(std::io::SeekFrom::Current(0))? as u32;
+        let num_ptrs = min_count * 4;
+        let strings_start = table_start + (num_ptrs as u32) * 4;
+        
+        let mut ptr_values: Vec<u32> = Vec::with_capacity(num_ptrs);
+        let mut strings_blob: Vec<u8> = Vec::new();
         for descs in &self.melee_weapon_descriptions[..min_count] {
-            for desc in descs.iter() {
+            for desc in descs.iter().take(3) {
                 let desc_str: String = desc.chars().take(28).collect();
                 let (sjis_bytes, _, _) = encoding_rs::SHIFT_JIS.encode(&desc_str);
-                writer.write_all(&sjis_bytes)?;
-                writer.write_all(&[0])?;
+                let absolute_ptr = strings_start + strings_blob.len() as u32;
+                ptr_values.push(absolute_ptr);
+                strings_blob.extend_from_slice(&sjis_bytes);
+                strings_blob.push(0);
             }
+            ptr_values.push(0); // 4th pointer is always null
         }
+        for p in &ptr_values { writer.write_all(&p.to_le_bytes())?; }
+        writer.write_all(&strings_blob)?;
         writer.seek(std::io::SeekFrom::Start(0x7C))?;
         writer.write_all(&0xD02D0802u32.to_le_bytes())?;
         writer.seek(SeekFrom::Start(0x88))?;
@@ -1402,11 +1415,11 @@ impl MhfdatApp {
             count,
             4
         ).unwrap_or_default();
-        // Convert to Vec<[String; 3]> ignoring the last field (mhfY)
+        // Convert to Vec<[String; 4]> including mhfY field
         self.ranged_weapon_descriptions = descs_full.into_iter()
             .map(|descs| {
-                let mut arr = [String::new(), String::new(), String::new()];
-                for (i, desc) in descs.into_iter().take(3).enumerate() {
+                let mut arr = [String::new(), String::new(), String::new(), String::new()];
+                for (i, desc) in descs.into_iter().take(4).enumerate() {
                     arr[i] = desc;
                 }
                 arr
@@ -1505,7 +1518,7 @@ fn show_shop_entries(
     melee_weapons: &[MhfdatMeleeWeapon],
     melee_weapon_names: &[String],
     ranged_weapon_names: &[String],
-    ranged_weapon_descriptions: &[[String; 3]],
+    ranged_weapon_descriptions: &[[String; 4]],
     head_armor_names: &[String],
     chest_armor_names: &[String],
     arms_armor_names: &[String],

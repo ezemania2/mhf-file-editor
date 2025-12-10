@@ -172,7 +172,7 @@ pub struct MhfdatApp {
     pub melee_weapon_names: Vec<String>,
     pub show_dummy_weapons: bool,
     pub show_dummy_ranged_weapons: bool,
-    pub melee_weapon_descriptions: Vec<[String; 3]>,
+    pub melee_weapon_descriptions: Vec<[String; 4]>,
     pub should_encrypt: bool,
     pub should_pack: bool,
     pub workshop_tab: WorkshopTab,
@@ -189,7 +189,7 @@ pub struct MhfdatApp {
     pub selected_transmog_index: Option<usize>,
     pub weapon_tab: WeaponTab,
     pub ranged_weapon_names: Vec<String>,
-    pub ranged_weapon_descriptions: Vec<[String; 3]>,
+    pub ranged_weapon_descriptions: Vec<[String; 4]>,
     pub armor_tab: ArmorTab,
     pub head_armors: Vec<MhfdatEquipment>,
     pub body_armors: Vec<MhfdatEquipment>,
@@ -413,8 +413,8 @@ impl MhfdatApp {
             let descs_full = extract_melee_weapon_descriptions_v2(&mut cursor2, MELEE_WEAPON_DESC_PTR, count, 4).unwrap_or_default();
             self.melee_weapon_descriptions = descs_full.into_iter()
                 .map(|descs| {
-                    let mut arr = [String::new(), String::new(), String::new()];
-                    for (i, desc) in descs.into_iter().take(3).enumerate() {
+                    let mut arr = [String::new(), String::new(), String::new(), String::new()];
+                    for (i, desc) in descs.into_iter().take(4).enumerate() {
                         arr[i] = desc;
                     }
                     arr
@@ -433,8 +433,8 @@ impl MhfdatApp {
             self.ranged_weapon_descriptions = ranged_descs_full
                 .into_iter()
                 .map(|descs| {
-                    let mut arr = [String::new(), String::new(), String::new()];
-                    for (i, desc) in descs.into_iter().take(3).enumerate() {
+                    let mut arr = [String::new(), String::new(), String::new(), String::new()];
+                    for (i, desc) in descs.into_iter().take(4).enumerate() {
                         arr[i] = desc;
                     }
                     arr

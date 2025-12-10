@@ -242,7 +242,7 @@ impl RangedWeaponExport {
     pub fn from_weapon_with_data(
         weapon: &MhfdatRangedWeapon,
         name: &str,
-        descriptions: &[String; 3],
+        descriptions: &[String; 4],
         id: usize
     ) -> Self {
         let equipment_type = weapon.get_equip_type();
@@ -339,7 +339,7 @@ impl MeleeWeaponExport {
     pub fn from_weapon_with_data(
         weapon: &MhfdatMeleeWeapon,
         name: &str,
-        descriptions: &[String; 3],
+        descriptions: &[String; 4],
         id: usize
     ) -> Self {
         let equipment_type = weapon.get_equip_type();

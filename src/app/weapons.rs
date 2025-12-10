@@ -93,7 +93,7 @@ impl MhfdatApp {
         // Utiliser insert() comme pour les armures
         self.melee_weapons.insert(real_count, new_weapon);
         self.melee_weapon_names.insert(real_count, format!("New Weapon {}", next_model_id));
-        self.melee_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string()]);
+        self.melee_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string(), "MhfY".to_string()]);
 
         // Sélectionner la nouvelle arme et basculer vers la vue détail
         self.selected_melee_index = Some(real_count);
@@ -431,7 +431,7 @@ impl MhfdatApp {
                 // Utiliser insert() comme pour les armures
                 self.ranged_weapons.insert(real_count, new_weapon);
                 self.ranged_weapon_names.insert(real_count, format!("New Ranged Weapon {}", next_model_id));
-                self.ranged_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string()]);
+                self.ranged_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string(), "MhfY".to_string()]);
                 
                 self.selected_ranged_index = Some(real_count);
                 self.ranged_weapons_page = (real_count / 15) as u32;
