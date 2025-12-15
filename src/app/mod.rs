@@ -247,6 +247,62 @@ pub struct MhfdatApp {
     pub selected_automatic_skill_index: Option<usize>,
     pub automatic_skills_eq_type_filter: Option<u8>,
     pub automatic_skills_skill_search: String,
+    pub automatic_skills_modified: bool,
+    pub original_automatic_skills_offset: Option<u32>,
+    
+    // Modification tracking for all data types
+    pub melee_weapons_modified: bool,
+    pub original_melee_weapons_offset: Option<u32>,
+    pub ranged_weapons_modified: bool,
+    pub original_ranged_weapons_offset: Option<u32>,
+    pub head_armors_modified: bool,
+    pub original_head_armors_offset: Option<u32>,
+    pub body_armors_modified: bool,
+    pub original_body_armors_offset: Option<u32>,
+    pub arms_armors_modified: bool,
+    pub original_arms_armors_offset: Option<u32>,
+    pub waist_armors_modified: bool,
+    pub original_waist_armors_offset: Option<u32>,
+    pub legs_armors_modified: bool,
+    pub original_legs_armors_offset: Option<u32>,
+    pub items_modified: bool,
+    pub original_items_offset: Option<u32>,
+    pub transmog_modified: bool,
+    pub original_transmog_offset: Option<u32>,
+    pub deco_shop_hr_modified: bool,
+    pub original_deco_shop_hr_offset: Option<u32>,
+    pub deco_shop_gr_modified: bool,
+    pub original_deco_shop_gr_offset: Option<u32>,
+    pub cuff_shop_modified: bool,
+    pub original_cuff_shop_offset: Option<u32>,
+    pub cuff_gr_shop_modified: bool,
+    pub original_cuff_gr_shop_offset: Option<u32>,
+    pub mw_upgrades_modified: bool,
+    pub original_mw_upgrades_offset: Option<u32>,
+    pub rw_upgrades_modified: bool,
+    pub original_rw_upgrades_offset: Option<u32>,
+    pub melee_weapon_names_modified: bool,
+    pub original_melee_weapon_names_offset: Option<u32>,
+    pub melee_weapon_descriptions_modified: bool,
+    pub original_melee_weapon_descriptions_offset: Option<u32>,
+    pub ranged_weapon_names_modified: bool,
+    pub original_ranged_weapon_names_offset: Option<u32>,
+    pub ranged_weapon_descriptions_modified: bool,
+    pub original_ranged_weapon_descriptions_offset: Option<u32>,
+    pub head_armor_names_modified: bool,
+    pub original_head_armor_names_offset: Option<u32>,
+    pub body_armor_names_modified: bool,
+    pub original_body_armor_names_offset: Option<u32>,
+    pub arms_armor_names_modified: bool,
+    pub original_arms_armor_names_offset: Option<u32>,
+    pub waist_armor_names_modified: bool,
+    pub original_waist_armor_names_offset: Option<u32>,
+    pub legs_armor_names_modified: bool,
+    pub original_legs_armor_names_offset: Option<u32>,
+    pub item_names_modified: bool,
+    pub original_item_names_offset: Option<u32>,
+    pub item_descriptions_modified: bool,
+    pub original_item_descriptions_offset: Option<u32>,
 }
 
 impl Default for MhfdatApp {
@@ -355,6 +411,62 @@ impl Default for MhfdatApp {
             selected_automatic_skill_index: None,
             automatic_skills_eq_type_filter: None,
             automatic_skills_skill_search: String::new(),
+            automatic_skills_modified: false,
+            original_automatic_skills_offset: None,
+            
+            // Modification tracking
+            melee_weapons_modified: false,
+            original_melee_weapons_offset: None,
+            ranged_weapons_modified: false,
+            original_ranged_weapons_offset: None,
+            head_armors_modified: false,
+            original_head_armors_offset: None,
+            body_armors_modified: false,
+            original_body_armors_offset: None,
+            arms_armors_modified: false,
+            original_arms_armors_offset: None,
+            waist_armors_modified: false,
+            original_waist_armors_offset: None,
+            legs_armors_modified: false,
+            original_legs_armors_offset: None,
+            items_modified: false,
+            original_items_offset: None,
+            transmog_modified: false,
+            original_transmog_offset: None,
+            deco_shop_hr_modified: false,
+            original_deco_shop_hr_offset: None,
+            deco_shop_gr_modified: false,
+            original_deco_shop_gr_offset: None,
+            cuff_shop_modified: false,
+            original_cuff_shop_offset: None,
+            cuff_gr_shop_modified: false,
+            original_cuff_gr_shop_offset: None,
+            mw_upgrades_modified: false,
+            original_mw_upgrades_offset: None,
+            rw_upgrades_modified: false,
+            original_rw_upgrades_offset: None,
+            melee_weapon_names_modified: false,
+            original_melee_weapon_names_offset: None,
+            melee_weapon_descriptions_modified: false,
+            original_melee_weapon_descriptions_offset: None,
+            ranged_weapon_names_modified: false,
+            original_ranged_weapon_names_offset: None,
+            ranged_weapon_descriptions_modified: false,
+            original_ranged_weapon_descriptions_offset: None,
+            head_armor_names_modified: false,
+            original_head_armor_names_offset: None,
+            body_armor_names_modified: false,
+            original_body_armor_names_offset: None,
+            arms_armor_names_modified: false,
+            original_arms_armor_names_offset: None,
+            waist_armor_names_modified: false,
+            original_waist_armor_names_offset: None,
+            legs_armor_names_modified: false,
+            original_legs_armor_names_offset: None,
+            item_names_modified: false,
+            original_item_names_offset: None,
+            item_descriptions_modified: false,
+            original_item_descriptions_offset: None,
         }
     }
 }
@@ -372,6 +484,11 @@ impl MhfdatApp {
         
         // Load weapons
         if let Some((melee_offset, ranged_offset)) = read_mhfdat_offsets(&self.buffer) {
+            self.original_melee_weapons_offset = Some(melee_offset);
+            self.melee_weapons_modified = false;
+            self.original_ranged_weapons_offset = Some(ranged_offset);
+            self.ranged_weapons_modified = false;
+            
             let mut cursor = std::io::Cursor::new(&self.buffer);
             if let Ok(melee_weapons) = read_melee_weapons_until_sentinel(&mut cursor, melee_offset as u64) {
                 self.melee_weapons = melee_weapons;
@@ -405,6 +522,17 @@ impl MhfdatApp {
             
             // Melee weapons
             let count = self.melee_weapons.len();
+            
+            // Save original offsets
+            if self.buffer.len() >= MELEE_WEAPON_NAMES_PTR as usize + 4 {
+                self.original_melee_weapon_names_offset = Some(u32::from_le_bytes(self.buffer[MELEE_WEAPON_NAMES_PTR as usize..MELEE_WEAPON_NAMES_PTR as usize+4].try_into().unwrap()));
+                self.melee_weapon_names_modified = false;
+            }
+            if self.buffer.len() >= MELEE_WEAPON_DESC_PTR as usize + 4 {
+                self.original_melee_weapon_descriptions_offset = Some(u32::from_le_bytes(self.buffer[MELEE_WEAPON_DESC_PTR as usize..MELEE_WEAPON_DESC_PTR as usize+4].try_into().unwrap()));
+                self.melee_weapon_descriptions_modified = false;
+            }
+            
             let mut cursor = std::io::Cursor::new(&self.buffer);
             let names = extract_melee_weapon_names(&mut cursor, MELEE_WEAPON_NAMES_PTR, count).unwrap_or_default();
             self.melee_weapon_names = names;
@@ -423,6 +551,17 @@ impl MhfdatApp {
             
             // Ranged weapons
             let ranged_count = self.ranged_weapons.len();
+            
+            // Save original offsets
+            if self.buffer.len() >= RANGED_WEAPON_NAMES_PTR as usize + 4 {
+                self.original_ranged_weapon_names_offset = Some(u32::from_le_bytes(self.buffer[RANGED_WEAPON_NAMES_PTR as usize..RANGED_WEAPON_NAMES_PTR as usize+4].try_into().unwrap()));
+                self.ranged_weapon_names_modified = false;
+            }
+            if self.buffer.len() >= RANGED_WEAPON_DESC_PTR as usize + 4 {
+                self.original_ranged_weapon_descriptions_offset = Some(u32::from_le_bytes(self.buffer[RANGED_WEAPON_DESC_PTR as usize..RANGED_WEAPON_DESC_PTR as usize+4].try_into().unwrap()));
+                self.ranged_weapon_descriptions_modified = false;
+            }
+            
             let mut cursor3 = std::io::Cursor::new(&self.buffer);
             let ranged_names = extract_ranged_weapon_names(&mut cursor3, RANGED_WEAPON_NAMES_PTR, ranged_count).unwrap_or_default();
             self.ranged_weapon_names = ranged_names;
@@ -471,6 +610,8 @@ impl MhfdatApp {
             if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
         } {
             self.automatic_skills = read_automatic_skills(&self.buffer, auto_skills_off as usize);
+            self.original_automatic_skills_offset = Some(auto_skills_off);
+            self.automatic_skills_modified = false;
         }
 
         // Load upgrade paths for melee and ranged weapons (dereferenced pointers)
@@ -478,6 +619,8 @@ impl MhfdatApp {
             let off = MELEE_WEAPON_UPGRADE_PATH_PTR as usize;
             if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
         } {
+            self.original_mw_upgrades_offset = Some(mw_off);
+            self.mw_upgrades_modified = false;
             let mut cur = std::io::Cursor::new(&self.buffer);
             if let Ok(mw) = read_mw_upgrade_until_sentinel(&mut cur, mw_off as u64) {
                 self.mw_upgrade_entries = mw;
@@ -487,6 +630,8 @@ impl MhfdatApp {
             let off = RANGED_WEAPON_UPGRADE_PATH_PTR as usize;
             if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
         } {
+            self.original_rw_upgrades_offset = Some(rw_off);
+            self.rw_upgrades_modified = false;
             let mut cur2 = std::io::Cursor::new(&self.buffer);
             if let Ok(rw) = read_rw_upgrade_until_sentinel(&mut cur2, rw_off as u64) {
                 self.rw_upgrade_entries = rw;
@@ -546,6 +691,8 @@ impl MhfdatApp {
         // Clear decorations and automatic skills
         self.deco_ids.clear();
         self.automatic_skills.clear();
+        self.automatic_skills_modified = false;
+        self.original_automatic_skills_offset = None;
         
         // Clear equipment descriptions
         self.equip_descs.clear();

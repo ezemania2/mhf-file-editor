@@ -130,10 +130,26 @@ impl MhfdatApp {
                     if ui.button("Add New").clicked() {
                         let new_entry = crate::model::mhfdat::DecoShop::default();
                         let new_index = match self.shop_page {
-                            0 => { self.deco_shop_hr_entries.push(new_entry); self.deco_shop_hr_entries.len() - 1 }
-                            1 => { self.deco_shop_gr_entries.push(new_entry); self.deco_shop_gr_entries.len() - 1 }
-                            2 => { self.cuff_shop_entries.push(new_entry); self.cuff_shop_entries.len() - 1 }
-                            3 => { self.cuff_gr_shop_entries.push(new_entry); self.cuff_gr_shop_entries.len() - 1 }
+                            0 => { 
+                                self.deco_shop_hr_entries.push(new_entry); 
+                                self.deco_shop_hr_modified = true;
+                                self.deco_shop_hr_entries.len() - 1 
+                            }
+                            1 => { 
+                                self.deco_shop_gr_entries.push(new_entry); 
+                                self.deco_shop_gr_modified = true;
+                                self.deco_shop_gr_entries.len() - 1 
+                            }
+                            2 => { 
+                                self.cuff_shop_entries.push(new_entry); 
+                                self.cuff_shop_modified = true;
+                                self.cuff_shop_entries.len() - 1 
+                            }
+                            3 => { 
+                                self.cuff_gr_shop_entries.push(new_entry); 
+                                self.cuff_gr_shop_modified = true;
+                                self.cuff_gr_shop_entries.len() - 1 
+                            }
                             _ => 0,
                         };
                         self.selected_deco_shop_index = Some(new_index);
@@ -303,6 +319,7 @@ impl MhfdatApp {
                     hr_req: 0,
                     ..Default::default()
                 });
+                self.transmog_modified = true;
                 self.selected_transmog_index = Some(self.transmog_entries.len() - 1);
                 // Initialiser view_mode si nécessaire
                 if !self.view_mode.contains_key("shop") {
@@ -351,6 +368,7 @@ impl MhfdatApp {
                     hr_req: 0,
                     ..Default::default()
                 });
+                self.transmog_modified = true;
                 self.selected_transmog_index = Some(self.transmog_entries.len() - 1);
                 // Initialiser view_mode si nécessaire
                 if !self.view_mode.contains_key("shop") {
@@ -470,6 +488,9 @@ impl MhfdatApp {
         }
 
         if let Some(index) = self.selected_transmog_index {
+            // Marquer comme modifié dès qu'on édite
+            self.transmog_modified = true;
+            
             let entry = &self.transmog_entries[index];
             let equip_type = entry.equip_type;
             let equip_id = entry.equip_id;

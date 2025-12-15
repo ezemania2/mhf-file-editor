@@ -94,6 +94,11 @@ impl MhfdatApp {
         self.melee_weapons.insert(real_count, new_weapon);
         self.melee_weapon_names.insert(real_count, format!("New Weapon {}", next_model_id));
         self.melee_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string(), "MhfY".to_string()]);
+        
+        // Marquer comme modifié
+        self.melee_weapons_modified = true;
+        self.melee_weapon_names_modified = true;
+        self.melee_weapon_descriptions_modified = true;
 
         // Sélectionner la nouvelle arme et basculer vers la vue détail
         self.selected_melee_index = Some(real_count);
@@ -432,6 +437,11 @@ impl MhfdatApp {
                 self.ranged_weapons.insert(real_count, new_weapon);
                 self.ranged_weapon_names.insert(real_count, format!("New Ranged Weapon {}", next_model_id));
                 self.ranged_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string(), "MhfY".to_string()]);
+                
+                // Marquer comme modifié
+                self.ranged_weapons_modified = true;
+                self.ranged_weapon_names_modified = true;
+                self.ranged_weapon_descriptions_modified = true;
                 
                 self.selected_ranged_index = Some(real_count);
                 self.ranged_weapons_page = (real_count / 15) as u32;
@@ -1163,6 +1173,9 @@ impl MhfdatApp {
         }
 
         if let Some(index) = self.selected_melee_index {
+            // Marquer comme modifié dès qu'on édite une arme
+            self.melee_weapons_modified = true;
+            
             if let Some(weapon) = self.melee_weapons.get_mut(index) {
                 let name = self.melee_weapon_names.get(index).cloned().unwrap_or_default();
                 let descriptions = self.melee_weapon_descriptions.get(index).cloned().unwrap_or_default();
@@ -1177,6 +1190,7 @@ impl MhfdatApp {
                     if ui.text_edit_singleline(&mut name_edit).changed() {
                         if let Some(name_ref) = self.melee_weapon_names.get_mut(index) {
                             *name_ref = name_edit;
+                            self.melee_weapon_names_modified = true;
                         }
                     }
                 });
@@ -1188,6 +1202,7 @@ impl MhfdatApp {
                     if ui.text_edit_singleline(&mut desc1).changed() {
                         if let Some(descs) = self.melee_weapon_descriptions.get_mut(index) {
                             descs[0] = desc1;
+                            self.melee_weapon_descriptions_modified = true;
                         }
                     }
                 });
@@ -1197,6 +1212,7 @@ impl MhfdatApp {
                     if ui.text_edit_singleline(&mut desc2).changed() {
                         if let Some(descs) = self.melee_weapon_descriptions.get_mut(index) {
                             descs[1] = desc2;
+                            self.melee_weapon_descriptions_modified = true;
                         }
                     }
                 });
@@ -1206,6 +1222,7 @@ impl MhfdatApp {
                     if ui.text_edit_singleline(&mut desc3).changed() {
                         if let Some(descs) = self.melee_weapon_descriptions.get_mut(index) {
                             descs[2] = desc3;
+                            self.melee_weapon_descriptions_modified = true;
                         }
                     }
                 });
@@ -1233,37 +1250,54 @@ impl MhfdatApp {
                             self.melee_weapon_names.get(id).cloned().unwrap_or_default()
                         };
 
+                        let mut upgrade_changed = false;
                         egui::Grid::new("mw_upgrade_path_grid").striped(true).show(ui, |ui| {
                             ui.label("Material"); ui.label("Qty"); ui.end_row();
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut mat1));
+                                if ui.add(egui::DragValue::new(&mut mat1)).changed() {
+                                    upgrade_changed = true;
+                                }
                                 ui.label(format!("{}", item_name(mat1)));
                             });
-                            ui.add(egui::DragValue::new(&mut qty1));
+                            if ui.add(egui::DragValue::new(&mut qty1)).changed() {
+                                upgrade_changed = true;
+                            }
                             ui.end_row();
 
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut mat2));
+                                if ui.add(egui::DragValue::new(&mut mat2)).changed() {
+                                    upgrade_changed = true;
+                                }
                                 ui.label(format!("{}", item_name(mat2)));
                             });
-                            ui.add(egui::DragValue::new(&mut qty2));
+                            if ui.add(egui::DragValue::new(&mut qty2)).changed() {
+                                upgrade_changed = true;
+                            }
                             ui.end_row();
 
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut mat3));
+                                if ui.add(egui::DragValue::new(&mut mat3)).changed() {
+                                    upgrade_changed = true;
+                                }
                                 ui.label(format!("{}", item_name(mat3)));
                             });
-                            ui.add(egui::DragValue::new(&mut qty3));
+                            if ui.add(egui::DragValue::new(&mut qty3)).changed() {
+                                upgrade_changed = true;
+                            }
                             ui.end_row();
                         });
 
                         ui.separator();
                         ui.label("Upgrades To (Melee):");
                         egui::Grid::new("mw_upgrade_targets_grid").striped(true).show(ui, |ui| {
-                            ui.add(egui::DragValue::new(&mut to1)); ui.label(format!("{}", melee_name(to1 as usize))); ui.end_row();
-                            ui.add(egui::DragValue::new(&mut to2)); ui.label(format!("{}", melee_name(to2 as usize))); ui.end_row();
-                            ui.add(egui::DragValue::new(&mut to3)); ui.label(format!("{}", melee_name(to3 as usize))); ui.end_row();
-                            ui.add(egui::DragValue::new(&mut to4)); ui.label(format!("{}", melee_name(to4 as usize))); ui.end_row();
+                            if ui.add(egui::DragValue::new(&mut to1)).changed() { upgrade_changed = true; }
+                            ui.label(format!("{}", melee_name(to1 as usize))); ui.end_row();
+                            if ui.add(egui::DragValue::new(&mut to2)).changed() { upgrade_changed = true; }
+                            ui.label(format!("{}", melee_name(to2 as usize))); ui.end_row();
+                            if ui.add(egui::DragValue::new(&mut to3)).changed() { upgrade_changed = true; }
+                            ui.label(format!("{}", melee_name(to3 as usize))); ui.end_row();
+                            if ui.add(egui::DragValue::new(&mut to4)).changed() { upgrade_changed = true; }
+                            ui.label(format!("{}", melee_name(to4 as usize))); ui.end_row();
                         });
 
                         // Write back
@@ -1278,6 +1312,11 @@ impl MhfdatApp {
                             entry.upgrades_to2 = to2;
                             entry.upgrades_to3 = to3;
                             entry.upgrades_to4 = to4;
+                        }
+                        
+                        // Marquer comme modifié si des changements ont été faits
+                        if upgrade_changed {
+                            self.mw_upgrades_modified = true;
                         }
                     } else {
                         ui.label("No upgrade path entry for this weapon index.");
@@ -1302,6 +1341,9 @@ impl MhfdatApp {
         }
 
         if let Some(index) = self.selected_ranged_index {
+            // Marquer comme modifié dès qu'on édite une arme
+            self.ranged_weapons_modified = true;
+            
             if let Some(weapon) = self.ranged_weapons.get_mut(index) {
                 let name = self.ranged_weapon_names.get(index).cloned().unwrap_or_default();
                 let descriptions = self.ranged_weapon_descriptions.get(index).cloned().unwrap_or_default();
@@ -1316,6 +1358,7 @@ impl MhfdatApp {
                     if ui.text_edit_singleline(&mut name_edit).changed() {
                         if let Some(name_ref) = self.ranged_weapon_names.get_mut(index) {
                             *name_ref = name_edit;
+                            self.ranged_weapon_names_modified = true;
                         }
                     }
                 });
@@ -1327,6 +1370,7 @@ impl MhfdatApp {
                     if ui.text_edit_singleline(&mut desc1).changed() {
                         if let Some(descs) = self.ranged_weapon_descriptions.get_mut(index) {
                             descs[0] = desc1;
+                            self.ranged_weapon_descriptions_modified = true;
                         }
                     }
                 });
@@ -1336,6 +1380,7 @@ impl MhfdatApp {
                     if ui.text_edit_singleline(&mut desc2).changed() {
                         if let Some(descs) = self.ranged_weapon_descriptions.get_mut(index) {
                             descs[1] = desc2;
+                            self.ranged_weapon_descriptions_modified = true;
                         }
                     }
                 });
@@ -1345,6 +1390,7 @@ impl MhfdatApp {
                     if ui.text_edit_singleline(&mut desc3).changed() {
                         if let Some(descs) = self.ranged_weapon_descriptions.get_mut(index) {
                             descs[2] = desc3;
+                            self.ranged_weapon_descriptions_modified = true;
                         }
                     }
                 });
@@ -1372,37 +1418,54 @@ impl MhfdatApp {
                             self.ranged_weapon_names.get(id).cloned().unwrap_or_default()
                         };
 
+                        let mut upgrade_changed = false;
                         egui::Grid::new("rw_upgrade_path_grid").striped(true).show(ui, |ui| {
                             ui.label("Material"); ui.label("Qty"); ui.end_row();
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut mat1));
+                                if ui.add(egui::DragValue::new(&mut mat1)).changed() {
+                                    upgrade_changed = true;
+                                }
                                 ui.label(format!("{}", item_name(mat1)));
                             });
-                            ui.add(egui::DragValue::new(&mut qty1));
+                            if ui.add(egui::DragValue::new(&mut qty1)).changed() {
+                                upgrade_changed = true;
+                            }
                             ui.end_row();
 
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut mat2));
+                                if ui.add(egui::DragValue::new(&mut mat2)).changed() {
+                                    upgrade_changed = true;
+                                }
                                 ui.label(format!("{}", item_name(mat2)));
                             });
-                            ui.add(egui::DragValue::new(&mut qty2));
+                            if ui.add(egui::DragValue::new(&mut qty2)).changed() {
+                                upgrade_changed = true;
+                            }
                             ui.end_row();
 
                             ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut mat3));
+                                if ui.add(egui::DragValue::new(&mut mat3)).changed() {
+                                    upgrade_changed = true;
+                                }
                                 ui.label(format!("{}", item_name(mat3)));
                             });
-                            ui.add(egui::DragValue::new(&mut qty3));
+                            if ui.add(egui::DragValue::new(&mut qty3)).changed() {
+                                upgrade_changed = true;
+                            }
                             ui.end_row();
                         });
 
                         ui.separator();
                         ui.label("Upgrades To (Ranged):");
                         egui::Grid::new("rw_upgrade_targets_grid").striped(true).show(ui, |ui| {
-                            ui.add(egui::DragValue::new(&mut to1)); ui.label(format!("{}", ranged_name(to1 as usize))); ui.end_row();
-                            ui.add(egui::DragValue::new(&mut to2)); ui.label(format!("{}", ranged_name(to2 as usize))); ui.end_row();
-                            ui.add(egui::DragValue::new(&mut to3)); ui.label(format!("{}", ranged_name(to3 as usize))); ui.end_row();
-                            ui.add(egui::DragValue::new(&mut to4)); ui.label(format!("{}", ranged_name(to4 as usize))); ui.end_row();
+                            if ui.add(egui::DragValue::new(&mut to1)).changed() { upgrade_changed = true; }
+                            ui.label(format!("{}", ranged_name(to1 as usize))); ui.end_row();
+                            if ui.add(egui::DragValue::new(&mut to2)).changed() { upgrade_changed = true; }
+                            ui.label(format!("{}", ranged_name(to2 as usize))); ui.end_row();
+                            if ui.add(egui::DragValue::new(&mut to3)).changed() { upgrade_changed = true; }
+                            ui.label(format!("{}", ranged_name(to3 as usize))); ui.end_row();
+                            if ui.add(egui::DragValue::new(&mut to4)).changed() { upgrade_changed = true; }
+                            ui.label(format!("{}", ranged_name(to4 as usize))); ui.end_row();
                         });
 
                         // Write back
@@ -1417,6 +1480,11 @@ impl MhfdatApp {
                             entry.upgrades_to2 = to2;
                             entry.upgrades_to3 = to3;
                             entry.upgrades_to4 = to4;
+                        }
+                        
+                        // Marquer comme modifié si des changements ont été faits
+                        if upgrade_changed {
+                            self.rw_upgrades_modified = true;
                         }
                     } else {
                         ui.label("No upgrade path entry for this weapon index.");

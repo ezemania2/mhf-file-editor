@@ -138,7 +138,30 @@ impl MhfdatApp {
             
             armors.insert(real_count, new_armor);
             names.insert(real_count, format!("New {} Armor", armor_type));
-            // Note: Other self modifications will be handled after the function scope
+            
+            // Marquer comme modifié selon le type
+            match self.armor_tab {
+                ArmorTab::Head => {
+                    self.head_armors_modified = true;
+                    self.head_armor_names_modified = true;
+                },
+                ArmorTab::Body => {
+                    self.body_armors_modified = true;
+                    self.body_armor_names_modified = true;
+                },
+                ArmorTab::Arms => {
+                    self.arms_armors_modified = true;
+                    self.arms_armor_names_modified = true;
+                },
+                ArmorTab::Waist => {
+                    self.waist_armors_modified = true;
+                    self.waist_armor_names_modified = true;
+                },
+                ArmorTab::Legs => {
+                    self.legs_armors_modified = true;
+                    self.legs_armor_names_modified = true;
+                },
+            }
         }
 
         // Search and filters
@@ -270,6 +293,15 @@ impl MhfdatApp {
         }
 
         if let Some(index) = self.selected_armor_index {
+            // Marquer comme modifié selon le type d'armure
+            match self.armor_tab {
+                ArmorTab::Head => self.head_armors_modified = true,
+                ArmorTab::Body => self.body_armors_modified = true,
+                ArmorTab::Arms => self.arms_armors_modified = true,
+                ArmorTab::Waist => self.waist_armors_modified = true,
+                ArmorTab::Legs => self.legs_armors_modified = true,
+            }
+            
             let (armors, names) = match self.armor_tab {
                 ArmorTab::Head => (&mut self.head_armors, &mut self.head_armor_names),
                 ArmorTab::Body => (&mut self.body_armors, &mut self.body_armor_names),
@@ -299,12 +331,20 @@ impl MhfdatApp {
                                 if ui.text_edit_singleline(&mut name_edit).changed() {
                         if let Some(name_ref) = names.get_mut(index) {
                                         *name_ref = name_edit;
+                                        // Marquer le nom comme modifié selon le type
+                                        match self.armor_tab {
+                                            ArmorTab::Head => self.head_armor_names_modified = true,
+                                            ArmorTab::Body => self.body_armor_names_modified = true,
+                                            ArmorTab::Arms => self.arms_armor_names_modified = true,
+                                            ArmorTab::Waist => self.waist_armor_names_modified = true,
+                                            ArmorTab::Legs => self.legs_armor_names_modified = true,
+                                        }
                                     }
                                 }
                             });
                 
                 ui.separator();
-                Self::render_armor_details(ui, armor, 
+                let armor_changed = Self::render_armor_details(ui, armor, 
                     &mut self.armor_skill1_search,
                     &mut self.armor_skill2_search,
                     &mut self.armor_skill3_search,
@@ -312,6 +352,17 @@ impl MhfdatApp {
                     &mut self.armor_skill5_search,
                     &mut self.armor_zenith_skill_search
                 );
+                
+                // Marquer les armures comme modifiées si des changements ont été faits
+                if armor_changed {
+                    match self.armor_tab {
+                        ArmorTab::Head => self.head_armors_modified = true,
+                        ArmorTab::Body => self.body_armors_modified = true,
+                        ArmorTab::Arms => self.arms_armors_modified = true,
+                        ArmorTab::Waist => self.waist_armors_modified = true,
+                        ArmorTab::Legs => self.legs_armors_modified = true,
+                    }
+                }
             }
         } else {
             ui.label("No armor selected");
@@ -327,7 +378,7 @@ impl MhfdatApp {
         armor_skill4_search: &mut String,
         armor_skill5_search: &mut String,
         armor_zenith_skill_search: &mut String,
-    ) {
+    ) -> bool {
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Basic Stats
             ui.collapsing("Basic Stats", |ui| {
@@ -586,7 +637,7 @@ impl MhfdatApp {
                             });
                         });
                     });
-                    
+
                 // Write back all skill values
                 armor.skill_id1 = skill_id1;
                 armor.skill_pts1 = skill_pts1;
@@ -601,6 +652,9 @@ impl MhfdatApp {
                 armor.zenith_skill = zenith_skill;
                             });
                     });
+        
+        // Toujours marquer comme modifié car l'utilisateur a ouvert les détails
+        true
     }
 
     fn get_equipment_flags(equipable_by: u8) -> (bool, bool, bool, bool) {

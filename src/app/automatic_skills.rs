@@ -91,6 +91,7 @@ impl MhfdatApp {
                 self.automatic_skills.push(new_entry);
                 self.selected_automatic_skill_index = Some(self.automatic_skills.len() - 1);
                 self.view_mode.insert("automatic_skills".to_string(), ViewMode::Details);
+                self.automatic_skills_modified = true;
             }
         });
         
@@ -252,12 +253,14 @@ impl MhfdatApp {
                     self.automatic_skills.remove(index);
                     self.selected_automatic_skill_index = None;
                     self.view_mode.insert("automatic_skills".to_string(), ViewMode::List);
+                    self.automatic_skills_modified = true;
                     return;
                 }
                 
                 // Write back
                 if let Some(slot) = self.automatic_skills.get_mut(index) {
                     *slot = entry;
+                    self.automatic_skills_modified = true;
                 }
             }
         }

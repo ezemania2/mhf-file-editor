@@ -453,11 +453,15 @@ impl MhfdatApp {
                 
                                  ui.horizontal(|ui| {
                      ui.label("Name:");
-                     ui.text_edit_singleline(&mut self.item_names[index]);
+                     if ui.text_edit_singleline(&mut self.item_names[index]).changed() {
+                         self.item_names_modified = true;
+                     }
                  });
                  ui.horizontal(|ui| {
                      ui.label("Description:");
-                     ui.text_edit_multiline(&mut self.item_descriptions[index]);
+                     if ui.text_edit_multiline(&mut self.item_descriptions[index]).changed() {
+                         self.item_descriptions_modified = true;
+                     }
                  });
                  
                  ui.add_space(10.0);
@@ -483,27 +487,38 @@ impl MhfdatApp {
                  let mut equip_type = item.equip_type;
                  let mut is_gz = item.is_gz;
                  
+                 let mut items_changed = false;
                  egui::Grid::new("item_details_grid")
                      .num_columns(2)
                      .show(ui, |ui| {
                          ui.label("Interaction Type:");
-                         ui.add(egui::DragValue::new(&mut unk00).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut unk00).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Is Usable:");
-                         ui.add(egui::DragValue::new(&mut unk01).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut unk01).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Rarity:");
-                         ui.add(egui::DragValue::new(&mut rarity).speed(1.0).clamp_range(0..=9));
+                         if ui.add(egui::DragValue::new(&mut rarity).speed(1.0).clamp_range(0..=9)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Max Stack:");
-                         ui.add(egui::DragValue::new(&mut max_stack).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut max_stack).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Data Bitset:");
-                         ui.add(egui::DragValue::new(&mut unk04).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut unk04).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Icon:");
@@ -511,41 +526,59 @@ impl MhfdatApp {
                              .selected_text(icon_name(icon))
                              .show_ui(ui, |ui| {
                                  for (id, name) in ITEM_ICON_LIST {
-                                     if ui.selectable_value(&mut icon, *id, *name).clicked() {}
+                                     if ui.selectable_value(&mut icon, *id, *name).clicked() {
+                                         items_changed = true;
+                                     }
                                  }
                              });
                          ui.end_row();
                          
                          ui.label("Icon Color:");
-                         ui.add(egui::DragValue::new(&mut icon_color).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut icon_color).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Bottle:");
-                         ui.add(egui::DragValue::new(&mut bottle).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut bottle).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Buy Price:");
-                         ui.add(egui::DragValue::new(&mut buy_price).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut buy_price).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Sell Price:");
-                         ui.add(egui::DragValue::new(&mut sell_price).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut sell_price).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Item Type:");
-                         ui.add(egui::DragValue::new(&mut item_type).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut item_type).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Deco ID:");
-                         ui.add(egui::DragValue::new(&mut deco_id).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut deco_id).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Equip Type:");
-                         ui.add(egui::DragValue::new(&mut equip_type).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut equip_type).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                          
                          ui.label("Is GZ:");
-                         ui.add(egui::DragValue::new(&mut is_gz).speed(1.0));
+                         if ui.add(egui::DragValue::new(&mut is_gz).speed(1.0)).changed() {
+                             items_changed = true;
+                         }
                          ui.end_row();
                      });
                  
@@ -564,6 +597,11 @@ impl MhfdatApp {
                  self.items[index].deco_id = deco_id;
                  self.items[index].equip_type = equip_type;
                  self.items[index].is_gz = is_gz;
+                 
+                 // Marquer les items comme modifiés si des changements ont été faits
+                 if items_changed {
+                     self.items_modified = true;
+                 }
             }
         } else if let Some(deco_idx) = self.selected_deco_index {
             if let Some(d) = self.deco_ids.get(deco_idx) {

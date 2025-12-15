@@ -19,6 +19,16 @@ impl MhfdatApp {
         // Load head armor
         self.armor_tab = ArmorTab::Head;
         if let Ok(()) = self.read_armor_data(&mut cursor, HEAD_ARMOR_PTR as u64) {
+            // Save original offsets
+            if buffer.len() >= HEAD_ARMOR_PTR as usize + 4 {
+                self.original_head_armors_offset = Some(u32::from_le_bytes(buffer[HEAD_ARMOR_PTR as usize..HEAD_ARMOR_PTR as usize+4].try_into().unwrap()));
+                self.head_armors_modified = false;
+            }
+            if buffer.len() >= HEAD_ARMOR_NAMES_PTR as usize + 4 {
+                self.original_head_armor_names_offset = Some(u32::from_le_bytes(buffer[HEAD_ARMOR_NAMES_PTR as usize..HEAD_ARMOR_NAMES_PTR as usize+4].try_into().unwrap()));
+                self.head_armor_names_modified = false;
+            }
+            
             cursor.seek(SeekFrom::Start(0)).unwrap();
             if let Ok(names) = extract_armor_names(&mut cursor, HEAD_ARMOR_NAMES_PTR, self.head_armors.len()) {
                 self.head_armor_names = names;
@@ -29,6 +39,14 @@ impl MhfdatApp {
         self.armor_tab = ArmorTab::Body;
         cursor.seek(SeekFrom::Start(0)).unwrap();
         if let Ok(()) = self.read_armor_data(&mut cursor, BODY_ARMOR_PTR as u64) {
+            if buffer.len() >= BODY_ARMOR_PTR as usize + 4 {
+                self.original_body_armors_offset = Some(u32::from_le_bytes(buffer[BODY_ARMOR_PTR as usize..BODY_ARMOR_PTR as usize+4].try_into().unwrap()));
+                self.body_armors_modified = false;
+            }
+            if buffer.len() >= BODY_ARMOR_NAMES_PTR as usize + 4 {
+                self.original_body_armor_names_offset = Some(u32::from_le_bytes(buffer[BODY_ARMOR_NAMES_PTR as usize..BODY_ARMOR_NAMES_PTR as usize+4].try_into().unwrap()));
+                self.body_armor_names_modified = false;
+            }
             cursor.seek(SeekFrom::Start(0)).unwrap();
             if let Ok(names) = extract_armor_names(&mut cursor, BODY_ARMOR_NAMES_PTR, self.body_armors.len()) {
                 self.body_armor_names = names;
@@ -39,6 +57,14 @@ impl MhfdatApp {
         self.armor_tab = ArmorTab::Arms;
         cursor.seek(SeekFrom::Start(0)).unwrap();
         if let Ok(()) = self.read_armor_data(&mut cursor, ARM_ARMOR_PTR as u64) {
+            if buffer.len() >= ARM_ARMOR_PTR as usize + 4 {
+                self.original_arms_armors_offset = Some(u32::from_le_bytes(buffer[ARM_ARMOR_PTR as usize..ARM_ARMOR_PTR as usize+4].try_into().unwrap()));
+                self.arms_armors_modified = false;
+            }
+            if buffer.len() >= ARM_ARMOR_NAMES_PTR as usize + 4 {
+                self.original_arms_armor_names_offset = Some(u32::from_le_bytes(buffer[ARM_ARMOR_NAMES_PTR as usize..ARM_ARMOR_NAMES_PTR as usize+4].try_into().unwrap()));
+                self.arms_armor_names_modified = false;
+            }
             cursor.seek(SeekFrom::Start(0)).unwrap();
             if let Ok(names) = extract_armor_names(&mut cursor, ARM_ARMOR_NAMES_PTR, self.arms_armors.len()) {
                 self.arms_armor_names = names;
@@ -49,6 +75,14 @@ impl MhfdatApp {
         self.armor_tab = ArmorTab::Waist;
         cursor.seek(SeekFrom::Start(0)).unwrap();
         if let Ok(()) = self.read_armor_data(&mut cursor, WAIST_ARMOR_PTR as u64) {
+            if buffer.len() >= WAIST_ARMOR_PTR as usize + 4 {
+                self.original_waist_armors_offset = Some(u32::from_le_bytes(buffer[WAIST_ARMOR_PTR as usize..WAIST_ARMOR_PTR as usize+4].try_into().unwrap()));
+                self.waist_armors_modified = false;
+            }
+            if buffer.len() >= WAIST_ARMOR_NAMES_PTR as usize + 4 {
+                self.original_waist_armor_names_offset = Some(u32::from_le_bytes(buffer[WAIST_ARMOR_NAMES_PTR as usize..WAIST_ARMOR_NAMES_PTR as usize+4].try_into().unwrap()));
+                self.waist_armor_names_modified = false;
+            }
             cursor.seek(SeekFrom::Start(0)).unwrap();
             if let Ok(names) = extract_armor_names(&mut cursor, WAIST_ARMOR_NAMES_PTR, self.waist_armors.len()) {
                 self.waist_armor_names = names;
@@ -59,6 +93,14 @@ impl MhfdatApp {
         self.armor_tab = ArmorTab::Legs;
         cursor.seek(SeekFrom::Start(0)).unwrap();
         if let Ok(()) = self.read_armor_data(&mut cursor, LEG_ARMOR_PTR as u64) {
+            if buffer.len() >= LEG_ARMOR_PTR as usize + 4 {
+                self.original_legs_armors_offset = Some(u32::from_le_bytes(buffer[LEG_ARMOR_PTR as usize..LEG_ARMOR_PTR as usize+4].try_into().unwrap()));
+                self.legs_armors_modified = false;
+            }
+            if buffer.len() >= LEG_ARMOR_NAMES_PTR as usize + 4 {
+                self.original_legs_armor_names_offset = Some(u32::from_le_bytes(buffer[LEG_ARMOR_NAMES_PTR as usize..LEG_ARMOR_NAMES_PTR as usize+4].try_into().unwrap()));
+                self.legs_armor_names_modified = false;
+            }
             cursor.seek(SeekFrom::Start(0)).unwrap();
             if let Ok(names) = extract_armor_names(&mut cursor, LEG_ARMOR_NAMES_PTR, self.legs_armors.len()) {
                 self.legs_armor_names = names;
@@ -77,6 +119,20 @@ impl MhfdatApp {
         let items = parse_items(&self.buffer);
         self.items = items;
         
+        // Save original offsets for items
+        if buffer.len() >= ITEM_DATA_PTR as usize + 4 {
+            self.original_items_offset = Some(u32::from_le_bytes(buffer[ITEM_DATA_PTR as usize..ITEM_DATA_PTR as usize+4].try_into().unwrap()));
+            self.items_modified = false;
+        }
+        if buffer.len() >= ITEM_NAMES_PTR as usize + 4 {
+            self.original_item_names_offset = Some(u32::from_le_bytes(buffer[ITEM_NAMES_PTR as usize..ITEM_NAMES_PTR as usize+4].try_into().unwrap()));
+            self.item_names_modified = false;
+        }
+        if buffer.len() >= ITEM_DESC_PTR as usize + 4 {
+            self.original_item_descriptions_offset = Some(u32::from_le_bytes(buffer[ITEM_DESC_PTR as usize..ITEM_DESC_PTR as usize+4].try_into().unwrap()));
+            self.item_descriptions_modified = false;
+        }
+        
         // Load item names using the new parse function
         let names = parse_item_names(&self.buffer, self.items.len());
         self.item_names = names;
@@ -91,6 +147,11 @@ impl MhfdatApp {
         let ptr_offset = TRANSMOG_FORGING_PTR as usize;
         if self.buffer.len() < ptr_offset + 4 { return; }
         let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_transmog_offset = Some(data_offset as u32);
+        self.transmog_modified = false;
+        
         let entry_size = size_of::<ShopEntry>();
         let mut entries = Vec::new();
         let mut cursor = data_offset;
