@@ -12,7 +12,8 @@ use crate::model::mhfdat_pointers::{
     MELEE_WEAPON_DESC_PTR, RANGED_WEAPON_DESC_PTR,
     HEAD_ARMOR_PTR, BODY_ARMOR_PTR, ARM_ARMOR_PTR, WAIST_ARMOR_PTR, LEG_ARMOR_PTR,
     HEAD_ARMOR_NAMES_PTR, BODY_ARMOR_NAMES_PTR, ARM_ARMOR_NAMES_PTR, WAIST_ARMOR_NAMES_PTR, LEG_ARMOR_NAMES_PTR,
-    ITEM_DATA_PTR, ITEM_NAMES_PTR, ITEM_DESC_PTR, TRANSMOG_FORGING_PTR, 
+    ITEM_DATA_PTR, ITEM_NAMES_PTR, ITEM_DESC_PTR, TRANSMOG_FORGING_PTR, WEAPON_FORGING_PTR, ARMOR_FORGING_PTR,
+    G_RANK_WEAPON_SHOP_PTR, G_RANK_ARMOR_SHOP_PTR, ZENITH_WEAPON_FORGING_PTR, ZENITH_ARMOR_FORGING_PTR,
     DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
     AUTOMATIC_SKILLS_TABLE_PTR,
@@ -126,6 +127,30 @@ impl MhfdatApp {
             if self.transmog_modified && saved_file_data.len() >= (TRANSMOG_FORGING_PTR + 4) as usize {
                 self.buffer[TRANSMOG_FORGING_PTR as usize..(TRANSMOG_FORGING_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[TRANSMOG_FORGING_PTR as usize..(TRANSMOG_FORGING_PTR + 4) as usize]);
+            }
+            if self.weapon_forging_modified && saved_file_data.len() >= (WEAPON_FORGING_PTR + 4) as usize {
+                self.buffer[WEAPON_FORGING_PTR as usize..(WEAPON_FORGING_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[WEAPON_FORGING_PTR as usize..(WEAPON_FORGING_PTR + 4) as usize]);
+            }
+            if self.armor_forging_modified && saved_file_data.len() >= (ARMOR_FORGING_PTR + 4) as usize {
+                self.buffer[ARMOR_FORGING_PTR as usize..(ARMOR_FORGING_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[ARMOR_FORGING_PTR as usize..(ARMOR_FORGING_PTR + 4) as usize]);
+            }
+            if self.weapon_forging_gr_modified && saved_file_data.len() >= (G_RANK_WEAPON_SHOP_PTR + 4) as usize {
+                self.buffer[G_RANK_WEAPON_SHOP_PTR as usize..(G_RANK_WEAPON_SHOP_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[G_RANK_WEAPON_SHOP_PTR as usize..(G_RANK_WEAPON_SHOP_PTR + 4) as usize]);
+            }
+            if self.armor_forging_gr_modified && saved_file_data.len() >= (G_RANK_ARMOR_SHOP_PTR + 4) as usize {
+                self.buffer[G_RANK_ARMOR_SHOP_PTR as usize..(G_RANK_ARMOR_SHOP_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[G_RANK_ARMOR_SHOP_PTR as usize..(G_RANK_ARMOR_SHOP_PTR + 4) as usize]);
+            }
+            if self.weapon_forging_zenith_modified && saved_file_data.len() >= (ZENITH_WEAPON_FORGING_PTR + 4) as usize {
+                self.buffer[ZENITH_WEAPON_FORGING_PTR as usize..(ZENITH_WEAPON_FORGING_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[ZENITH_WEAPON_FORGING_PTR as usize..(ZENITH_WEAPON_FORGING_PTR + 4) as usize]);
+            }
+            if self.armor_forging_zenith_modified && saved_file_data.len() >= (ZENITH_ARMOR_FORGING_PTR + 4) as usize {
+                self.buffer[ZENITH_ARMOR_FORGING_PTR as usize..(ZENITH_ARMOR_FORGING_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[ZENITH_ARMOR_FORGING_PTR as usize..(ZENITH_ARMOR_FORGING_PTR + 4) as usize]);
             }
             
             // Mettre à jour les pointeurs de boutiques seulement si modifiés
@@ -261,6 +286,66 @@ impl MhfdatApp {
             offset
         } else {
             self.original_transmog_offset.unwrap_or(0)
+        };
+
+        // 9a) Weapon forging shop data block - écrire seulement si modifié
+        let weapon_forging_data_offset = if self.weapon_forging_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let weapon_forging_block = write_transmog_data(&self.weapon_forging_entries)?;
+            writer.write_all(&weapon_forging_block)?;
+            offset
+        } else {
+            self.original_weapon_forging_offset.unwrap_or(0)
+        };
+
+        // 9a2) Armor forging shop data block - écrire seulement si modifié
+        let armor_forging_data_offset = if self.armor_forging_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let armor_forging_block = write_transmog_data(&self.armor_forging_entries)?;
+            writer.write_all(&armor_forging_block)?;
+            offset
+        } else {
+            self.original_armor_forging_offset.unwrap_or(0)
+        };
+
+        // 9a3) G-Rank Weapon forging shop data block - écrire seulement si modifié
+        let weapon_forging_gr_data_offset = if self.weapon_forging_gr_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let weapon_forging_gr_block = write_transmog_data(&self.weapon_forging_gr_entries)?;
+            writer.write_all(&weapon_forging_gr_block)?;
+            offset
+        } else {
+            self.original_weapon_forging_gr_offset.unwrap_or(0)
+        };
+
+        // 9a4) G-Rank Armor forging shop data block - écrire seulement si modifié
+        let armor_forging_gr_data_offset = if self.armor_forging_gr_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let armor_forging_gr_block = write_transmog_data(&self.armor_forging_gr_entries)?;
+            writer.write_all(&armor_forging_gr_block)?;
+            offset
+        } else {
+            self.original_armor_forging_gr_offset.unwrap_or(0)
+        };
+
+        // 9a5) Zenith Weapon forging shop data block - écrire seulement si modifié
+        let weapon_forging_zenith_data_offset = if self.weapon_forging_zenith_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let weapon_forging_zenith_block = write_transmog_data(&self.weapon_forging_zenith_entries)?;
+            writer.write_all(&weapon_forging_zenith_block)?;
+            offset
+        } else {
+            self.original_weapon_forging_zenith_offset.unwrap_or(0)
+        };
+
+        // 9a6) Zenith Armor forging shop data block - écrire seulement si modifié
+        let armor_forging_zenith_data_offset = if self.armor_forging_zenith_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let armor_forging_zenith_block = write_transmog_data(&self.armor_forging_zenith_entries)?;
+            writer.write_all(&armor_forging_zenith_block)?;
+            offset
+        } else {
+            self.original_armor_forging_zenith_offset.unwrap_or(0)
         };
 
         // 9b) Deco shops - écrire seulement si modifié
@@ -571,6 +656,36 @@ impl MhfdatApp {
         if self.transmog_modified {
             writer.seek(SeekFrom::Start(TRANSMOG_FORGING_PTR as u64))?;
             writer.write_all(&transmog_data_offset.to_le_bytes())?;
+        }
+
+        if self.weapon_forging_modified {
+            writer.seek(SeekFrom::Start(WEAPON_FORGING_PTR as u64))?;
+            writer.write_all(&weapon_forging_data_offset.to_le_bytes())?;
+        }
+
+        if self.armor_forging_modified {
+            writer.seek(SeekFrom::Start(ARMOR_FORGING_PTR as u64))?;
+            writer.write_all(&armor_forging_data_offset.to_le_bytes())?;
+        }
+
+        if self.weapon_forging_gr_modified {
+            writer.seek(SeekFrom::Start(G_RANK_WEAPON_SHOP_PTR as u64))?;
+            writer.write_all(&weapon_forging_gr_data_offset.to_le_bytes())?;
+        }
+
+        if self.armor_forging_gr_modified {
+            writer.seek(SeekFrom::Start(G_RANK_ARMOR_SHOP_PTR as u64))?;
+            writer.write_all(&armor_forging_gr_data_offset.to_le_bytes())?;
+        }
+
+        if self.weapon_forging_zenith_modified {
+            writer.seek(SeekFrom::Start(ZENITH_WEAPON_FORGING_PTR as u64))?;
+            writer.write_all(&weapon_forging_zenith_data_offset.to_le_bytes())?;
+        }
+
+        if self.armor_forging_zenith_modified {
+            writer.seek(SeekFrom::Start(ZENITH_ARMOR_FORGING_PTR as u64))?;
+            writer.write_all(&armor_forging_zenith_data_offset.to_le_bytes())?;
         }
 
         // Patch deco shop pointers (HR/GR)

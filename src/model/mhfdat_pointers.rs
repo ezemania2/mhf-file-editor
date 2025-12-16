@@ -5,7 +5,7 @@
 // Names and comments are based on mhf-pattern/mhfdat/header.hexpat
 
 pub const ARMOR_FORGING_PTR: u32 = 0x34;
-pub const OTHER_WEAPON_FORGING_PTR: u32 = 0x38;
+pub const WEAPON_FORGING_PTR: u32 = 0x38;
 pub const MELEE_WEAPON_UPGRADE_PATH_PTR: u32 = 0x3C;
 pub const RANGED_WEAPON_UPGRADE_PATH_PTR: u32 = 0x40;
 pub const DECO_SHOP_PTR: u32 = 0x44;
@@ -41,7 +41,7 @@ pub const SHARPNESS_IDS_PTR: u32 = 0xB0;
 
 pub const EQUIPEMENT_COUNT_PTR: u32 = 0xE8;
 
-pub const HUNTER_PEARL_SKILLS_PTR: u32 = 0x0F0;
+pub const CARAVAN_SKILLS_PTR: u32 = 0x0F0;
 pub const DECO_ID_PTR: u32 = 0xF8;
 pub const DECO_ID_COUNT: usize = 6539;
 
@@ -49,7 +49,11 @@ pub const ITEM_DATA_PTR: u32 = 0xFC;
 pub const ITEM_NAMES_PTR: u32 = 0x100;
 pub const ITEM_DESC_PTR: u32 = 0x12C;
 pub const CUFF_SHOP_PTR: u32 = 0x2C0;
+pub const G_RANK_WEAPON_SHOP_PTR: u32 = 0x5F0;
+pub const G_RANK_ARMOR_SHOP_PTR: u32 = 0x5F4;
 pub const CUFF_GR_SHOP_PTR: u32 = 0x750;
+pub const ZENITH_WEAPON_FORGING_PTR: u32 = 0xAC0;
+pub const ZENITH_ARMOR_FORGING_PTR: u32 = 0xAC4;
 pub const TRANSMOG_FORGING_PTR: u32 = 0xAB8;
 pub const DECO_G_SHOP_PTR: u32 = 0xB48;
 

@@ -165,6 +165,150 @@ impl MhfdatApp {
         self.transmog_entries = entries;
     }
 
+    pub fn load_weapon_forging_entries(&mut self) {
+        let valid_types = [0x06, 0x07]; // Only Melee (0x06) and Ranged (0x07)
+        let ptr_offset = WEAPON_FORGING_PTR as usize;
+        if self.buffer.len() < ptr_offset + 4 { return; }
+        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_weapon_forging_offset = Some(data_offset as u32);
+        self.weapon_forging_modified = false;
+        
+        if data_offset == 0 || data_offset >= self.buffer.len() { return; }
+        let entry_size = std::mem::size_of::<ShopEntry>();
+        let mut cursor = data_offset;
+        let mut entries = Vec::new();
+        while cursor + entry_size <= self.buffer.len() {
+            let equip_type = self.buffer[cursor];
+            if !valid_types.contains(&equip_type) { break; }
+            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
+            entries.push(entry);
+            cursor += entry_size;
+        }
+        self.weapon_forging_entries = entries;
+    }
+
+    pub fn load_armor_forging_entries(&mut self) {
+        let valid_types = [0x00, 0x02, 0x03, 0x04, 0x05]; // Head, Body, Arms, Waist, Legs
+        let ptr_offset = ARMOR_FORGING_PTR as usize;
+        if self.buffer.len() < ptr_offset + 4 { return; }
+        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_armor_forging_offset = Some(data_offset as u32);
+        self.armor_forging_modified = false;
+        
+        if data_offset == 0 || data_offset >= self.buffer.len() { return; }
+        let entry_size = std::mem::size_of::<ShopEntry>();
+        let mut cursor = data_offset;
+        let mut entries = Vec::new();
+        while cursor + entry_size <= self.buffer.len() {
+            let equip_type = self.buffer[cursor];
+            if !valid_types.contains(&equip_type) { break; }
+            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
+            entries.push(entry);
+            cursor += entry_size;
+        }
+        self.armor_forging_entries = entries;
+    }
+
+    pub fn load_weapon_forging_gr_entries(&mut self) {
+        let valid_types = [0x06, 0x07]; // Melee, Ranged
+        let ptr_offset = G_RANK_WEAPON_SHOP_PTR as usize;
+        if self.buffer.len() < ptr_offset + 4 { return; }
+        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_weapon_forging_gr_offset = Some(data_offset as u32);
+        self.weapon_forging_gr_modified = false;
+        
+        if data_offset == 0 || data_offset >= self.buffer.len() { return; }
+        let entry_size = std::mem::size_of::<ShopEntry>();
+        let mut cursor = data_offset;
+        let mut entries = Vec::new();
+        while cursor + entry_size <= self.buffer.len() {
+            let equip_type = self.buffer[cursor];
+            if !valid_types.contains(&equip_type) { break; }
+            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
+            entries.push(entry);
+            cursor += entry_size;
+        }
+        self.weapon_forging_gr_entries = entries;
+    }
+
+    pub fn load_armor_forging_gr_entries(&mut self) {
+        let valid_types = [0x00, 0x02, 0x03, 0x04, 0x05]; // Head, Body, Arms, Waist, Legs
+        let ptr_offset = G_RANK_ARMOR_SHOP_PTR as usize;
+        if self.buffer.len() < ptr_offset + 4 { return; }
+        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_armor_forging_gr_offset = Some(data_offset as u32);
+        self.armor_forging_gr_modified = false;
+        
+        if data_offset == 0 || data_offset >= self.buffer.len() { return; }
+        let entry_size = std::mem::size_of::<ShopEntry>();
+        let mut cursor = data_offset;
+        let mut entries = Vec::new();
+        while cursor + entry_size <= self.buffer.len() {
+            let equip_type = self.buffer[cursor];
+            if !valid_types.contains(&equip_type) { break; }
+            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
+            entries.push(entry);
+            cursor += entry_size;
+        }
+        self.armor_forging_gr_entries = entries;
+    }
+
+    pub fn load_weapon_forging_zenith_entries(&mut self) {
+        let valid_types = [0x06, 0x07]; // Melee, Ranged
+        let ptr_offset = ZENITH_WEAPON_FORGING_PTR as usize;
+        if self.buffer.len() < ptr_offset + 4 { return; }
+        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_weapon_forging_zenith_offset = Some(data_offset as u32);
+        self.weapon_forging_zenith_modified = false;
+        
+        if data_offset == 0 || data_offset >= self.buffer.len() { return; }
+        let entry_size = std::mem::size_of::<ShopEntry>();
+        let mut cursor = data_offset;
+        let mut entries = Vec::new();
+        while cursor + entry_size <= self.buffer.len() {
+            let equip_type = self.buffer[cursor];
+            if !valid_types.contains(&equip_type) { break; }
+            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
+            entries.push(entry);
+            cursor += entry_size;
+        }
+        self.weapon_forging_zenith_entries = entries;
+    }
+
+    pub fn load_armor_forging_zenith_entries(&mut self) {
+        let valid_types = [0x00, 0x02, 0x03, 0x04, 0x05]; // Head, Body, Arms, Waist, Legs
+        let ptr_offset = ZENITH_ARMOR_FORGING_PTR as usize;
+        if self.buffer.len() < ptr_offset + 4 { return; }
+        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_armor_forging_zenith_offset = Some(data_offset as u32);
+        self.armor_forging_zenith_modified = false;
+        
+        if data_offset == 0 || data_offset >= self.buffer.len() { return; }
+        let entry_size = std::mem::size_of::<ShopEntry>();
+        let mut cursor = data_offset;
+        let mut entries = Vec::new();
+        while cursor + entry_size <= self.buffer.len() {
+            let equip_type = self.buffer[cursor];
+            if !valid_types.contains(&equip_type) { break; }
+            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
+            entries.push(entry);
+            cursor += entry_size;
+        }
+        self.armor_forging_zenith_entries = entries;
+    }
+
     pub fn read_armor_data(&mut self, cursor: &mut Cursor<&[u8]>, offset: u64) -> Result<(), std::io::Error> {
         // Read the actual data offset from the pointer location
         cursor.seek(SeekFrom::Start(offset))?;

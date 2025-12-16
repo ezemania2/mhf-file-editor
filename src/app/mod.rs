@@ -48,7 +48,8 @@ use crate::model::mhfdat_pointers::{
     ARM_ARMOR_PTR, ARM_ARMOR_NAMES_PTR,
     WAIST_ARMOR_PTR, WAIST_ARMOR_NAMES_PTR,
     LEG_ARMOR_PTR, LEG_ARMOR_NAMES_PTR,
-    ITEM_DATA_PTR, ITEM_NAMES_PTR, ITEM_DESC_PTR, TRANSMOG_FORGING_PTR,
+    ITEM_DATA_PTR, ITEM_NAMES_PTR, ITEM_DESC_PTR, TRANSMOG_FORGING_PTR, WEAPON_FORGING_PTR, ARMOR_FORGING_PTR,
+    G_RANK_WEAPON_SHOP_PTR, G_RANK_ARMOR_SHOP_PTR, ZENITH_WEAPON_FORGING_PTR, ZENITH_ARMOR_FORGING_PTR,
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR, DECO_ID_PTR,
     DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
     AUTOMATIC_SKILLS_TABLE_PTR,
@@ -95,14 +96,40 @@ impl Default for MainTab {
 }
 
 #[derive(PartialEq)]
-pub enum WorkshopTab {
-    Transmog,
+pub enum WorkshopCategory {
+    WeaponShops,
+    ArmorShops,
     Deco,
-    Weapon,
-    Armor,
 }
 
-impl Default for WorkshopTab {
+impl Default for WorkshopCategory {
+    fn default() -> Self {
+        Self::ArmorShops
+    }
+}
+
+#[derive(PartialEq)]
+pub enum WeaponShopTab {
+    ForgingHR,
+    ForgingGR,
+    ForgingZenith,
+}
+
+impl Default for WeaponShopTab {
+    fn default() -> Self {
+        Self::ForgingHR
+    }
+}
+
+#[derive(PartialEq)]
+pub enum ArmorShopTab {
+    Transmog,
+    ForgingHR,
+    ForgingGR,
+    ForgingZenith,
+}
+
+impl Default for ArmorShopTab {
     fn default() -> Self {
         Self::Transmog
     }
@@ -175,7 +202,6 @@ pub struct MhfdatApp {
     pub melee_weapon_descriptions: Vec<[String; 4]>,
     pub should_encrypt: bool,
     pub should_pack: bool,
-    pub workshop_tab: WorkshopTab,
     pub deco_shop_entries: Vec<DecoShop>,
     pub sigil_tower_entries: Vec<SigilTowerTable>,
     pub g50_weapon_entries: Vec<G50WUpgrade>,
@@ -184,9 +210,24 @@ pub struct MhfdatApp {
     pub evo_upgrade_entries: Vec<EvoUpgrade>,
     pub transmog_entries: Vec<ShopEntry>,
     pub zenith_entries: Vec<ShopEntry>,
+    pub weapon_forging_entries: Vec<ShopEntry>,
+    pub armor_forging_entries: Vec<ShopEntry>,
+    pub weapon_forging_gr_entries: Vec<ShopEntry>,
+    pub armor_forging_gr_entries: Vec<ShopEntry>,
+    pub weapon_forging_zenith_entries: Vec<ShopEntry>,
+    pub armor_forging_zenith_entries: Vec<ShopEntry>,
     pub transmog_open: Vec<bool>,
     pub zenith_open: Vec<bool>,
     pub selected_transmog_index: Option<usize>,
+    pub selected_weapon_forging_index: Option<usize>,
+    pub selected_armor_forging_index: Option<usize>,
+    pub selected_weapon_forging_gr_index: Option<usize>,
+    pub selected_armor_forging_gr_index: Option<usize>,
+    pub selected_weapon_forging_zenith_index: Option<usize>,
+    pub selected_armor_forging_zenith_index: Option<usize>,
+    pub workshop_category: WorkshopCategory,
+    pub weapon_shop_tab: WeaponShopTab,
+    pub armor_shop_tab: ArmorShopTab,
     pub weapon_tab: WeaponTab,
     pub ranged_weapon_names: Vec<String>,
     pub ranged_weapon_descriptions: Vec<[String; 4]>,
@@ -269,6 +310,18 @@ pub struct MhfdatApp {
     pub original_items_offset: Option<u32>,
     pub transmog_modified: bool,
     pub original_transmog_offset: Option<u32>,
+    pub weapon_forging_modified: bool,
+    pub original_weapon_forging_offset: Option<u32>,
+    pub armor_forging_modified: bool,
+    pub original_armor_forging_offset: Option<u32>,
+    pub weapon_forging_gr_modified: bool,
+    pub original_weapon_forging_gr_offset: Option<u32>,
+    pub armor_forging_gr_modified: bool,
+    pub original_armor_forging_gr_offset: Option<u32>,
+    pub weapon_forging_zenith_modified: bool,
+    pub original_weapon_forging_zenith_offset: Option<u32>,
+    pub armor_forging_zenith_modified: bool,
+    pub original_armor_forging_zenith_offset: Option<u32>,
     pub deco_shop_hr_modified: bool,
     pub original_deco_shop_hr_offset: Option<u32>,
     pub deco_shop_gr_modified: bool,
@@ -341,7 +394,9 @@ impl Default for MhfdatApp {
             melee_weapon_descriptions: Vec::new(),
             should_encrypt: false,
             should_pack: false,
-            workshop_tab: WorkshopTab::Transmog,
+            workshop_category: WorkshopCategory::default(),
+            weapon_shop_tab: WeaponShopTab::default(),
+            armor_shop_tab: ArmorShopTab::default(),
             deco_shop_entries: Vec::new(),
             sigil_tower_entries: Vec::new(),
             g50_weapon_entries: Vec::new(),
@@ -350,9 +405,21 @@ impl Default for MhfdatApp {
             evo_upgrade_entries: Vec::new(),
             transmog_entries: Vec::new(),
             zenith_entries: Vec::new(),
+            weapon_forging_entries: Vec::new(),
+            armor_forging_entries: Vec::new(),
+            weapon_forging_gr_entries: Vec::new(),
+            armor_forging_gr_entries: Vec::new(),
+            weapon_forging_zenith_entries: Vec::new(),
+            armor_forging_zenith_entries: Vec::new(),
             transmog_open: vec![true],
             zenith_open: vec![true],
             selected_transmog_index: None,
+            selected_weapon_forging_index: None,
+            selected_armor_forging_index: None,
+            selected_weapon_forging_gr_index: None,
+            selected_armor_forging_gr_index: None,
+            selected_weapon_forging_zenith_index: None,
+            selected_armor_forging_zenith_index: None,
             weapon_tab: WeaponTab::Melee,
             ranged_weapon_names: Vec::new(),
             ranged_weapon_descriptions: Vec::new(),
@@ -433,6 +500,18 @@ impl Default for MhfdatApp {
             original_items_offset: None,
             transmog_modified: false,
             original_transmog_offset: None,
+            weapon_forging_modified: false,
+            original_weapon_forging_offset: None,
+            armor_forging_modified: false,
+            original_armor_forging_offset: None,
+            weapon_forging_gr_modified: false,
+            original_weapon_forging_gr_offset: None,
+            armor_forging_gr_modified: false,
+            original_armor_forging_gr_offset: None,
+            weapon_forging_zenith_modified: false,
+            original_weapon_forging_zenith_offset: None,
+            armor_forging_zenith_modified: false,
+            original_armor_forging_zenith_offset: None,
             deco_shop_hr_modified: false,
             original_deco_shop_hr_offset: None,
             deco_shop_gr_modified: false,
@@ -510,6 +589,19 @@ impl MhfdatApp {
         // Load transmog entries
         self.load_transmog_entries();
         
+        // Load weapon forging entries
+        self.load_weapon_forging_entries();
+        
+        // Load armor forging entries
+        self.load_armor_forging_entries();
+        
+        // Load G-Rank forging entries
+        self.load_weapon_forging_gr_entries();
+        self.load_armor_forging_gr_entries();
+        
+        // Load Zenith forging entries
+        self.load_weapon_forging_zenith_entries();
+        self.load_armor_forging_zenith_entries();
         
         // Load weapon names and descriptions
         {
