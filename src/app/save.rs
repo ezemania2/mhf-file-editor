@@ -4,7 +4,7 @@ use crate::core::packing::{compress_file, encrypt_file};
 use crate::core::mhfdat::{
     write_melee_weapons_block, write_ranged_weapons_block, write_armors_block, write_items_block, write_transmog_data,
     write_mw_upgrades_block, write_rw_upgrades_block, write_deco_shop_block, write_automatic_skills_block,
-    write_armor_names, write_item_names, write_item_descriptions
+    write_armor_names, write_item_names, write_item_descriptions, write_sharpness_data_block, write_bullet_sets_block
 };
 use crate::model::mhfdat_pointers::{
     MELEE_WEAPONS_PTR, RANGED_WEAPONS_PTR,
@@ -418,6 +418,119 @@ impl MhfdatApp {
 
         // 12) Armor upgrades removed
 
+        // 12a) Sharpness data blocks - write only if modified, WITHOUT updating pointers
+        // (Pointers remain at their original locations)
+        let _sharpness_offsets = [
+            if self.sharpness_modified[0] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.great_sword)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[0].unwrap_or(0)
+            },
+            if self.sharpness_modified[1] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.hammer)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[1].unwrap_or(0)
+            },
+            if self.sharpness_modified[2] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.lance)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[2].unwrap_or(0)
+            },
+            if self.sharpness_modified[3] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.sword_and_shield)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[3].unwrap_or(0)
+            },
+            if self.sharpness_modified[4] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.dual_blades)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[4].unwrap_or(0)
+            },
+            if self.sharpness_modified[5] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.long_sword)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[5].unwrap_or(0)
+            },
+            if self.sharpness_modified[6] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.hunting_horn)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[6].unwrap_or(0)
+            },
+            if self.sharpness_modified[7] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.gunlance)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[7].unwrap_or(0)
+            },
+            if self.sharpness_modified[8] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.bow)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[8].unwrap_or(0)
+            },
+            if self.sharpness_modified[9] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.tonfa)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[9].unwrap_or(0)
+            },
+            if self.sharpness_modified[10] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.switch_axe)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[10].unwrap_or(0)
+            },
+            if self.sharpness_modified[11] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(&self.sharpness.magnet_spike)?;
+                writer.write_all(&block)?;
+                offset
+            } else {
+                self.original_sharpness_offsets[11].unwrap_or(0)
+            },
+        ];
+
+        // NOTE: Sharpness pointers are NOT updated - only data blocks are written if modified
+
+        // 12b) Bullet Sets data block - write only if modified
+        let bullet_sets_offset = if self.bullet_sets_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let block = write_bullet_sets_block(&self.bullet_sets)?;
+            writer.write_all(&block)?;
+            offset
+        } else {
+            self.original_bullet_sets_offset.unwrap_or(0)
+        };
+
         // 13) Weapon names and descriptions tables - écrire seulement si modifié
         // Melee names
         let melee_names_count = self.melee_weapons.len().min(self.melee_weapon_names.len()).min(self.melee_weapon_descriptions.len());
@@ -711,6 +824,13 @@ impl MhfdatApp {
             writer.write_all(&automatic_skills_offset.to_le_bytes())?;
         }
 
+        // Update automatic skills count limiter if modified
+        if self.automatic_skills_count_limiter_modified {
+            use crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR;
+            writer.seek(SeekFrom::Start(AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as u64))?;
+            writer.write_all(&self.automatic_skills_count_limiter.to_le_bytes())?;
+        }
+
         if self.mw_upgrades_modified {
             writer.seek(SeekFrom::Start(MELEE_WEAPON_UPGRADE_PATH_PTR as u64))?;
             writer.write_all(&mw_upgrades_offset.to_le_bytes())?;
@@ -722,6 +842,20 @@ impl MhfdatApp {
         }
 
         // armor upgrades pointer removed
+
+        // Update bullet sets pointer if modified
+        if self.bullet_sets_modified {
+            use crate::model::mhfdat_pointers::BULLET_SETS_PTR;
+            writer.seek(SeekFrom::Start(BULLET_SETS_PTR as u64))?;
+            writer.write_all(&bullet_sets_offset.to_le_bytes())?;
+        }
+
+        // Update deco count limiter if modified
+        if self.deco_id_count_limiter_modified {
+            use crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR;
+            writer.seek(SeekFrom::Start(DECO_ID_COUNT_LIMITER_PTR as u64))?;
+            writer.write_all(&self.deco_id_count_limiter.to_le_bytes())?;
+        }
 
         Ok(())
     }

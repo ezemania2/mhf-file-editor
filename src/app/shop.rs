@@ -112,14 +112,14 @@ impl MhfdatApp {
 
                 match self.armor_shop_tab {
                     super::ArmorShopTab::Transmog => {
-                        if !self.view_mode.contains_key("shop") {
-                            self.view_mode.insert("shop".to_string(), ViewMode::List);
-                        }
-                        match self.view_mode.get("shop").unwrap() {
-                            ViewMode::List => self.show_transmog_list(ui),
-                            ViewMode::Details => self.show_transmog_details(ui),
-                        }
-                    }
+                if !self.view_mode.contains_key("shop") {
+                    self.view_mode.insert("shop".to_string(), ViewMode::List);
+                }
+                match self.view_mode.get("shop").unwrap() {
+                    ViewMode::List => self.show_transmog_list(ui),
+                    ViewMode::Details => self.show_transmog_details(ui),
+                }
+            }
                     super::ArmorShopTab::ForgingHR => {
                         if !self.view_mode.contains_key("shop") {
                             self.view_mode.insert("shop".to_string(), ViewMode::List);

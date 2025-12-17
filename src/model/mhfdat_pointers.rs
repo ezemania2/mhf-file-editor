@@ -36,14 +36,14 @@ pub const ARMOR_STAT_ARRAY_PTR: u32 = 0x94;
 pub const ARMOR_WEAPON_STAT_ARRAY_PTR: u32 = 0x98;
 pub const ARMOR_NAME_ARRAY_PTR: u32 = 0x9C;
 
-pub const BULLET_SETS_PTR: u32 = 0xA8;
-pub const SHARPNESS_IDS_PTR: u32 = 0xB0;
+pub const BULLET_SETS_PTR: u32 = 0xA4;
 
 pub const EQUIPEMENT_COUNT_PTR: u32 = 0xE8;
 
 pub const CARAVAN_SKILLS_PTR: u32 = 0x0F0;
 pub const DECO_ID_PTR: u32 = 0xF8;
 pub const DECO_ID_COUNT: usize = 6539;
+pub const DECO_ID_COUNT_LIMITER_PTR: u32 = 0x00CD418A; // Limiter for deco count (u16)
 
 pub const ITEM_DATA_PTR: u32 = 0xFC;
 pub const ITEM_NAMES_PTR: u32 = 0x100;
@@ -58,3 +58,19 @@ pub const TRANSMOG_FORGING_PTR: u32 = 0xAB8;
 pub const DECO_G_SHOP_PTR: u32 = 0xB48;
 
 pub const AUTOMATIC_SKILLS_TABLE_PTR: u32 = 0x804;
+pub const AUTOMATIC_SKILLS_COUNT_LIMITER_PTR: u32 = 0x00CD4478; // Limiter for automatic skills count (u16)
+
+// Sharpness pointers (base address: 0x018FF4C0)
+// Note: Light Bowgun and Heavy Bowgun are ranged weapons and don't have sharpness
+pub const SHARPNESS_GREAT_SWORD_PTR: u32 = 0x018FF4C0;      // Offset 0x00
+pub const SHARPNESS_HAMMER_PTR: u32 = 0x018FF4C8;           // Offset 0x08
+pub const SHARPNESS_LANCE_PTR: u32 = 0x018FF4CC;            // Offset 0x0C
+pub const SHARPNESS_SWORD_AND_SHIELD_PTR: u32 = 0x018FF4D0; // Offset 0x10
+pub const SHARPNESS_DUAL_BLADES_PTR: u32 = 0x018FF4D8;      // Offset 0x18
+pub const SHARPNESS_LONG_SWORD_PTR: u32 = 0x018FF4DC;       // Offset 0x1C
+pub const SHARPNESS_HUNTING_HORN_PTR: u32 = 0x018FF4E0;     // Offset 0x20
+pub const SHARPNESS_GUNLANCE_PTR: u32 = 0x018FF4E4;         // Offset 0x24
+pub const SHARPNESS_BOW_PTR: u32 = 0x018FF4E8;              // Offset 0x28
+pub const SHARPNESS_TONFA_PTR: u32 = 0x018FF4EC;            // Offset 0x2C
+pub const SHARPNESS_SWITCH_AXE_PTR: u32 = 0x018FF4F0;       // Offset 0x30
+pub const SHARPNESS_MAGNET_SPIKE_PTR: u32 = 0x018FF4F4;     // Offset 0x34

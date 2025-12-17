@@ -56,6 +56,16 @@ impl MhfdatApp {
 
     pub fn show_deco_id_list(&mut self, ui: &mut egui::Ui) {
         MhfdatApp::section_header(ui, "Decorations (DecoID)", |ui| {
+            if ui.button("Add New Deco").clicked() {
+                // Add a new deco entry
+                let new_deco = crate::model::mhfdat::MhfdatDecoId::default();
+                self.deco_ids.push(new_deco);
+                // Update the limiter with the count (len() gives the actual count)
+                self.deco_id_count_limiter = self.deco_ids.len() as u16;
+                self.deco_id_count_limiter_modified = true;
+                // Select the new entry
+                self.selected_deco_index = Some(self.deco_ids.len() - 1);
+            }
             if ui.button("Export JSON").clicked() {
                 #[derive(Serialize)]
                 struct DecoExport {
@@ -137,54 +147,6 @@ impl MhfdatApp {
                     }
                 });
             self.deco_zenith_filter = if selected_zenith == 0xFFFF { None } else { Some(selected_zenith) };
-
-            // Export button
-            if ui.button("Export Decorations to JSON").clicked() {
-                #[derive(Serialize)]
-                struct DecoExport {
-                    idx: usize,
-                    name: String,
-                    slot_nb: u8,
-                    flags: u16,
-                    price: u32,
-                    skill_id1: u8,
-                    skill_pts1: i8,
-                    skill_id2: u8,
-                    skill_pts2: i8,
-                    skill_id3: u8,
-                    skill_pts3: i8,
-                    skill_id4: u8,
-                    skill_pts4: i8,
-                    special_flags: u16,
-                    zenith_skill: u16,
-                }
-                let export_rows: Vec<DecoExport> = self.deco_ids.iter().enumerate().map(|(i, d)| {
-                    let name = self.items.iter().position(|it| it.deco_id as usize == i)
-                        .and_then(|idx| self.item_names.get(idx)).cloned().unwrap_or_default();
-                    DecoExport {
-                        idx: i,
-                        name,
-                        slot_nb: d.slot_nb,
-                        flags: d.flags,
-                        price: d.price,
-                        skill_id1: d.skill_id1,
-                        skill_pts1: d.skill_pts1,
-                        skill_id2: d.skill_id2,
-                        skill_pts2: d.skill_pts2,
-                        skill_id3: d.skill_id3,
-                        skill_pts3: d.skill_pts3,
-                        skill_id4: d.skill_id4,
-                        skill_pts4: d.skill_pts4,
-                        special_flags: d.special_flags,
-                        zenith_skill: d.zenith_skill,
-                    }
-                }).collect();
-                if let Ok(json) = serde_json::to_string_pretty(&export_rows) {
-                    if let Ok(mut file) = File::create("decorations.json") {
-                        let _ = file.write_all(json.as_bytes());
-                    }
-                }
-            }
         });
 
         // Build filtered indices
@@ -215,13 +177,7 @@ impl MhfdatApp {
         let current_page = (self.deco_page as usize).min(total_pages.saturating_sub(1));
         if current_page != self.deco_page as usize { self.deco_page = current_page as u32; }
 
-        ui.horizontal(|ui| {
-            let can_prev = current_page > 0 && total > 0;
-            let can_next = current_page < total_pages.saturating_sub(1) && total > 0;
-            if ui.button("← Previous").clicked() && can_prev { self.deco_page = (current_page - 1) as u32; }
-            if total > 0 { ui.label(format!("Page {} of {} ({} entries)", current_page + 1, total_pages.max(1), total)); }
-            if ui.button("Next →").clicked() && can_next { self.deco_page = (current_page + 1) as u32; }
-        });
+        MhfdatApp::pagination_controls(ui, &mut self.deco_page, total_pages);
 
         let start_idx = current_page * items_per_page;
         let end_idx = (start_idx + items_per_page).min(total);

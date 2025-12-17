@@ -1,7 +1,7 @@
 use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom, Result, Read, Cursor};
-use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill};
-use byteorder::{ReadBytesExt, LittleEndian};
+use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill, SharpnessItem, SharpnessData, BulletSet};
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use encoding_rs::SHIFT_JIS;
 use std::env;
 use std::path::PathBuf;
@@ -2362,4 +2362,156 @@ pub fn parse_item_descriptions(buffer: &[u8], count: usize) -> Vec<String> {
         Ok(descriptions) => descriptions,
         Err(_) => vec![]
     }
+}
+
+// Sharpness functions
+pub fn read_sharpness_item<R: Read>(r: &mut R) -> Result<SharpnessItem> {
+    Ok(SharpnessItem {
+        red: r.read_u16::<LittleEndian>()?,
+        orange: r.read_u16::<LittleEndian>()?,
+        yellow: r.read_u16::<LittleEndian>()?,
+        green: r.read_u16::<LittleEndian>()?,
+        blue: r.read_u16::<LittleEndian>()?,
+        white: r.read_u16::<LittleEndian>()?,
+        purple: r.read_u16::<LittleEndian>()?,
+        sky_blue: r.read_u16::<LittleEndian>()?,
+    })
+}
+
+pub fn write_sharpness_item<W: Write>(w: &mut W, item: &SharpnessItem) -> Result<()> {
+    w.write_u16::<LittleEndian>(item.red)?;
+    w.write_u16::<LittleEndian>(item.orange)?;
+    w.write_u16::<LittleEndian>(item.yellow)?;
+    w.write_u16::<LittleEndian>(item.green)?;
+    w.write_u16::<LittleEndian>(item.blue)?;
+    w.write_u16::<LittleEndian>(item.white)?;
+    w.write_u16::<LittleEndian>(item.purple)?;
+    w.write_u16::<LittleEndian>(item.sky_blue)?;
+    Ok(())
+}
+
+pub fn read_sharpness_data(buffer: &[u8], offset: usize) -> SharpnessData {
+    let mut cursor = Cursor::new(buffer);
+    cursor.set_position(offset as u64);
+    
+    let mut data = Vec::with_capacity(128);
+    for _ in 0..128 {
+        if let Ok(item) = read_sharpness_item(&mut cursor) {
+            data.push(item);
+        } else {
+            break;
+        }
+    }
+    data
+}
+
+pub fn write_sharpness_data_block(data: &SharpnessData) -> Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    for item in data {
+        write_sharpness_item(&mut buffer, item)?;
+    }
+    Ok(buffer)
+}
+
+// Bullet Set functions
+pub fn read_bullet_set<R: Read>(r: &mut R) -> Result<crate::model::mhfdat::BulletSet> {
+    Ok(BulletSet {
+        normal_lv1_capacity: r.read_u8()?,
+        normal_lv2_capacity: r.read_u8()?,
+        normal_lv3_capacity: r.read_u8()?,
+        pierce_lv1_capacity: r.read_u8()?,
+        pierce_lv2_capacity: r.read_u8()?,
+        pierce_lv3_capacity: r.read_u8()?,
+        spread_lv1_capacity: r.read_u8()?,
+        spread_lv2_capacity: r.read_u8()?,
+        spread_lv3_capacity: r.read_u8()?,
+        crag_lv1_capacity: r.read_u8()?,
+        crag_lv2_capacity: r.read_u8()?,
+        crag_lv3_capacity: r.read_u8()?,
+        cluster_lv1_capacity: r.read_u8()?,
+        cluster_lv2_capacity: r.read_u8()?,
+        cluster_lv3_capacity: r.read_u8()?,
+        fire_capacity: r.read_u8()?,
+        water_capacity: r.read_u8()?,
+        thunder_capacity: r.read_u8()?,
+        ice_capacity: r.read_u8()?,
+        dragon_capacity: r.read_u8()?,
+        recovery_lv1_capacity: r.read_u8()?,
+        recovery_lv2_capacity: r.read_u8()?,
+        poison_lv1_capacity: r.read_u8()?,
+        poison_lv2_capacity: r.read_u8()?,
+        paralysis_lv1_capacity: r.read_u8()?,
+        paralysis_lv2_capacity: r.read_u8()?,
+        sleep_lv1_capacity: r.read_u8()?,
+        sleep_lv2_capacity: r.read_u8()?,
+        tranquilizer_capacity: r.read_u8()?,
+        paint_capacity: r.read_u8()?,
+        demon_capacity: r.read_u8()?,
+        armor_capacity: r.read_u8()?,
+        _padding: {
+            let mut padding = [0u8; 68];
+            r.read_exact(&mut padding)?;
+            padding
+        },
+    })
+}
+
+pub fn write_bullet_set<W: Write>(w: &mut W, item: &crate::model::mhfdat::BulletSet) -> Result<()> {
+    w.write_all(&[item.normal_lv1_capacity])?;
+    w.write_all(&[item.normal_lv2_capacity])?;
+    w.write_all(&[item.normal_lv3_capacity])?;
+    w.write_all(&[item.pierce_lv1_capacity])?;
+    w.write_all(&[item.pierce_lv2_capacity])?;
+    w.write_all(&[item.pierce_lv3_capacity])?;
+    w.write_all(&[item.spread_lv1_capacity])?;
+    w.write_all(&[item.spread_lv2_capacity])?;
+    w.write_all(&[item.spread_lv3_capacity])?;
+    w.write_all(&[item.crag_lv1_capacity])?;
+    w.write_all(&[item.crag_lv2_capacity])?;
+    w.write_all(&[item.crag_lv3_capacity])?;
+    w.write_all(&[item.cluster_lv1_capacity])?;
+    w.write_all(&[item.cluster_lv2_capacity])?;
+    w.write_all(&[item.cluster_lv3_capacity])?;
+    w.write_all(&[item.fire_capacity])?;
+    w.write_all(&[item.water_capacity])?;
+    w.write_all(&[item.thunder_capacity])?;
+    w.write_all(&[item.ice_capacity])?;
+    w.write_all(&[item.dragon_capacity])?;
+    w.write_all(&[item.recovery_lv1_capacity])?;
+    w.write_all(&[item.recovery_lv2_capacity])?;
+    w.write_all(&[item.poison_lv1_capacity])?;
+    w.write_all(&[item.poison_lv2_capacity])?;
+    w.write_all(&[item.paralysis_lv1_capacity])?;
+    w.write_all(&[item.paralysis_lv2_capacity])?;
+    w.write_all(&[item.sleep_lv1_capacity])?;
+    w.write_all(&[item.sleep_lv2_capacity])?;
+    w.write_all(&[item.tranquilizer_capacity])?;
+    w.write_all(&[item.paint_capacity])?;
+    w.write_all(&[item.demon_capacity])?;
+    w.write_all(&[item.armor_capacity])?;
+    w.write_all(&item._padding)?;
+    Ok(())
+}
+
+pub fn read_bullet_sets(buffer: &[u8], offset: usize, count: usize) -> Vec<crate::model::mhfdat::BulletSet> {
+    let mut cursor = Cursor::new(buffer);
+    cursor.set_position(offset as u64);
+    
+    let mut data = Vec::with_capacity(count);
+    for _ in 0..count {
+        if let Ok(item) = read_bullet_set(&mut cursor) {
+            data.push(item);
+        } else {
+            break;
+        }
+    }
+    data
+}
+
+pub fn write_bullet_sets_block(data: &[crate::model::mhfdat::BulletSet]) -> Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    for item in data {
+        write_bullet_set(&mut buffer, item)?;
+    }
+    Ok(buffer)
 } 

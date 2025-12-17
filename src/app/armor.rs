@@ -369,7 +369,7 @@ impl MhfdatApp {
         }
     }
 
-    pub fn render_armor_details(
+    pub     fn render_armor_details(
         ui: &mut egui::Ui, 
         armor: &mut MhfdatEquipment,
         armor_skill1_search: &mut String,
@@ -379,6 +379,9 @@ impl MhfdatApp {
         armor_skill5_search: &mut String,
         armor_zenith_skill_search: &mut String,
     ) -> bool {
+        // Track if anything changed
+        let mut changed = false;
+        
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Basic Stats
             ui.collapsing("Basic Stats", |ui| {
@@ -449,6 +452,19 @@ impl MhfdatApp {
 
             // Skills
             ui.collapsing("Skills", |ui| {
+                // Save original values for change detection
+                let orig_skill_id1 = armor.skill_id1;
+                let orig_skill_pts1 = armor.skill_pts1;
+                let orig_skill_id2 = armor.skill_id2;
+                let orig_skill_pts2 = armor.skill_pts2;
+                let orig_skill_id3 = armor.skill_id3;
+                let orig_skill_pts3 = armor.skill_pts3;
+                let orig_skill_id4 = armor.skill_id4;
+                let orig_skill_pts4 = armor.skill_pts4;
+                let orig_skill_id5 = armor.skill_id5;
+                let orig_skill_pts5 = armor.skill_pts5;
+                let orig_zenith_skill = armor.zenith_skill;
+                
                 let mut skill_id1 = armor.skill_id1;
                 let mut skill_pts1 = armor.skill_pts1;
                 let mut skill_id2 = armor.skill_id2;
@@ -638,7 +654,7 @@ impl MhfdatApp {
                         });
                     });
 
-                // Write back all skill values
+                // Write back all skill values and check if anything changed
                 armor.skill_id1 = skill_id1;
                 armor.skill_pts1 = skill_pts1;
                 armor.skill_id2 = skill_id2;
@@ -650,11 +666,21 @@ impl MhfdatApp {
                 armor.skill_id5 = skill_id5;
                 armor.skill_pts5 = skill_pts5;
                 armor.zenith_skill = zenith_skill;
+                
+                // Detect if skills changed
+                if skill_id1 != orig_skill_id1 || skill_pts1 != orig_skill_pts1
+                    || skill_id2 != orig_skill_id2 || skill_pts2 != orig_skill_pts2
+                    || skill_id3 != orig_skill_id3 || skill_pts3 != orig_skill_pts3
+                    || skill_id4 != orig_skill_id4 || skill_pts4 != orig_skill_pts4
+                    || skill_id5 != orig_skill_id5 || skill_pts5 != orig_skill_pts5
+                    || zenith_skill != orig_zenith_skill {
+                    changed = true;
+                }
                             });
                     });
         
-        // Toujours marquer comme modifié car l'utilisateur a ouvert les détails
-        true
+        // Return true only if something actually changed
+        changed
     }
 
     fn get_equipment_flags(equipable_by: u8) -> (bool, bool, bool, bool) {

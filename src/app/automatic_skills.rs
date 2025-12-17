@@ -89,6 +89,9 @@ impl MhfdatApp {
                     padding: [0; 2],
                 };
                 self.automatic_skills.push(new_entry);
+                // Update the limiter with the count (len() gives the actual count)
+                self.automatic_skills_count_limiter = self.automatic_skills.len() as u16;
+                self.automatic_skills_count_limiter_modified = true;
                 self.selected_automatic_skill_index = Some(self.automatic_skills.len() - 1);
                 self.view_mode.insert("automatic_skills".to_string(), ViewMode::Details);
                 self.automatic_skills_modified = true;

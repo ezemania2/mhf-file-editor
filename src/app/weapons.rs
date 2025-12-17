@@ -1251,36 +1251,32 @@ impl MhfdatApp {
                         };
 
                         let mut upgrade_changed = false;
+                        ui.label("Required Materials:");
                         egui::Grid::new("mw_upgrade_path_grid").striped(true).show(ui, |ui| {
-                            ui.label("Material"); ui.label("Qty"); ui.end_row();
-                            ui.horizontal(|ui| {
-                                if ui.add(egui::DragValue::new(&mut mat1)).changed() {
-                                    upgrade_changed = true;
-                                }
-                                ui.label(format!("{}", item_name(mat1)));
-                            });
+                            ui.label("Material ID"); ui.label("Material Name"); ui.label("Qty"); ui.end_row();
+                            
+                            if ui.add(egui::DragValue::new(&mut mat1)).changed() {
+                                upgrade_changed = true;
+                            }
+                            ui.label(format!("{}", item_name(mat1)));
                             if ui.add(egui::DragValue::new(&mut qty1)).changed() {
                                 upgrade_changed = true;
                             }
                             ui.end_row();
 
-                            ui.horizontal(|ui| {
-                                if ui.add(egui::DragValue::new(&mut mat2)).changed() {
-                                    upgrade_changed = true;
-                                }
-                                ui.label(format!("{}", item_name(mat2)));
-                            });
+                            if ui.add(egui::DragValue::new(&mut mat2)).changed() {
+                                upgrade_changed = true;
+                            }
+                            ui.label(format!("{}", item_name(mat2)));
                             if ui.add(egui::DragValue::new(&mut qty2)).changed() {
                                 upgrade_changed = true;
                             }
                             ui.end_row();
 
-                            ui.horizontal(|ui| {
-                                if ui.add(egui::DragValue::new(&mut mat3)).changed() {
-                                    upgrade_changed = true;
-                                }
-                                ui.label(format!("{}", item_name(mat3)));
-                            });
+                            if ui.add(egui::DragValue::new(&mut mat3)).changed() {
+                                upgrade_changed = true;
+                            }
+                            ui.label(format!("{}", item_name(mat3)));
                             if ui.add(egui::DragValue::new(&mut qty3)).changed() {
                                 upgrade_changed = true;
                             }
@@ -1290,6 +1286,7 @@ impl MhfdatApp {
                         ui.separator();
                         ui.label("Upgrades To (Melee):");
                         egui::Grid::new("mw_upgrade_targets_grid").striped(true).show(ui, |ui| {
+                            ui.label("Weapon ID"); ui.label("Weapon Name"); ui.end_row();
                             if ui.add(egui::DragValue::new(&mut to1)).changed() { upgrade_changed = true; }
                             ui.label(format!("{}", melee_name(to1 as usize))); ui.end_row();
                             if ui.add(egui::DragValue::new(&mut to2)).changed() { upgrade_changed = true; }
@@ -1419,36 +1416,32 @@ impl MhfdatApp {
                         };
 
                         let mut upgrade_changed = false;
+                        ui.label("Required Materials:");
                         egui::Grid::new("rw_upgrade_path_grid").striped(true).show(ui, |ui| {
-                            ui.label("Material"); ui.label("Qty"); ui.end_row();
-                            ui.horizontal(|ui| {
-                                if ui.add(egui::DragValue::new(&mut mat1)).changed() {
-                                    upgrade_changed = true;
-                                }
-                                ui.label(format!("{}", item_name(mat1)));
-                            });
+                            ui.label("Material ID"); ui.label("Material Name"); ui.label("Qty"); ui.end_row();
+                            
+                            if ui.add(egui::DragValue::new(&mut mat1)).changed() {
+                                upgrade_changed = true;
+                            }
+                            ui.label(format!("{}", item_name(mat1)));
                             if ui.add(egui::DragValue::new(&mut qty1)).changed() {
                                 upgrade_changed = true;
                             }
                             ui.end_row();
 
-                            ui.horizontal(|ui| {
-                                if ui.add(egui::DragValue::new(&mut mat2)).changed() {
-                                    upgrade_changed = true;
-                                }
-                                ui.label(format!("{}", item_name(mat2)));
-                            });
+                            if ui.add(egui::DragValue::new(&mut mat2)).changed() {
+                                upgrade_changed = true;
+                            }
+                            ui.label(format!("{}", item_name(mat2)));
                             if ui.add(egui::DragValue::new(&mut qty2)).changed() {
                                 upgrade_changed = true;
                             }
                             ui.end_row();
 
-                            ui.horizontal(|ui| {
-                                if ui.add(egui::DragValue::new(&mut mat3)).changed() {
-                                    upgrade_changed = true;
-                                }
-                                ui.label(format!("{}", item_name(mat3)));
-                            });
+                            if ui.add(egui::DragValue::new(&mut mat3)).changed() {
+                                upgrade_changed = true;
+                            }
+                            ui.label(format!("{}", item_name(mat3)));
                             if ui.add(egui::DragValue::new(&mut qty3)).changed() {
                                 upgrade_changed = true;
                             }
@@ -1458,6 +1451,7 @@ impl MhfdatApp {
                         ui.separator();
                         ui.label("Upgrades To (Ranged):");
                         egui::Grid::new("rw_upgrade_targets_grid").striped(true).show(ui, |ui| {
+                            ui.label("Weapon ID"); ui.label("Weapon Name"); ui.end_row();
                             if ui.add(egui::DragValue::new(&mut to1)).changed() { upgrade_changed = true; }
                             ui.label(format!("{}", ranged_name(to1 as usize))); ui.end_row();
                             if ui.add(egui::DragValue::new(&mut to2)).changed() { upgrade_changed = true; }

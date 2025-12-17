@@ -6,6 +6,8 @@ pub mod save;
 pub mod load;
 pub mod mhfjmp;
 pub mod automatic_skills;
+pub mod sharpness;
+pub mod bullet_sets;
 
 pub use mhfjmp::MhfjmpApp;
 
@@ -18,7 +20,7 @@ use crate::model::mhfdat::{
     MhfdatMeleeWeapon, MhfdatRangedWeapon, MeleeWeaponExport, RangedWeaponExport, 
     ArmorExport, MhfdatItem, ItemExport, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade,
     MWUpgradePath, RWUpgradePath, EvoUpgrade, AutomaticSkill,
-    MhfdatEquipment, EquipmentCounts
+    MhfdatEquipment, EquipmentCounts, SharpnessCollection
 };
 use crate::utils::weapon_patterns::{class_name, CLASS_ID_LIST, element_name, ELEMENT_ID_LIST, ailment_name, AILMENT_ID_LIST, equip_type_name, EQUIP_TYPE_LIST, weapon_type_name, WEAPON_TYPE_LIST, zenith_skill_name, ZENITH_SKILL_LIST, recoil, RECOIL_LIST, reload, RELOAD_LIST};
 use crate::core::mhfdat::{
@@ -83,10 +85,13 @@ impl Default for WeaponCategory {
 #[derive(PartialEq)]
 pub enum MainTab {
     Weapons,
+    Sharpness,
+    BulletSets,
     Armor,
     Items,
     Shop,
     AutomaticSkills,
+
 }
 
 impl Default for MainTab {
@@ -267,6 +272,21 @@ pub struct MhfdatApp {
     // Decorations (DecoID)
     pub deco_ids: Vec<crate::model::mhfdat::MhfdatDecoId>,
     pub deco_page: u32,
+    pub deco_id_count_limiter: u16, // Number of decos read from DECO_ID_COUNT_LIMITER_PTR
+    pub deco_id_count_limiter_modified: bool, // Flag to track if limiter needs to be updated
+
+    // Sharpness data
+    pub sharpness: SharpnessCollection,
+    pub selected_sharpness_weapon_type: usize, // 0-13 for the 14 weapon types
+    pub selected_sharpness_id: Option<usize>, // 0-127
+    pub sharpness_modified: [bool; 12], // One flag per weapon type (melee only, no bowguns)
+    pub original_sharpness_offsets: [Option<u32>; 12], // Original offsets for each weapon type
+    
+    // Bullet Sets
+    pub bullet_sets: Vec<crate::model::mhfdat::BulletSet>,
+    pub selected_bullet_set_id: Option<usize>, // 0-43
+    pub bullet_sets_modified: bool,
+    pub original_bullet_sets_offset: Option<u32>,
     pub deco_search: String,
     pub deco_skill_filter: Option<u8>,
     pub deco_zenith_filter: Option<u16>,
@@ -290,6 +310,8 @@ pub struct MhfdatApp {
     pub automatic_skills_skill_search: String,
     pub automatic_skills_modified: bool,
     pub original_automatic_skills_offset: Option<u32>,
+    pub automatic_skills_count_limiter: u16, // Number of automatic skills read from AUTOMATIC_SKILLS_COUNT_LIMITER_PTR
+    pub automatic_skills_count_limiter_modified: bool, // Flag to track if limiter needs to be updated
     
     // Modification tracking for all data types
     pub melee_weapons_modified: bool,
@@ -457,6 +479,8 @@ impl Default for MhfdatApp {
             should_return_to_selector: false,
             deco_ids: Vec::new(),
             deco_page: 0,
+            deco_id_count_limiter: 0,
+            deco_id_count_limiter_modified: false,
             deco_search: String::new(),
             deco_skill_filter: None,
             deco_zenith_filter: None,
@@ -480,6 +504,8 @@ impl Default for MhfdatApp {
             automatic_skills_skill_search: String::new(),
             automatic_skills_modified: false,
             original_automatic_skills_offset: None,
+            automatic_skills_count_limiter: 0,
+            automatic_skills_count_limiter_modified: false,
             
             // Modification tracking
             melee_weapons_modified: false,
@@ -546,6 +572,17 @@ impl Default for MhfdatApp {
             original_item_names_offset: None,
             item_descriptions_modified: false,
             original_item_descriptions_offset: None,
+            
+            // Sharpness
+            sharpness: SharpnessCollection::default(),
+            selected_sharpness_weapon_type: 0,
+            selected_sharpness_id: None,
+            sharpness_modified: [false; 12],
+            original_sharpness_offsets: [None; 12],
+            bullet_sets: Vec::new(),
+            selected_bullet_set_id: None,
+            bullet_sets_modified: false,
+            original_bullet_sets_offset: None,
         }
     }
 }
@@ -602,6 +639,10 @@ impl MhfdatApp {
         // Load Zenith forging entries
         self.load_weapon_forging_zenith_entries();
         self.load_armor_forging_zenith_entries();
+        
+        // Load sharpness data
+        self.load_sharpness_data();
+        self.load_bullet_sets();
         
         // Load weapon names and descriptions
         {
@@ -696,6 +737,16 @@ impl MhfdatApp {
             self.deco_ids = read_deco_id_table(&self.buffer, deco_off as usize, Some(crate::model::mhfdat_pointers::DECO_ID_COUNT));
         }
 
+        // Load deco count limiter from 0x00cd418a
+        if self.buffer.len() >= crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR as usize + 2 {
+            self.deco_id_count_limiter = u16::from_le_bytes(
+                self.buffer[crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR as usize..
+                            crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR as usize + 2]
+                    .try_into().unwrap()
+            );
+            self.deco_id_count_limiter_modified = false;
+        }
+
         // Load automatic skills table
         if let Some(auto_skills_off) = {
             let off = AUTOMATIC_SKILLS_TABLE_PTR as usize;
@@ -704,6 +755,16 @@ impl MhfdatApp {
             self.automatic_skills = read_automatic_skills(&self.buffer, auto_skills_off as usize);
             self.original_automatic_skills_offset = Some(auto_skills_off);
             self.automatic_skills_modified = false;
+        }
+
+        // Load automatic skills count limiter from 0x00cd4478
+        if self.buffer.len() >= crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as usize + 2 {
+            self.automatic_skills_count_limiter = u16::from_le_bytes(
+                self.buffer[crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as usize..
+                            crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as usize + 2]
+                    .try_into().unwrap()
+            );
+            self.automatic_skills_count_limiter_modified = false;
         }
 
         // Load upgrade paths for melee and ranged weapons (dereferenced pointers)
@@ -929,6 +990,12 @@ impl App for MhfdatApp {
                 if ui.selectable_label(self.main_tab == MainTab::AutomaticSkills, "Automatic Skills").clicked() {
                     self.main_tab = MainTab::AutomaticSkills;
                 }
+                if ui.selectable_label(self.main_tab == MainTab::Sharpness, "Sharpness").clicked() {
+                    self.main_tab = MainTab::Sharpness;
+                }
+                if ui.selectable_label(self.main_tab == MainTab::BulletSets, "Bullet Sets").clicked() {
+                    self.main_tab = MainTab::BulletSets;
+                }
             });
             ui.separator();
 
@@ -947,6 +1014,12 @@ impl App for MhfdatApp {
                 }
                 MainTab::AutomaticSkills => {
                     self.show_automatic_skills_tab(ui);
+                }
+                MainTab::Sharpness => {
+                    self.show_sharpness_tab(ui);
+                }
+                MainTab::BulletSets => {
+                    self.show_bullet_sets_tab(ui);
                 }
             }
 

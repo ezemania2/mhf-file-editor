@@ -331,4 +331,108 @@ impl MhfdatApp {
         
         Ok(())
     }
+
+    pub fn load_sharpness_data(&mut self) {
+        fn read_ptr(buffer: &[u8], ptr_offset: u32) -> Option<u32> {
+            if buffer.len() >= ptr_offset as usize + 4 {
+                Some(u32::from_le_bytes(buffer[ptr_offset as usize..ptr_offset as usize+4].try_into().unwrap()))
+            } else {
+                None
+            }
+        }
+
+        // Load all 12 weapon type sharpness data and save original offsets (melee only, no bowguns)
+        // Index 0: Great Sword
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_GREAT_SWORD_PTR) {
+            self.original_sharpness_offsets[0] = Some(off);
+            self.sharpness_modified[0] = false;
+            self.sharpness.great_sword = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 1: Hammer
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_HAMMER_PTR) {
+            self.original_sharpness_offsets[1] = Some(off);
+            self.sharpness_modified[1] = false;
+            self.sharpness.hammer = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 2: Lance
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_LANCE_PTR) {
+            self.original_sharpness_offsets[2] = Some(off);
+            self.sharpness_modified[2] = false;
+            self.sharpness.lance = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 3: Sword and Shield
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_SWORD_AND_SHIELD_PTR) {
+            self.original_sharpness_offsets[3] = Some(off);
+            self.sharpness_modified[3] = false;
+            self.sharpness.sword_and_shield = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 4: Dual Blades
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_DUAL_BLADES_PTR) {
+            self.original_sharpness_offsets[4] = Some(off);
+            self.sharpness_modified[4] = false;
+            self.sharpness.dual_blades = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 5: Long Sword
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_LONG_SWORD_PTR) {
+            self.original_sharpness_offsets[5] = Some(off);
+            self.sharpness_modified[5] = false;
+            self.sharpness.long_sword = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 6: Hunting Horn
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_HUNTING_HORN_PTR) {
+            self.original_sharpness_offsets[6] = Some(off);
+            self.sharpness_modified[6] = false;
+            self.sharpness.hunting_horn = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 7: Gunlance
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_GUNLANCE_PTR) {
+            self.original_sharpness_offsets[7] = Some(off);
+            self.sharpness_modified[7] = false;
+            self.sharpness.gunlance = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 8: Bow
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_BOW_PTR) {
+            self.original_sharpness_offsets[8] = Some(off);
+            self.sharpness_modified[8] = false;
+            self.sharpness.bow = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 9: Tonfa
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_TONFA_PTR) {
+            self.original_sharpness_offsets[9] = Some(off);
+            self.sharpness_modified[9] = false;
+            self.sharpness.tonfa = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 10: Switch Axe
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_SWITCH_AXE_PTR) {
+            self.original_sharpness_offsets[10] = Some(off);
+            self.sharpness_modified[10] = false;
+            self.sharpness.switch_axe = read_sharpness_data(&self.buffer, off as usize);
+        }
+        // Index 11: Magnet Spike
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_MAGNET_SPIKE_PTR) {
+            self.original_sharpness_offsets[11] = Some(off);
+            self.sharpness_modified[11] = false;
+            self.sharpness.magnet_spike = read_sharpness_data(&self.buffer, off as usize);
+        }
+    }
+
+    pub fn load_bullet_sets(&mut self) {
+        use crate::model::mhfdat_pointers::BULLET_SETS_PTR;
+        use crate::core::mhfdat::read_bullet_sets;
+        
+        fn read_ptr(buffer: &[u8], ptr_offset: u32) -> Option<u32> {
+            if buffer.len() >= ptr_offset as usize + 4 {
+                Some(u32::from_le_bytes(buffer[ptr_offset as usize..ptr_offset as usize+4].try_into().unwrap()))
+            } else {
+                None
+            }
+        }
+
+        // Load bullet sets (44 entries)
+        if let Some(off) = read_ptr(&self.buffer, BULLET_SETS_PTR) {
+            self.original_bullet_sets_offset = Some(off);
+            self.bullet_sets_modified = false;
+            self.bullet_sets = read_bullet_sets(&self.buffer, off as usize, 44);
+        }
+    }
 }

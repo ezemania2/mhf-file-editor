@@ -3,6 +3,125 @@
 use serde::{Serialize, Deserialize};
 use crate::utils::equip_flags::{EquipType, WeaponType, BulletTypes, EquipableBy};
 
+// Sharpness structures
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct SharpnessItem {
+    pub red: u16,
+    pub orange: u16,
+    pub yellow: u16,
+    pub green: u16,
+    pub blue: u16,
+    pub white: u16,
+    pub purple: u16,
+    pub sky_blue: u16,
+}
+
+impl SharpnessItem {
+    pub fn total(&self) -> u16 {
+        self.red + self.orange + self.yellow + self.green + 
+        self.blue + self.white + self.purple + self.sky_blue
+    }
+}
+
+// One sharpness data set contains 128 entries (one per weapon)
+pub type SharpnessData = Vec<SharpnessItem>;
+
+// Bullet Set structure (100 bytes total: 32 u8 fields + 68 bytes padding)
+#[repr(C, packed)]
+#[derive(Clone, Debug)]
+pub struct BulletSet {
+    pub normal_lv1_capacity: u8,
+    pub normal_lv2_capacity: u8,
+    pub normal_lv3_capacity: u8,
+    pub pierce_lv1_capacity: u8,
+    pub pierce_lv2_capacity: u8,
+    pub pierce_lv3_capacity: u8,
+    pub spread_lv1_capacity: u8,
+    pub spread_lv2_capacity: u8,
+    pub spread_lv3_capacity: u8,
+    pub crag_lv1_capacity: u8,
+    pub crag_lv2_capacity: u8,
+    pub crag_lv3_capacity: u8,
+    pub cluster_lv1_capacity: u8,
+    pub cluster_lv2_capacity: u8,
+    pub cluster_lv3_capacity: u8,
+    pub fire_capacity: u8,
+    pub water_capacity: u8,
+    pub thunder_capacity: u8,
+    pub ice_capacity: u8,
+    pub dragon_capacity: u8,
+    pub recovery_lv1_capacity: u8,
+    pub recovery_lv2_capacity: u8,
+    pub poison_lv1_capacity: u8,
+    pub poison_lv2_capacity: u8,
+    pub paralysis_lv1_capacity: u8,
+    pub paralysis_lv2_capacity: u8,
+    pub sleep_lv1_capacity: u8,
+    pub sleep_lv2_capacity: u8,
+    pub tranquilizer_capacity: u8,
+    pub paint_capacity: u8,
+    pub demon_capacity: u8,
+    pub armor_capacity: u8,
+    pub _padding: [u8; 68], // Padding to make total size 100 bytes
+}
+
+impl Default for BulletSet {
+    fn default() -> Self {
+        BulletSet {
+            normal_lv1_capacity: 0,
+            normal_lv2_capacity: 0,
+            normal_lv3_capacity: 0,
+            pierce_lv1_capacity: 0,
+            pierce_lv2_capacity: 0,
+            pierce_lv3_capacity: 0,
+            spread_lv1_capacity: 0,
+            spread_lv2_capacity: 0,
+            spread_lv3_capacity: 0,
+            crag_lv1_capacity: 0,
+            crag_lv2_capacity: 0,
+            crag_lv3_capacity: 0,
+            cluster_lv1_capacity: 0,
+            cluster_lv2_capacity: 0,
+            cluster_lv3_capacity: 0,
+            fire_capacity: 0,
+            water_capacity: 0,
+            thunder_capacity: 0,
+            ice_capacity: 0,
+            dragon_capacity: 0,
+            recovery_lv1_capacity: 0,
+            recovery_lv2_capacity: 0,
+            poison_lv1_capacity: 0,
+            poison_lv2_capacity: 0,
+            paralysis_lv1_capacity: 0,
+            paralysis_lv2_capacity: 0,
+            sleep_lv1_capacity: 0,
+            sleep_lv2_capacity: 0,
+            tranquilizer_capacity: 0,
+            paint_capacity: 0,
+            demon_capacity: 0,
+            armor_capacity: 0,
+            _padding: [0; 68],
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct SharpnessCollection {
+    pub great_sword: SharpnessData,      // 128 entries
+    pub hammer: SharpnessData,           // 128 entries
+    pub lance: SharpnessData,            // 128 entries
+    pub sword_and_shield: SharpnessData, // 128 entries
+    pub dual_blades: SharpnessData,      // 128 entries
+    pub long_sword: SharpnessData,       // 128 entries
+    pub hunting_horn: SharpnessData,     // 128 entries
+    pub gunlance: SharpnessData,         // 128 entries
+    pub bow: SharpnessData,              // 128 entries
+    pub tonfa: SharpnessData,            // 128 entries
+    pub switch_axe: SharpnessData,       // 128 entries
+    pub magnet_spike: SharpnessData,     // 128 entries
+}
+
 #[repr(C, packed)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MhfdatMeleeWeapon {
