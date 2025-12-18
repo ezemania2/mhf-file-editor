@@ -147,7 +147,6 @@ pub struct MhfdatApp {
     pub selected_armor_index: Option<usize>,
     pub armor_search_query: String,
     pub armor_loaded: bool,
-    pub debug_logs: Vec<String>,
 }
 
 impl Default for MhfdatApp {
@@ -211,7 +210,6 @@ impl Default for MhfdatApp {
             selected_armor_index: None,
             armor_search_query: String::new(),
             armor_loaded: false,
-            debug_logs: Vec::new(),
         }
     }
 }
@@ -404,14 +402,6 @@ impl App for MhfdatApp {
                 }
             }
 
-            // Place Debug Logs at the end of the CentralPanel UI
-            egui::CollapsingHeader::new("Debug Logs")
-                .default_open(false)
-                .show(ui, |ui| {
-                    for log in &self.debug_logs {
-                        ui.label(log);
-                    }
-                });
         });
     }
 }
@@ -1751,7 +1741,6 @@ fn show_shop_entries(
         let mut cursor = Cursor::new(buffer);
 
         // Head armors
-        self.debug_logs.push(format!("[DEBUG] Loading head armors at offset 0x{:X}", HEAD_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, HEAD_ARMOR_PTR as u64) {
             self.head_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, HEAD_ARMOR_NAMES_PTR, self.head_armors.len()) {
@@ -1763,7 +1752,6 @@ fn show_shop_entries(
         }
 
         // Chest armors
-        self.debug_logs.push(format!("[DEBUG] Loading chest armors at offset 0x{:X}", BODY_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, BODY_ARMOR_PTR as u64) {
             self.chest_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, BODY_ARMOR_NAMES_PTR, self.chest_armors.len()) {
@@ -1774,7 +1762,6 @@ fn show_shop_entries(
             }
         }
         // Arms armors
-        self.debug_logs.push(format!("[DEBUG] Loading arms armors at offset 0x{:X}", ARM_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, ARM_ARMOR_PTR as u64) {
             self.arms_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, ARM_ARMOR_NAMES_PTR, self.arms_armors.len()) {
@@ -1785,7 +1772,6 @@ fn show_shop_entries(
             }
         }
         // Waist armors
-        self.debug_logs.push(format!("[DEBUG] Loading waist armors at offset 0x{:X}", WAIST_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, WAIST_ARMOR_PTR as u64) {
             self.waist_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, WAIST_ARMOR_NAMES_PTR, self.waist_armors.len()) {
@@ -1796,7 +1782,6 @@ fn show_shop_entries(
             }
         }
         // Legs armors
-        self.debug_logs.push(format!("[DEBUG] Loading legs armors at offset 0x{:X}", LEG_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, LEG_ARMOR_PTR as u64) {
             self.legs_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, LEG_ARMOR_NAMES_PTR, self.legs_armors.len()) {

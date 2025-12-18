@@ -249,6 +249,7 @@ pub struct MhfdatApp {
     pub selected_g50_tower_weapon: Option<usize>,  // 0-129
     pub selected_g50_tower_level: Option<usize>,   // 0-49
     pub g50_tower_page: u32,
+    pub g50_tower_filter_unnamed: bool,
     pub mw_upgrade_entries: Vec<MWUpgradePath>,
     pub rw_upgrade_entries: Vec<RWUpgradePath>,
     pub evo_upgrade_entries: Vec<EvoUpgrade>,
@@ -313,6 +314,8 @@ pub struct MhfdatApp {
     pub deco_page: u32,
     pub deco_id_count_limiter: u16, // Number of decos read from DECO_ID_COUNT_LIMITER_PTR
     pub deco_id_count_limiter_modified: bool, // Flag to track if limiter needs to be updated
+    pub deco_ids_modified: bool,
+    pub original_deco_ids_offset: Option<u32>,
 
     // Sharpness data
     pub sharpness: SharpnessCollection,
@@ -334,6 +337,7 @@ pub struct MhfdatApp {
     pub selected_deco_index: Option<usize>,
     pub deco_skill_search: String,
     pub deco_zenith_search: String,
+    pub deco_detail_skill_search: [String; 5], // Search for skill1-4 and zenith in details view
     pub deco_shop_hr_entries: Vec<crate::model::mhfdat::DecoShop>,
     pub deco_shop_gr_entries: Vec<crate::model::mhfdat::DecoShop>,
     pub cuff_shop_entries: Vec<crate::model::mhfdat::DecoShop>,
@@ -497,6 +501,7 @@ impl Default for MhfdatApp {
             selected_g50_tower_weapon: None,
             selected_g50_tower_level: None,
             g50_tower_page: 0,
+            g50_tower_filter_unnamed: false,
             mw_upgrade_entries: Vec::new(),
             rw_upgrade_entries: Vec::new(),
             evo_upgrade_entries: Vec::new(),
@@ -556,12 +561,15 @@ impl Default for MhfdatApp {
             deco_page: 0,
             deco_id_count_limiter: 0,
             deco_id_count_limiter_modified: false,
+            deco_ids_modified: false,
+            original_deco_ids_offset: None,
             deco_search: String::new(),
             deco_skill_filter: None,
             deco_zenith_filter: None,
             selected_deco_index: None,
             deco_skill_search: String::new(),
             deco_zenith_search: String::new(),
+            deco_detail_skill_search: Default::default(),
             deco_shop_hr_entries: Vec::new(),
             deco_shop_gr_entries: Vec::new(),
             cuff_shop_entries: Vec::new(),
@@ -821,15 +829,7 @@ impl MhfdatApp {
             self.refresh_equipment_counts_from_entries();
         }
 
-        // Load decorations (DecoID table)
-        if let Some(deco_off) = {
-            let off = DECO_ID_PTR as usize;
-            if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
-        } {
-            self.deco_ids = read_deco_id_table(&self.buffer, deco_off as usize, Some(self.deco_id_count_limiter as usize));
-        }
-
-        // Load deco count limiter from 0x00cd418a
+        // Load deco count limiter from 0x00cd418a (must be loaded before deco_ids)
         if self.buffer.len() >= crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR as usize + 2 {
             self.deco_id_count_limiter = u16::from_le_bytes(
                 self.buffer[crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR as usize..
@@ -837,6 +837,16 @@ impl MhfdatApp {
                     .try_into().unwrap()
             );
             self.deco_id_count_limiter_modified = false;
+        }
+
+        // Load decorations (DecoID table)
+        if let Some(deco_off) = {
+            let off = DECO_ID_PTR as usize;
+            if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
+        } {
+            self.deco_ids = read_deco_id_table(&self.buffer, deco_off as usize, Some(self.deco_id_count_limiter as usize));
+            self.original_deco_ids_offset = Some(deco_off);
+            self.deco_ids_modified = false;
         }
 
         // Load automatic skills table

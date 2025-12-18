@@ -4,7 +4,8 @@ use crate::core::packing::{compress_file, encrypt_file};
 use crate::core::mhfdat::{
     write_melee_weapons_block, write_ranged_weapons_block, write_armors_block, write_items_block, write_transmog_data,
     write_mw_upgrades_block, write_rw_upgrades_block, write_deco_shop_block, write_automatic_skills_block,
-    write_armor_names, write_item_names, write_item_descriptions, write_sharpness_data_block, write_bullet_sets_block
+    write_armor_names, write_item_names, write_item_descriptions, write_sharpness_data_block, write_bullet_sets_block,
+    write_deco_ids_block
 };
 use crate::model::mhfdat_pointers::{
     MELEE_WEAPONS_PTR, RANGED_WEAPONS_PTR,
@@ -16,7 +17,7 @@ use crate::model::mhfdat_pointers::{
     G_RANK_WEAPON_SHOP_PTR, G_RANK_ARMOR_SHOP_PTR, ZENITH_WEAPON_FORGING_PTR, ZENITH_ARMOR_FORGING_PTR,
     DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
-    AUTOMATIC_SKILLS_TABLE_PTR,
+    AUTOMATIC_SKILLS_TABLE_PTR, DECO_ID_PTR,
 };
 
 impl MhfdatApp {
@@ -32,11 +33,12 @@ impl MhfdatApp {
             // Écrire les modifications directement à la fin du fichier
             self.save_modified_data_to_writer(file)?;
 
-            // 6. IMPORTANT: Mettre à jour seulement les pointeurs dans le buffer existant
-            // Lire les nouveaux pointeurs depuis le fichier sauvegardé et les appliquer au buffer
+            // 6. IMPORTANT: Remplacer complètement le buffer avec le fichier sauvegardé
+            // pour que les données écrites à la fin soient accessibles
             let saved_file_data = std::fs::read(path)?;
+            self.buffer = saved_file_data.clone();
             
-            // Copier seulement les pointeurs modifiés depuis le fichier sauvegardé vers notre buffer
+            // Mettre à jour les original offsets pour les données modifiées
             use crate::model::mhfdat_pointers::*;
             
             // Mettre à jour les pointeurs d'armes seulement si modifiés
@@ -174,6 +176,10 @@ impl MhfdatApp {
                 self.buffer[AUTOMATIC_SKILLS_TABLE_PTR as usize..(AUTOMATIC_SKILLS_TABLE_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[AUTOMATIC_SKILLS_TABLE_PTR as usize..(AUTOMATIC_SKILLS_TABLE_PTR + 4) as usize]);
             }
+            if self.deco_ids_modified && saved_file_data.len() >= (DECO_ID_PTR + 4) as usize {
+                self.buffer[DECO_ID_PTR as usize..(DECO_ID_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[DECO_ID_PTR as usize..(DECO_ID_PTR + 4) as usize]);
+            }
             
             // Mettre à jour les pointeurs d'upgrades seulement si modifiés
             if self.mw_upgrades_modified && saved_file_data.len() >= (MELEE_WEAPON_UPGRADE_PATH_PTR + 4) as usize {
@@ -183,6 +189,43 @@ impl MhfdatApp {
             if self.rw_upgrades_modified && saved_file_data.len() >= (RANGED_WEAPON_UPGRADE_PATH_PTR + 4) as usize {
                 self.buffer[RANGED_WEAPON_UPGRADE_PATH_PTR as usize..(RANGED_WEAPON_UPGRADE_PATH_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[RANGED_WEAPON_UPGRADE_PATH_PTR as usize..(RANGED_WEAPON_UPGRADE_PATH_PTR + 4) as usize]);
+            }
+            
+            // Mettre à jour les original offsets depuis le buffer mis à jour
+            if self.armor_forging_modified {
+                let off = u32::from_le_bytes(self.buffer[ARMOR_FORGING_PTR as usize..(ARMOR_FORGING_PTR + 4) as usize].try_into().unwrap());
+                self.original_armor_forging_offset = Some(off);
+                self.armor_forging_modified = false;
+            }
+            if self.weapon_forging_modified {
+                let off = u32::from_le_bytes(self.buffer[WEAPON_FORGING_PTR as usize..(WEAPON_FORGING_PTR + 4) as usize].try_into().unwrap());
+                self.original_weapon_forging_offset = Some(off);
+                self.weapon_forging_modified = false;
+            }
+            if self.armor_forging_gr_modified {
+                let off = u32::from_le_bytes(self.buffer[G_RANK_ARMOR_SHOP_PTR as usize..(G_RANK_ARMOR_SHOP_PTR + 4) as usize].try_into().unwrap());
+                self.original_armor_forging_gr_offset = Some(off);
+                self.armor_forging_gr_modified = false;
+            }
+            if self.weapon_forging_gr_modified {
+                let off = u32::from_le_bytes(self.buffer[G_RANK_WEAPON_SHOP_PTR as usize..(G_RANK_WEAPON_SHOP_PTR + 4) as usize].try_into().unwrap());
+                self.original_weapon_forging_gr_offset = Some(off);
+                self.weapon_forging_gr_modified = false;
+            }
+            if self.armor_forging_zenith_modified {
+                let off = u32::from_le_bytes(self.buffer[ZENITH_ARMOR_FORGING_PTR as usize..(ZENITH_ARMOR_FORGING_PTR + 4) as usize].try_into().unwrap());
+                self.original_armor_forging_zenith_offset = Some(off);
+                self.armor_forging_zenith_modified = false;
+            }
+            if self.weapon_forging_zenith_modified {
+                let off = u32::from_le_bytes(self.buffer[ZENITH_WEAPON_FORGING_PTR as usize..(ZENITH_WEAPON_FORGING_PTR + 4) as usize].try_into().unwrap());
+                self.original_weapon_forging_zenith_offset = Some(off);
+                self.weapon_forging_zenith_modified = false;
+            }
+            if self.deco_ids_modified {
+                let off = u32::from_le_bytes(self.buffer[DECO_ID_PTR as usize..(DECO_ID_PTR + 4) as usize].try_into().unwrap());
+                self.original_deco_ids_offset = Some(off);
+                self.deco_ids_modified = false;
             }
         }
         Ok(())
@@ -392,8 +435,17 @@ impl MhfdatApp {
             writer.write_all(&automatic_skills_block)?;
             offset
         } else {
-
             self.original_automatic_skills_offset.unwrap_or(0)
+        };
+
+        // Deco IDs block - écrire seulement si modifié
+        let deco_ids_offset = if self.deco_ids_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let deco_ids_block = write_deco_ids_block(&self.deco_ids)?;
+            writer.write_all(&deco_ids_block)?;
+            offset
+        } else {
+            self.original_deco_ids_offset.unwrap_or(0)
         };
 
         // 10) Melee weapon upgrade paths - écrire seulement si modifié
@@ -906,6 +958,12 @@ impl MhfdatApp {
             use crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR;
             writer.seek(SeekFrom::Start(DECO_ID_COUNT_LIMITER_PTR as u64))?;
             writer.write_all(&self.deco_id_count_limiter.to_le_bytes())?;
+        }
+
+        // Update deco IDs pointer if modified
+        if self.deco_ids_modified {
+            writer.seek(SeekFrom::Start(DECO_ID_PTR as u64))?;
+            writer.write_all(&deco_ids_offset.to_le_bytes())?;
         }
 
         // Update HR quests pointers if modified

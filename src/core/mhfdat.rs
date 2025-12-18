@@ -598,6 +598,31 @@ pub fn write_automatic_skills_block(entries: &[AutomaticSkill]) -> Result<Vec<u8
     Ok(data)
 }
 
+/// Write a block of deco IDs with sentinel
+pub fn write_deco_ids_block(entries: &[crate::model::mhfdat::MhfdatDecoId]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for e in entries {
+        // Write each field in order (packed struct)
+        data.push(e.slot_nb);
+        data.extend_from_slice(&e.flags.to_le_bytes());
+        data.extend_from_slice(&e.price.to_le_bytes());
+        data.push(e._pad0);
+        data.push(e.skill_id1);
+        data.push(e.skill_pts1 as u8);
+        data.push(e.skill_id2);
+        data.push(e.skill_pts2 as u8);
+        data.push(e.skill_id3);
+        data.push(e.skill_pts3 as u8);
+        data.push(e.skill_id4);
+        data.push(e.skill_pts4 as u8);
+        data.extend_from_slice(&e.special_flags.to_le_bytes());
+        data.extend_from_slice(&e.zenith_skill.to_le_bytes());
+    }
+    // Sentinel: all 0xFF (or all zeros depending on format)
+    data.extend_from_slice(&[0xFF; 18]); // Size of MhfdatDecoId is 18 bytes
+    Ok(data)
+}
+
 pub fn read_sigil_tower_table(buffer: &[u8], offset: usize) -> Vec<SigilTowerTable> {
     let mut entries = Vec::new();
     let mut cursor = offset;

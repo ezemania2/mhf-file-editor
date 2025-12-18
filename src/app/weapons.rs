@@ -1900,6 +1900,8 @@ impl MhfdatApp {
                     }
                 });
             ui.separator();
+            ui.checkbox(&mut self.g50_tower_filter_unnamed, "Show only unnamed");
+            ui.separator();
             if ui.button("Export to JSON").clicked() {
                 if let Ok(json) = serde_json::to_string_pretty(&self.g50_tower_params) {
                     let _ = std::fs::write("g50_tower_params.json", json);
@@ -1916,7 +1918,25 @@ impl MhfdatApp {
         });
 
         let weapon_type_data = &self.g50_tower_params[self.selected_g50_tower_type];
-        let total = weapon_type_data.weapons.len();
+        let type_idx = self.selected_g50_tower_type;
+        
+        // Pre-collect all weapon infos for filtering
+        let all_weapon_infos: Vec<(usize, usize, String)> = (0..weapon_type_data.weapons.len())
+            .map(|w| {
+                let levels_count = weapon_type_data.weapons[w].levels.len();
+                let weapon_name = self.get_weapon_name_for_g50(type_idx, w);
+                (w, levels_count, weapon_name)
+            })
+            .collect();
+        
+        // Filter if checkbox is checked: unnamed weapons contain "#"
+        let filtered: Vec<&(usize, usize, String)> = if self.g50_tower_filter_unnamed {
+            all_weapon_infos.iter().filter(|(_, _, name)| name.contains('#')).collect()
+        } else {
+            all_weapon_infos.iter().collect()
+        };
+        
+        let total = filtered.len();
         let page_size = 15;
         let total_pages = (total + page_size - 1) / page_size;
         let page = (self.g50_tower_page as usize).min(total_pages.saturating_sub(1));
@@ -1928,23 +1948,13 @@ impl MhfdatApp {
         let start = page * page_size;
         let end = (start + page_size).min(total);
 
-        // Pre-collect weapon info to avoid borrow issues
-        let type_idx = self.selected_g50_tower_type;
-        let weapon_infos: Vec<(usize, usize, String)> = (start..end)
-            .map(|w| {
-                let levels_count = weapon_type_data.weapons[w].levels.len();
-                let weapon_name = self.get_weapon_name_for_g50(type_idx, w);
-                (w, levels_count, weapon_name)
-            })
-            .collect();
-
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("g50_tower_grid").striped(true).show(ui, |ui| {
                 ui.label("ID"); ui.label("Weapon Name"); ui.label("Levels"); ui.end_row();
                 
-                for (w, levels_count, weapon_name) in &weapon_infos {
+                for &&(w, levels_count, ref weapon_name) in &filtered[start..end] {
                     if ui.selectable_label(false, format!("{}", w)).clicked() {
-                        self.selected_g50_tower_weapon = Some(*w);
+                        self.selected_g50_tower_weapon = Some(w);
                         self.selected_g50_tower_level = None;
                         self.view_mode.insert("g50_tower".to_string(), ViewMode::Details);
                     }

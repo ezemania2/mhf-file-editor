@@ -63,6 +63,7 @@ impl MhfdatApp {
                 // Update the limiter with the count (len() gives the actual count)
                 self.deco_id_count_limiter = self.deco_ids.len() as u16;
                 self.deco_id_count_limiter_modified = true;
+                self.deco_ids_modified = true;
                 // Select the new entry
                 self.selected_deco_index = Some(self.deco_ids.len() - 1);
             }
@@ -116,6 +117,7 @@ impl MhfdatApp {
                         self.deco_ids = imported;
                         self.deco_id_count_limiter = self.deco_ids.len() as u16;
                         self.deco_id_count_limiter_modified = true;
+                        self.deco_ids_modified = true;
                     }
                 }
             }
@@ -577,7 +579,11 @@ impl MhfdatApp {
                  }
             }
         } else if let Some(deco_idx) = self.selected_deco_index {
-            if let Some(d) = self.deco_ids.get(deco_idx) {
+            if deco_idx < self.deco_ids.len() {
+                // Read packed struct safely
+                let d: crate::model::mhfdat::MhfdatDecoId = unsafe { 
+                    std::ptr::read_unaligned(&self.deco_ids[deco_idx] as *const _) 
+                };
                 ui.heading(format!("Decoration Details (Idx {})", deco_idx));
                 // Local editable copies
                 let mut slot_nb = d.slot_nb;
@@ -595,57 +601,91 @@ impl MhfdatApp {
                     if !name.is_empty() { ui.label(format!("Deco Name: {}", name)); }
                 }
 
-                egui::Grid::new("deco_details_grid").num_columns(2).show(ui, |ui| {
+                egui::Grid::new("deco_details_grid").num_columns(3).show(ui, |ui| {
                     ui.label("Slots:"); ui.add(egui::DragValue::new(&mut slot_nb).clamp_range(0..=3)); ui.end_row();
                     ui.label("Flags:"); ui.add(egui::DragValue::new(&mut flags)); ui.end_row();
                     ui.label("Price:"); ui.add(egui::DragValue::new(&mut price)); ui.end_row();
 
                     ui.label("Skill1:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[0]).desired_width(150.0));
+                    let q1 = self.deco_detail_skill_search[0].to_lowercase();
                     egui::ComboBox::from_id_source("deco_s1").selected_text(skill_name(skill_id1)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::skills::SKILL_LIST { if ui.selectable_value(&mut skill_id1, *id, *name).clicked() {} }
+                        for (id, name) in crate::utils::skills::SKILL_LIST { 
+                            if q1.is_empty() || name.to_lowercase().contains(&q1) {
+                                if ui.selectable_value(&mut skill_id1, *id, *name).clicked() {} 
+                            }
+                        }
                     });
                     ui.end_row();
                     ui.label("Pts1:"); ui.add(egui::DragValue::new(&mut skill_pts1)); ui.end_row();
 
                     ui.label("Skill2:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[1]).desired_width(150.0));
+                    let q2 = self.deco_detail_skill_search[1].to_lowercase();
                     egui::ComboBox::from_id_source("deco_s2").selected_text(skill_name(skill_id2)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::skills::SKILL_LIST { if ui.selectable_value(&mut skill_id2, *id, *name).clicked() {} }
+                        for (id, name) in crate::utils::skills::SKILL_LIST { 
+                            if q2.is_empty() || name.to_lowercase().contains(&q2) {
+                                if ui.selectable_value(&mut skill_id2, *id, *name).clicked() {} 
+                            }
+                        }
                     });
                     ui.end_row();
                     ui.label("Pts2:"); ui.add(egui::DragValue::new(&mut skill_pts2)); ui.end_row();
 
                     ui.label("Skill3:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[2]).desired_width(150.0));
+                    let q3 = self.deco_detail_skill_search[2].to_lowercase();
                     egui::ComboBox::from_id_source("deco_s3").selected_text(skill_name(skill_id3)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::skills::SKILL_LIST { if ui.selectable_value(&mut skill_id3, *id, *name).clicked() {} }
+                        for (id, name) in crate::utils::skills::SKILL_LIST { 
+                            if q3.is_empty() || name.to_lowercase().contains(&q3) {
+                                if ui.selectable_value(&mut skill_id3, *id, *name).clicked() {} 
+                            }
+                        }
                     });
                     ui.end_row();
                     ui.label("Pts3:"); ui.add(egui::DragValue::new(&mut skill_pts3)); ui.end_row();
 
                     ui.label("Skill4:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[3]).desired_width(150.0));
+                    let q4 = self.deco_detail_skill_search[3].to_lowercase();
                     egui::ComboBox::from_id_source("deco_s4").selected_text(skill_name(skill_id4)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::skills::SKILL_LIST { if ui.selectable_value(&mut skill_id4, *id, *name).clicked() {} }
+                        for (id, name) in crate::utils::skills::SKILL_LIST { 
+                            if q4.is_empty() || name.to_lowercase().contains(&q4) {
+                                if ui.selectable_value(&mut skill_id4, *id, *name).clicked() {} 
+                            }
+                        }
                     });
                     ui.end_row();
                     ui.label("Pts4:"); ui.add(egui::DragValue::new(&mut skill_pts4)); ui.end_row();
 
                     ui.label("Zenith:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[4]).desired_width(150.0));
+                    let qz = self.deco_detail_skill_search[4].to_lowercase();
                     egui::ComboBox::from_id_source("deco_zen").selected_text(crate::utils::weapon_patterns::zenith_skill_name(zen)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::weapon_patterns::ZENITH_SKILL_LIST { if ui.selectable_value(&mut zen, *id, *name).clicked() {} }
+                        for (id, name) in crate::utils::weapon_patterns::ZENITH_SKILL_LIST { 
+                            if qz.is_empty() || name.to_lowercase().contains(&qz) {
+                                if ui.selectable_value(&mut zen, *id, *name).clicked() {} 
+                            }
+                        }
                     });
                     ui.end_row();
                 });
 
-                // Write back edited values
-                if let Some(target) = self.deco_ids.get_mut(deco_idx) {
-                    target.slot_nb = slot_nb;
-                    target.flags = flags;
-                    target.price = price;
-                    target.skill_id1 = skill_id1; target.skill_pts1 = skill_pts1;
-                    target.skill_id2 = skill_id2; target.skill_pts2 = skill_pts2;
-                    target.skill_id3 = skill_id3; target.skill_pts3 = skill_pts3;
-                    target.skill_id4 = skill_id4; target.skill_pts4 = skill_pts4;
-                    target.zenith_skill = zen;
-                }
+                // Write back edited values using full struct replacement
+                let new_deco = crate::model::mhfdat::MhfdatDecoId {
+                    slot_nb,
+                    flags,
+                    price,
+                    _pad0: d._pad0,
+                    skill_id1, skill_pts1,
+                    skill_id2, skill_pts2,
+                    skill_id3, skill_pts3,
+                    skill_id4, skill_pts4,
+                    special_flags: d.special_flags,
+                    zenith_skill: zen,
+                };
+                self.deco_ids[deco_idx] = new_deco;
+                self.deco_ids_modified = true;
             }
         }
     }
@@ -658,7 +698,11 @@ impl MhfdatApp {
         });
 
         if let Some(deco_idx) = self.selected_deco_index {
-            if let Some(d) = self.deco_ids.get(deco_idx) {
+            if deco_idx < self.deco_ids.len() {
+                // Read packed struct safely
+                let d: crate::model::mhfdat::MhfdatDecoId = unsafe { 
+                    std::ptr::read_unaligned(&self.deco_ids[deco_idx] as *const _) 
+                };
                 // Local editable copies
                 let mut slot_nb = d.slot_nb;
                 let mut flags = d.flags;
@@ -675,29 +719,91 @@ impl MhfdatApp {
                     if !name.is_empty() { ui.label(format!("Deco Name: {}", name)); }
                 }
 
-                egui::Grid::new("deco_details_grid").num_columns(2).show(ui, |ui| {
+                egui::Grid::new("deco_details_grid2").num_columns(3).show(ui, |ui| {
                     ui.label("Slots:"); ui.add(egui::DragValue::new(&mut slot_nb).clamp_range(0..=3)); ui.end_row();
                     ui.label("Flags:"); ui.add(egui::DragValue::new(&mut flags)); ui.end_row();
                     ui.label("Price:"); ui.add(egui::DragValue::new(&mut price)); ui.end_row();
-                    ui.label("Skill1:"); egui::ComboBox::from_id_source("deco_s1").selected_text(skill_name(skill_id1)).show_ui(ui, |ui| { for (id, name) in crate::utils::skills::SKILL_LIST { if ui.selectable_value(&mut skill_id1, *id, *name).clicked() {} } }); ui.end_row();
+                    
+                    ui.label("Skill1:"); 
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[0]).desired_width(150.0));
+                    let q1 = self.deco_detail_skill_search[0].to_lowercase();
+                    egui::ComboBox::from_id_source("deco_s1_2").selected_text(skill_name(skill_id1)).show_ui(ui, |ui| { 
+                        for (id, name) in crate::utils::skills::SKILL_LIST { 
+                            if q1.is_empty() || name.to_lowercase().contains(&q1) {
+                                if ui.selectable_value(&mut skill_id1, *id, *name).clicked() {} 
+                            }
+                        } 
+                    }); 
+                    ui.end_row();
                     ui.label("Pts1:"); ui.add(egui::DragValue::new(&mut skill_pts1)); ui.end_row();
-                    ui.label("Skill2:"); egui::ComboBox::from_id_source("deco_s2").selected_text(skill_name(skill_id2)).show_ui(ui, |ui| { for (id, name) in crate::utils::skills::SKILL_LIST { if ui.selectable_value(&mut skill_id2, *id, *name).clicked() {} } }); ui.end_row();
+                    
+                    ui.label("Skill2:"); 
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[1]).desired_width(150.0));
+                    let q2 = self.deco_detail_skill_search[1].to_lowercase();
+                    egui::ComboBox::from_id_source("deco_s2_2").selected_text(skill_name(skill_id2)).show_ui(ui, |ui| { 
+                        for (id, name) in crate::utils::skills::SKILL_LIST { 
+                            if q2.is_empty() || name.to_lowercase().contains(&q2) {
+                                if ui.selectable_value(&mut skill_id2, *id, *name).clicked() {} 
+                            }
+                        } 
+                    }); 
+                    ui.end_row();
                     ui.label("Pts2:"); ui.add(egui::DragValue::new(&mut skill_pts2)); ui.end_row();
-                    ui.label("Skill3:"); egui::ComboBox::from_id_source("deco_s3").selected_text(skill_name(skill_id3)).show_ui(ui, |ui| { for (id, name) in crate::utils::skills::SKILL_LIST { if ui.selectable_value(&mut skill_id3, *id, *name).clicked() {} } }); ui.end_row();
+                    
+                    ui.label("Skill3:"); 
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[2]).desired_width(150.0));
+                    let q3 = self.deco_detail_skill_search[2].to_lowercase();
+                    egui::ComboBox::from_id_source("deco_s3_2").selected_text(skill_name(skill_id3)).show_ui(ui, |ui| { 
+                        for (id, name) in crate::utils::skills::SKILL_LIST { 
+                            if q3.is_empty() || name.to_lowercase().contains(&q3) {
+                                if ui.selectable_value(&mut skill_id3, *id, *name).clicked() {} 
+                            }
+                        } 
+                    }); 
+                    ui.end_row();
                     ui.label("Pts3:"); ui.add(egui::DragValue::new(&mut skill_pts3)); ui.end_row();
-                    ui.label("Skill4:"); egui::ComboBox::from_id_source("deco_s4").selected_text(skill_name(skill_id4)).show_ui(ui, |ui| { for (id, name) in crate::utils::skills::SKILL_LIST { if ui.selectable_value(&mut skill_id4, *id, *name).clicked() {} } }); ui.end_row();
+                    
+                    ui.label("Skill4:"); 
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[3]).desired_width(150.0));
+                    let q4 = self.deco_detail_skill_search[3].to_lowercase();
+                    egui::ComboBox::from_id_source("deco_s4_2").selected_text(skill_name(skill_id4)).show_ui(ui, |ui| { 
+                        for (id, name) in crate::utils::skills::SKILL_LIST { 
+                            if q4.is_empty() || name.to_lowercase().contains(&q4) {
+                                if ui.selectable_value(&mut skill_id4, *id, *name).clicked() {} 
+                            }
+                        } 
+                    }); 
+                    ui.end_row();
                     ui.label("Pts4:"); ui.add(egui::DragValue::new(&mut skill_pts4)); ui.end_row();
-                    ui.label("Zenith:"); egui::ComboBox::from_id_source("deco_zen").selected_text(crate::utils::weapon_patterns::zenith_skill_name(zen)).show_ui(ui, |ui| { for (id, name) in crate::utils::weapon_patterns::ZENITH_SKILL_LIST { if ui.selectable_value(&mut zen, *id, *name).clicked() {} } }); ui.end_row();
+                    
+                    ui.label("Zenith:"); 
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[4]).desired_width(150.0));
+                    let qz = self.deco_detail_skill_search[4].to_lowercase();
+                    egui::ComboBox::from_id_source("deco_zen_2").selected_text(crate::utils::weapon_patterns::zenith_skill_name(zen)).show_ui(ui, |ui| { 
+                        for (id, name) in crate::utils::weapon_patterns::ZENITH_SKILL_LIST { 
+                            if qz.is_empty() || name.to_lowercase().contains(&qz) {
+                                if ui.selectable_value(&mut zen, *id, *name).clicked() {} 
+                            }
+                        } 
+                    }); 
+                    ui.end_row();
                 });
 
-                if let Some(target) = self.deco_ids.get_mut(deco_idx) {
-                    target.slot_nb = slot_nb; target.flags = flags; target.price = price;
-                    target.skill_id1 = skill_id1; target.skill_pts1 = skill_pts1;
-                    target.skill_id2 = skill_id2; target.skill_pts2 = skill_pts2;
-                    target.skill_id3 = skill_id3; target.skill_pts3 = skill_pts3;
-                    target.skill_id4 = skill_id4; target.skill_pts4 = skill_pts4;
-                    target.zenith_skill = zen;
-                }
+                // Write back using full struct replacement
+                let new_deco = crate::model::mhfdat::MhfdatDecoId {
+                    slot_nb,
+                    flags,
+                    price,
+                    _pad0: d._pad0,
+                    skill_id1, skill_pts1,
+                    skill_id2, skill_pts2,
+                    skill_id3, skill_pts3,
+                    skill_id4, skill_pts4,
+                    special_flags: d.special_flags,
+                    zenith_skill: zen,
+                };
+                self.deco_ids[deco_idx] = new_deco;
+                self.deco_ids_modified = true;
             }
         }
     }

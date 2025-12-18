@@ -101,37 +101,40 @@ impl MhfdatApp {
             ArmorTab::Legs=>"legs" 
         };
         
-        MhfdatApp::section_header(ui, &format!("{} Armor (found: {})", armor_type, max_count), |ui| {
-            if ui.button("Export JSON").clicked() {
-                // This will be handled after the closure
-            }
-            if ui.button("Add New").clicked() {
-                // This will be handled after the closure
-            }
+        ui.horizontal(|ui| {
+            ui.heading(format!("{} Armor (found: {})", armor_type, max_count));
         });
 
-        // Handle Export JSON button click
-            if ui.button("Export JSON").clicked() {
+        // Buttons row
+        let mut do_export = false;
+        let mut do_import = false;
+        let mut do_add = false;
+        ui.horizontal(|ui| {
+            if ui.button("Export JSON").clicked() { do_export = true; }
+            if ui.button("Import from JSON").clicked() { do_import = true; }
+            if ui.button("Add New").clicked() { do_add = true; }
+        });
+
+        if do_export {
             let export_armors: Vec<ArmorExport> = armors
-                    .iter()
-                    .enumerate()
-                    .map(|(index, armor)| {
+                .iter()
+                .enumerate()
+                .map(|(index, armor)| {
                     let name = names.get(index).cloned().unwrap_or_default();
-                        ArmorExport::from_armor_with_data(armor, &name, index)
-                    })
-                    .collect();
+                    ArmorExport::from_armor_with_data(armor, &name, index)
+                })
+                .collect();
             let filename = format!("{}_armor.json", armor_type_str);
-                if let Ok(json) = serde_json::to_string_pretty(&export_armors) {
-                    let _ = std::fs::write(&filename, json);
-                }
+            if let Ok(json) = serde_json::to_string_pretty(&export_armors) {
+                let _ = std::fs::write(&filename, json);
             }
-        // Handle Import JSON button click
-        if ui.button("Import from JSON").clicked() {
+        }
+
+        if do_import {
             let armor_tab = self.armor_tab;
             let filename = format!("{}_armor_raw.json", armor_type_str);
             if let Ok(data) = std::fs::read_to_string(&filename) {
                 if let Ok(imported) = serde_json::from_str::<Vec<MhfdatEquipment>>(&data) {
-                    // Drop the borrow before reassigning
                     let _ = armors;
                     let _ = names;
                     match armor_tab {
@@ -141,13 +144,12 @@ impl MhfdatApp {
                         ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
                         ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
                     }
-                    return; // Return early to avoid using stale references
+                    return;
                 }
             }
         }
 
-        // Handle Add New button click
-        if ui.button("Add New").clicked() {
+        if do_add {
             let mut new_armor = MhfdatEquipment::default();
             let next_model_id = 0;
             new_armor.model_id_male = 0;
