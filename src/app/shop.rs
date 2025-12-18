@@ -838,6 +838,14 @@ impl MhfdatApp {
                     }
                 }
             }
+            if ui.button("Set All Purchaseable").clicked() {
+                for e in &mut self.weapon_forging_entries { e.purchaseable = 1; }
+                self.weapon_forging_modified = true;
+            }
+            if ui.button("Set All Preview-able").clicked() {
+                for e in &mut self.weapon_forging_entries { e.preview_able = true; }
+                self.weapon_forging_modified = true;
+            }
         });
 
         // Search and filters
@@ -1026,6 +1034,16 @@ impl MhfdatApp {
                         forging_changed = true;
                     }
                     ui.label(format!("({})", weapon_name));
+                    let mut purchaseable = entry.purchaseable != 0;
+                    if ui.checkbox(&mut purchaseable, "Purchaseable").changed() {
+                        entry.purchaseable = if purchaseable { 1 } else { 0 };
+                        forging_changed = true;
+                    }
+                    let mut preview = entry.preview_able;
+                    if ui.checkbox(&mut preview, "Preview-able").changed() {
+                        entry.preview_able = preview;
+                        forging_changed = true;
+                    }
                 });
 
                 // Materials
@@ -1163,6 +1181,14 @@ impl MhfdatApp {
                         self.armor_forging_modified = true;
                     }
                 }
+            }
+            if ui.button("Set All Purchaseable").clicked() {
+                for e in &mut self.armor_forging_entries { e.purchaseable = 1; }
+                self.armor_forging_modified = true;
+            }
+            if ui.button("Set All Preview-able").clicked() {
+                for e in &mut self.armor_forging_entries { e.preview_able = true; }
+                self.armor_forging_modified = true;
             }
         });
 
@@ -1367,6 +1393,16 @@ impl MhfdatApp {
                         forging_changed = true;
                     }
                     ui.label(format!("({})", armor_name));
+                    let mut purchaseable = entry.purchaseable != 0;
+                    if ui.checkbox(&mut purchaseable, "Purchaseable").changed() {
+                        entry.purchaseable = if purchaseable { 1 } else { 0 };
+                        forging_changed = true;
+                    }
+                    let mut preview = entry.preview_able;
+                    if ui.checkbox(&mut preview, "Preview-able").changed() {
+                        entry.preview_able = preview;
+                        forging_changed = true;
+                    }
                 });
 
                 // Materials
@@ -1498,6 +1534,14 @@ impl MhfdatApp {
                         self.weapon_forging_gr_modified = true;
                     }
                 }
+            }
+            if ui.button("Set All Purchaseable").clicked() {
+                for e in &mut self.weapon_forging_gr_entries { e.purchaseable = 1; }
+                self.weapon_forging_gr_modified = true;
+            }
+            if ui.button("Set All Preview-able").clicked() {
+                for e in &mut self.weapon_forging_gr_entries { e.preview_able = true; }
+                self.weapon_forging_gr_modified = true;
             }
         });
 
@@ -1687,6 +1731,16 @@ impl MhfdatApp {
                         forging_changed = true;
                     }
                     ui.label(format!("({})", weapon_name));
+                    let mut purchaseable = entry.purchaseable != 0;
+                    if ui.checkbox(&mut purchaseable, "Purchaseable").changed() {
+                        entry.purchaseable = if purchaseable { 1 } else { 0 };
+                        forging_changed = true;
+                    }
+                    let mut preview = entry.preview_able;
+                    if ui.checkbox(&mut preview, "Preview-able").changed() {
+                        entry.preview_able = preview;
+                        forging_changed = true;
+                    }
                 });
 
                 // Materials
@@ -1818,6 +1872,14 @@ impl MhfdatApp {
                         self.armor_forging_gr_modified = true;
                     }
                 }
+            }
+            if ui.button("Set All Purchaseable").clicked() {
+                for e in &mut self.armor_forging_gr_entries { e.purchaseable = 1; }
+                self.armor_forging_gr_modified = true;
+            }
+            if ui.button("Set All Preview-able").clicked() {
+                for e in &mut self.armor_forging_gr_entries { e.preview_able = true; }
+                self.armor_forging_gr_modified = true;
             }
         });
 
@@ -2022,6 +2084,16 @@ impl MhfdatApp {
                         forging_changed = true;
                     }
                     ui.label(format!("({})", armor_name));
+                    let mut purchaseable = entry.purchaseable != 0;
+                    if ui.checkbox(&mut purchaseable, "Purchaseable").changed() {
+                        entry.purchaseable = if purchaseable { 1 } else { 0 };
+                        forging_changed = true;
+                    }
+                    let mut preview = entry.preview_able;
+                    if ui.checkbox(&mut preview, "Preview-able").changed() {
+                        entry.preview_able = preview;
+                        forging_changed = true;
+                    }
                 });
 
                 // Materials
@@ -2153,6 +2225,14 @@ impl MhfdatApp {
                         self.weapon_forging_zenith_modified = true;
                     }
                 }
+            }
+            if ui.button("Set All Purchaseable").clicked() {
+                for e in &mut self.weapon_forging_zenith_entries { e.purchaseable = 1; }
+                self.weapon_forging_zenith_modified = true;
+            }
+            if ui.button("Set All Preview-able").clicked() {
+                for e in &mut self.weapon_forging_zenith_entries { e.preview_able = true; }
+                self.weapon_forging_zenith_modified = true;
             }
         });
 
@@ -2342,6 +2422,16 @@ impl MhfdatApp {
                         forging_changed = true;
                     }
                     ui.label(format!("({})", weapon_name));
+                    let mut purchaseable = entry.purchaseable != 0;
+                    if ui.checkbox(&mut purchaseable, "Purchaseable").changed() {
+                        entry.purchaseable = if purchaseable { 1 } else { 0 };
+                        forging_changed = true;
+                    }
+                    let mut preview = entry.preview_able;
+                    if ui.checkbox(&mut preview, "Preview-able").changed() {
+                        entry.preview_able = preview;
+                        forging_changed = true;
+                    }
                 });
 
                 // Materials
@@ -2473,6 +2563,14 @@ impl MhfdatApp {
                         self.armor_forging_zenith_modified = true;
                     }
                 }
+            }
+            if ui.button("Set All Purchaseable").clicked() {
+                for e in &mut self.armor_forging_zenith_entries { e.purchaseable = 1; }
+                self.armor_forging_zenith_modified = true;
+            }
+            if ui.button("Set All Preview-able").clicked() {
+                for e in &mut self.armor_forging_zenith_entries { e.preview_able = true; }
+                self.armor_forging_zenith_modified = true;
             }
         });
 
@@ -2677,6 +2775,16 @@ impl MhfdatApp {
                         forging_changed = true;
                     }
                     ui.label(format!("({})", armor_name));
+                    let mut purchaseable = entry.purchaseable != 0;
+                    if ui.checkbox(&mut purchaseable, "Purchaseable").changed() {
+                        entry.purchaseable = if purchaseable { 1 } else { 0 };
+                        forging_changed = true;
+                    }
+                    let mut preview = entry.preview_able;
+                    if ui.checkbox(&mut preview, "Preview-able").changed() {
+                        entry.preview_able = preview;
+                        forging_changed = true;
+                    }
                 });
 
                 // Materials
