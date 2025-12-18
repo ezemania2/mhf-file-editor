@@ -170,25 +170,12 @@ impl MhfdatApp {
                     }
                 }
             }
-            if ui.button("Extract Names").clicked() {
-                // Extract only weapon names to a text file
-                let mut names_content = String::new();
-                names_content.push_str("# Noms d'armes de melee extraits\n");
-                names_content.push_str(&format!("# Total: {} armes\n", self.melee_weapons.len()));
-                names_content.push_str("# Format: ID: Nom\n\n");
-                
-                for (index, name) in self.melee_weapon_names.iter().enumerate() {
-                    names_content.push_str(&format!("{:5}: {}\n", index, name));
-                }
-                
-                if let Ok(mut file) = File::create("melee_weapon_names.txt") {
-                    if file.write_all(names_content.as_bytes()).is_ok() {
-                        self.error_message = Some(format!("Noms extraits: {} armes sauvées dans 'melee_weapon_names.txt'", self.melee_weapons.len()));
-                    } else {
-                        self.error_message = Some("Erreur lors de l'écriture du fichier de noms".to_string());
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("melee_weapons_raw.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatMeleeWeapon>>(&data) {
+                        self.melee_weapons = imported;
+                        self.melee_weapons_modified = true;
                     }
-                } else {
-                    self.error_message = Some("Erreur lors de la création du fichier de noms".to_string());
                 }
             }
             if ui.button("Add New").clicked() { self.add_single_melee_weapon(); }
@@ -442,6 +429,14 @@ impl MhfdatApp {
                 if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
                     if let Ok(mut file) = File::create("ranged_weapons.json") {
                         let _ = file.write_all(json.as_bytes());
+                    }
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("ranged_weapons_raw.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatRangedWeapon>>(&data) {
+                        self.ranged_weapons = imported;
+                        self.ranged_weapons_modified = true;
                     }
                 }
             }
@@ -1526,6 +1521,21 @@ impl MhfdatApp {
                 self.g50_melee_count_limiter = self.g50_melee_weapon_upgrades.len() as u16;
                 self.g50_melee_count_limiter_modified = true;
             }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.g50_melee_weapon_upgrades) {
+                    let _ = std::fs::write("g50_melee_upgrades.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("g50_melee_upgrades.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::G50WUpgrade>>(&data) {
+                        self.g50_melee_weapon_upgrades = imported;
+                        self.g50_melee_weapon_upgrades_modified = true;
+                        self.g50_melee_count_limiter = self.g50_melee_weapon_upgrades.len() as u16;
+                        self.g50_melee_count_limiter_modified = true;
+                    }
+                }
+            }
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.g50_melee_search);
         });
@@ -1660,6 +1670,21 @@ impl MhfdatApp {
                 self.g50_ranged_weapon_upgrades_modified = true;
                 self.g50_ranged_count_limiter = self.g50_ranged_weapon_upgrades.len() as u16;
                 self.g50_ranged_count_limiter_modified = true;
+            }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.g50_ranged_weapon_upgrades) {
+                    let _ = std::fs::write("g50_ranged_upgrades.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("g50_ranged_upgrades.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::G50WUpgrade>>(&data) {
+                        self.g50_ranged_weapon_upgrades = imported;
+                        self.g50_ranged_weapon_upgrades_modified = true;
+                        self.g50_ranged_count_limiter = self.g50_ranged_weapon_upgrades.len() as u16;
+                        self.g50_ranged_count_limiter_modified = true;
+                    }
+                }
             }
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.g50_ranged_search);
@@ -1874,6 +1899,20 @@ impl MhfdatApp {
                         }
                     }
                 });
+            ui.separator();
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.g50_tower_params) {
+                    let _ = std::fs::write("g50_tower_params.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("g50_tower_params.json") {
+                    if let Ok(imported) = serde_json::from_str::<[crate::model::mhfdat::G50WeaponTypeData; 14]>(&data) {
+                        self.g50_tower_params = imported;
+                        self.g50_tower_params_modified = [true; 14];
+                    }
+                }
+            }
         });
 
         let weapon_type_data = &self.g50_tower_params[self.selected_g50_tower_type];

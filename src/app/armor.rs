@@ -125,6 +125,26 @@ impl MhfdatApp {
                     let _ = std::fs::write(&filename, json);
                 }
             }
+        // Handle Import JSON button click
+        if ui.button("Import from JSON").clicked() {
+            let armor_tab = self.armor_tab;
+            let filename = format!("{}_armor_raw.json", armor_type_str);
+            if let Ok(data) = std::fs::read_to_string(&filename) {
+                if let Ok(imported) = serde_json::from_str::<Vec<MhfdatEquipment>>(&data) {
+                    // Drop the borrow before reassigning
+                    let _ = armors;
+                    let _ = names;
+                    match armor_tab {
+                        ArmorTab::Head => { self.head_armors = imported; self.head_armors_modified = true; }
+                        ArmorTab::Body => { self.body_armors = imported; self.body_armors_modified = true; }
+                        ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
+                        ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
+                        ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
+                    }
+                    return; // Return early to avoid using stale references
+                }
+            }
+        }
 
         // Handle Add New button click
         if ui.button("Add New").clicked() {

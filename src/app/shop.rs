@@ -199,6 +199,26 @@ impl MhfdatApp {
                 };
                 if let Ok(text) = serde_json::to_string_pretty(data) { let _ = std::fs::write(name, text); }
             }
+            if ui.button("Import from JSON").clicked() {
+                let filename = match self.shop_page {
+                    0 => "deco_shop_hr.json",
+                    1 => "deco_shop_gr.json",
+                    2 => "cuff_shop.json",
+                    3 => "cuff_gr_shop.json",
+                    _ => "deco_shop_hr.json",
+                };
+                if let Ok(data) = std::fs::read_to_string(filename) {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::DecoShop>>(&data) {
+                        match self.shop_page {
+                            0 => { self.deco_shop_hr_entries = imported; self.deco_shop_hr_modified = true; }
+                            1 => { self.deco_shop_gr_entries = imported; self.deco_shop_gr_modified = true; }
+                            2 => { self.cuff_shop_entries = imported; self.cuff_shop_modified = true; }
+                            3 => { self.cuff_gr_shop_entries = imported; self.cuff_gr_shop_modified = true; }
+                            _ => {}
+                        }
+                    }
+                }
+            }
         });
 
         // Ensure we have a view state for deco shop
@@ -458,6 +478,19 @@ impl MhfdatApp {
                     self.view_mode.insert("shop".to_string(), ViewMode::List);
                 }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+            }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.transmog_entries) {
+                    let _ = std::fs::write("transmog_shop.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("transmog_shop.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.transmog_entries = imported;
+                        self.transmog_modified = true;
+                    }
+                }
             }
         });
 
@@ -792,6 +825,19 @@ impl MhfdatApp {
                 }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
             }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.weapon_forging_entries) {
+                    let _ = std::fs::write("weapon_forging.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("weapon_forging.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.weapon_forging_entries = imported;
+                        self.weapon_forging_modified = true;
+                    }
+                }
+            }
         });
 
         // Search and filters
@@ -1104,6 +1150,19 @@ impl MhfdatApp {
                     self.view_mode.insert("shop".to_string(), ViewMode::List);
                 }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+            }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.armor_forging_entries) {
+                    let _ = std::fs::write("armor_forging.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("armor_forging.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.armor_forging_entries = imported;
+                        self.armor_forging_modified = true;
+                    }
+                }
             }
         });
 
@@ -1427,6 +1486,19 @@ impl MhfdatApp {
                 }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
             }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.weapon_forging_gr_entries) {
+                    let _ = std::fs::write("weapon_forging_gr.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("weapon_forging_gr.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.weapon_forging_gr_entries = imported;
+                        self.weapon_forging_gr_modified = true;
+                    }
+                }
+            }
         });
 
         // Search and filters
@@ -1733,6 +1805,19 @@ impl MhfdatApp {
                     self.view_mode.insert("shop".to_string(), ViewMode::List);
                 }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+            }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.armor_forging_gr_entries) {
+                    let _ = std::fs::write("armor_forging_gr.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("armor_forging_gr.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.armor_forging_gr_entries = imported;
+                        self.armor_forging_gr_modified = true;
+                    }
+                }
             }
         });
 
@@ -2056,6 +2141,19 @@ impl MhfdatApp {
                 }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
             }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.weapon_forging_zenith_entries) {
+                    let _ = std::fs::write("weapon_forging_zenith.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("weapon_forging_zenith.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.weapon_forging_zenith_entries = imported;
+                        self.weapon_forging_zenith_modified = true;
+                    }
+                }
+            }
         });
 
         // Search and filters
@@ -2362,6 +2460,19 @@ impl MhfdatApp {
                     self.view_mode.insert("shop".to_string(), ViewMode::List);
                 }
                 *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+            }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.armor_forging_zenith_entries) {
+                    let _ = std::fs::write("armor_forging_zenith.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("armor_forging_zenith.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.armor_forging_zenith_entries = imported;
+                        self.armor_forging_zenith_modified = true;
+                    }
+                }
             }
         });
 

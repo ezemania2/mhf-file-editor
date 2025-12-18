@@ -1,16 +1,32 @@
 use super::*;
+use std::fs;
+
+const PAGE_SIZE: usize = 15;
 
 impl MhfdatApp {
     pub fn show_bullet_sets_tab(&mut self, ui: &mut egui::Ui) {
-        // Initialize view mode if not present
         if !self.view_mode.contains_key("bullet_sets") {
             self.view_mode.insert("bullet_sets".to_string(), ViewMode::List);
         }
 
-        ui.heading("Bullet Sets Editor");
+        ui.horizontal(|ui| {
+            ui.heading("Bullet Sets Editor");
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.bullet_sets) {
+                    let _ = fs::write("bullet_sets.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = fs::read_to_string("bullet_sets.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::BulletSet>>(&data) {
+                        self.bullet_sets = imported;
+                        self.bullet_sets_modified = true;
+                    }
+                }
+            }
+        });
         ui.separator();
 
-        // Show list or details view
         match self.view_mode.get("bullet_sets").unwrap_or(&ViewMode::List) {
             ViewMode::List => self.show_bullet_sets_list(ui),
             ViewMode::Details => self.show_bullet_set_details_view(ui),
@@ -24,279 +40,165 @@ impl MhfdatApp {
         }
 
         let total = self.bullet_sets.len();
-        let page_size = 15;
-        let total_pages = (total + page_size - 1) / page_size;
+        let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
         let page = (self.bullet_sets_page as usize).min(total_pages.saturating_sub(1));
 
         ui.label(format!("Total bullet sets: {}", total));
         MhfdatApp::pagination_controls(ui, &mut self.bullet_sets_page, total_pages);
         ui.separator();
 
-        let start = page * page_size;
-        let end = (start + page_size).min(total);
+        let start = page * PAGE_SIZE;
+        let end = (start + PAGE_SIZE).min(total);
+
+        let display_data: Vec<_> = (start..end).map(|idx| {
+            let s = &self.bullet_sets[idx];
+            (
+                idx,
+                format!("{}/{}/{}", s.normal_lv1_capacity, s.normal_lv2_capacity, s.normal_lv3_capacity),
+                format!("{}/{}/{}", s.pierce_lv1_capacity, s.pierce_lv2_capacity, s.pierce_lv3_capacity),
+                format!("{}/{}/{}", s.spread_lv1_capacity, s.spread_lv2_capacity, s.spread_lv3_capacity),
+                format!("{}/{}/{}", s.crag_lv1_capacity, s.crag_lv2_capacity, s.crag_lv3_capacity),
+                format!("{}/{}/{}", s.cluster_lv1_capacity, s.cluster_lv2_capacity, s.cluster_lv3_capacity),
+            )
+        }).collect();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("bullet_sets_list_grid")
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label("ID");
-                    ui.label("Normal Lv1-3");
-                    ui.label("Pierce Lv1-3");
-                    ui.label("Spread Lv1-3");
-                    ui.label("Crag Lv1-3");
-                    ui.label("Cluster Lv1-3");
-                    ui.end_row();
+            egui::Grid::new("bullet_sets_list_grid").striped(true).show(ui, |ui| {
+                ui.label("ID");
+                ui.label("Normal Lv1-3");
+                ui.label("Pierce Lv1-3");
+                ui.label("Spread Lv1-3");
+                ui.label("Crag Lv1-3");
+                ui.label("Cluster Lv1-3");
+                ui.end_row();
 
-                    for idx in start..end {
-                        let set = &self.bullet_sets[idx];
-                        let selected = self.selected_bullet_set_id == Some(idx);
-                        if ui.selectable_label(selected, format!("{}", idx)).clicked() {
-                            self.selected_bullet_set_id = Some(idx);
-                            self.view_mode.insert("bullet_sets".to_string(), ViewMode::Details);
-                        }
-                        ui.label(format!("{}/{}/{}", set.normal_lv1_capacity, set.normal_lv2_capacity, set.normal_lv3_capacity));
-                        ui.label(format!("{}/{}/{}", set.pierce_lv1_capacity, set.pierce_lv2_capacity, set.pierce_lv3_capacity));
-                        ui.label(format!("{}/{}/{}", set.spread_lv1_capacity, set.spread_lv2_capacity, set.spread_lv3_capacity));
-                        ui.label(format!("{}/{}/{}", set.crag_lv1_capacity, set.crag_lv2_capacity, set.crag_lv3_capacity));
-                        ui.label(format!("{}/{}/{}", set.cluster_lv1_capacity, set.cluster_lv2_capacity, set.cluster_lv3_capacity));
-                        ui.end_row();
+                for (idx, normal, pierce, spread, crag, cluster) in display_data {
+                    let selected = self.selected_bullet_set_id == Some(idx);
+                    if ui.selectable_label(selected, format!("{}", idx)).clicked() {
+                        self.selected_bullet_set_id = Some(idx);
+                        self.view_mode.insert("bullet_sets".to_string(), ViewMode::Details);
                     }
-                });
+                    ui.label(normal);
+                    ui.label(pierce);
+                    ui.label(spread);
+                    ui.label(crag);
+                    ui.label(cluster);
+                    ui.end_row();
+                }
+            });
         });
     }
 
     fn show_bullet_set_details_view(&mut self, ui: &mut egui::Ui) {
-        // Back button
-        ui.horizontal(|ui| {
-            if ui.button("← Back to List").clicked() {
-                if let Some(mode) = self.view_mode.get_mut("bullet_sets") {
-                    *mode = ViewMode::List;
-                }
-            }
-        });
+        if ui.button("← Back to List").clicked() {
+            self.view_mode.insert("bullet_sets".to_string(), ViewMode::List);
+            return;
+        }
         ui.separator();
 
-        let selected_id = self.selected_bullet_set_id;
+        let Some(id) = self.selected_bullet_set_id else {
+            ui.label("Select a bullet set ID to edit.");
+            return;
+        };
 
-        if self.bullet_sets.is_empty() {
-            ui.label("No bullet sets data loaded.");
+        if id >= self.bullet_sets.len() {
+            ui.label("Selected ID is out of range.");
             return;
         }
 
-        // Show bullet set details
-        if let Some(id) = selected_id {
-            if id < self.bullet_sets.len() {
-                let mut was_modified = false;
-                Self::show_bullet_set_details(ui, &mut self.bullet_sets[id], id, &mut was_modified);
-                if was_modified {
-                    self.bullet_sets_modified = true;
-                }
-            } else {
-                ui.label("Selected ID is out of range.");
-            }
-        } else {
-            ui.label("Select a bullet set ID to edit.");
-        }
-    }
-
-    fn show_bullet_set_details(ui: &mut egui::Ui, set: &mut crate::model::mhfdat::BulletSet, id: usize, was_modified: &mut bool) {
+        let set = &mut self.bullet_sets[id];
         ui.heading(format!("Bullet Set ID: {}", id));
         ui.separator();
 
-        // Copy values to avoid packed field issues
-        let mut normal_lv1 = set.normal_lv1_capacity;
-        let mut normal_lv2 = set.normal_lv2_capacity;
-        let mut normal_lv3 = set.normal_lv3_capacity;
-        let mut pierce_lv1 = set.pierce_lv1_capacity;
-        let mut pierce_lv2 = set.pierce_lv2_capacity;
-        let mut pierce_lv3 = set.pierce_lv3_capacity;
-        let mut spread_lv1 = set.spread_lv1_capacity;
-        let mut spread_lv2 = set.spread_lv2_capacity;
-        let mut spread_lv3 = set.spread_lv3_capacity;
-        let mut crag_lv1 = set.crag_lv1_capacity;
-        let mut crag_lv2 = set.crag_lv2_capacity;
-        let mut crag_lv3 = set.crag_lv3_capacity;
-        let mut cluster_lv1 = set.cluster_lv1_capacity;
-        let mut cluster_lv2 = set.cluster_lv2_capacity;
-        let mut cluster_lv3 = set.cluster_lv3_capacity;
-        let mut fire = set.fire_capacity;
-        let mut water = set.water_capacity;
-        let mut thunder = set.thunder_capacity;
-        let mut ice = set.ice_capacity;
-        let mut dragon = set.dragon_capacity;
-        let mut recovery_lv1 = set.recovery_lv1_capacity;
-        let mut recovery_lv2 = set.recovery_lv2_capacity;
-        let mut poison_lv1 = set.poison_lv1_capacity;
-        let mut poison_lv2 = set.poison_lv2_capacity;
-        let mut paralysis_lv1 = set.paralysis_lv1_capacity;
-        let mut paralysis_lv2 = set.paralysis_lv2_capacity;
-        let mut sleep_lv1 = set.sleep_lv1_capacity;
-        let mut sleep_lv2 = set.sleep_lv2_capacity;
-        let mut tranquilizer = set.tranquilizer_capacity;
-        let mut paint = set.paint_capacity;
-        let mut demon = set.demon_capacity;
-        let mut armor = set.armor_capacity;
+        let mut modified = false;
 
-        // Editable values in 2 columns
         ui.horizontal(|ui| {
             // Left column
             ui.vertical(|ui| {
-                // Bullet types section
-                egui::Grid::new("bullet_set_grid_left").striped(true).num_columns(4).show(ui, |ui| {
-                    ui.label("Type");
-                    ui.label("Lv1");
-                    ui.label("Lv2");
-                    ui.label("Lv3");
-                    ui.end_row();
-
-                    // Normal
+                egui::Grid::new("bullet_main").striped(true).num_columns(4).show(ui, |ui| {
+                    ui.label("Type"); ui.label("Lv1"); ui.label("Lv2"); ui.label("Lv3"); ui.end_row();
+                    
                     ui.label("Normal");
-                    if ui.add(egui::DragValue::new(&mut normal_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut normal_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut normal_lv3).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.normal_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.normal_lv2_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.normal_lv3_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
-
-                    // Pierce
+                    
                     ui.label("Pierce");
-                    if ui.add(egui::DragValue::new(&mut pierce_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut pierce_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut pierce_lv3).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.pierce_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.pierce_lv2_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.pierce_lv3_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
-
-                    // Spread
+                    
                     ui.label("Spread");
-                    if ui.add(egui::DragValue::new(&mut spread_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut spread_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut spread_lv3).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.spread_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.spread_lv2_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.spread_lv3_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
-
-                    // Crag
+                    
                     ui.label("Crag");
-                    if ui.add(egui::DragValue::new(&mut crag_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut crag_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut crag_lv3).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.crag_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.crag_lv2_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.crag_lv3_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
-
-                    // Cluster
+                    
                     ui.label("Cluster");
-                    if ui.add(egui::DragValue::new(&mut cluster_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut cluster_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut cluster_lv3).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.cluster_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.cluster_lv2_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.cluster_lv3_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
                 });
 
                 ui.add_space(10.0);
-
-                // Special section
-                egui::Grid::new("bullet_set_special").striped(true).num_columns(2).show(ui, |ui| {
-                    ui.label("Special");
-                    ui.label("Capacity");
-                    ui.end_row();
-
-                    ui.label("Tranquilizer");
-                    if ui.add(egui::DragValue::new(&mut tranquilizer).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
-                    ui.label("Paint");
-                    if ui.add(egui::DragValue::new(&mut paint).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
-                    ui.label("Demon");
-                    if ui.add(egui::DragValue::new(&mut demon).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
-                    ui.label("Armor");
-                    if ui.add(egui::DragValue::new(&mut armor).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
+                
+                egui::Grid::new("bullet_special").striped(true).num_columns(2).show(ui, |ui| {
+                    ui.label("Special"); ui.label("Capacity"); ui.end_row();
+                    ui.label("Tranquilizer"); modified |= ui.add(egui::DragValue::new(&mut set.tranquilizer_capacity).clamp_range(0..=255)).changed(); ui.end_row();
+                    ui.label("Paint"); modified |= ui.add(egui::DragValue::new(&mut set.paint_capacity).clamp_range(0..=255)).changed(); ui.end_row();
+                    ui.label("Demon"); modified |= ui.add(egui::DragValue::new(&mut set.demon_capacity).clamp_range(0..=255)).changed(); ui.end_row();
+                    ui.label("Armor"); modified |= ui.add(egui::DragValue::new(&mut set.armor_capacity).clamp_range(0..=255)).changed(); ui.end_row();
                 });
             });
 
             ui.separator();
 
-            // Right column - organized in separate grids for better alignment
+            // Right column
             ui.vertical(|ui| {
-                // Elements section
-                egui::Grid::new("bullet_set_elements").striped(true).num_columns(2).show(ui, |ui| {
-                    ui.label("Element");
-                    ui.label("Capacity");
-                    ui.end_row();
-
-                    ui.label("Fire");
-                    if ui.add(egui::DragValue::new(&mut fire).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
-                    ui.label("Water");
-                    if ui.add(egui::DragValue::new(&mut water).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
-                    ui.label("Thunder");
-                    if ui.add(egui::DragValue::new(&mut thunder).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
-                    ui.label("Ice");
-                    if ui.add(egui::DragValue::new(&mut ice).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
-                    ui.label("Dragon");
-                    if ui.add(egui::DragValue::new(&mut dragon).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    ui.end_row();
+                egui::Grid::new("bullet_elements").striped(true).num_columns(2).show(ui, |ui| {
+                    ui.label("Element"); ui.label("Capacity"); ui.end_row();
+                    ui.label("Fire"); modified |= ui.add(egui::DragValue::new(&mut set.fire_capacity).clamp_range(0..=255)).changed(); ui.end_row();
+                    ui.label("Water"); modified |= ui.add(egui::DragValue::new(&mut set.water_capacity).clamp_range(0..=255)).changed(); ui.end_row();
+                    ui.label("Thunder"); modified |= ui.add(egui::DragValue::new(&mut set.thunder_capacity).clamp_range(0..=255)).changed(); ui.end_row();
+                    ui.label("Ice"); modified |= ui.add(egui::DragValue::new(&mut set.ice_capacity).clamp_range(0..=255)).changed(); ui.end_row();
+                    ui.label("Dragon"); modified |= ui.add(egui::DragValue::new(&mut set.dragon_capacity).clamp_range(0..=255)).changed(); ui.end_row();
                 });
 
                 ui.add_space(10.0);
-
-                // Status section
-                egui::Grid::new("bullet_set_status").striped(true).num_columns(3).show(ui, |ui| {
-                    ui.label("Status");
-                    ui.label("Lv1");
-                    ui.label("Lv2");
-                    ui.end_row();
-
+                
+                egui::Grid::new("bullet_status").striped(true).num_columns(3).show(ui, |ui| {
+                    ui.label("Status"); ui.label("Lv1"); ui.label("Lv2"); ui.end_row();
                     ui.label("Recovery");
-                    if ui.add(egui::DragValue::new(&mut recovery_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut recovery_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.recovery_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.recovery_lv2_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
                     ui.label("Poison");
-                    if ui.add(egui::DragValue::new(&mut poison_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut poison_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.poison_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.poison_lv2_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
                     ui.label("Paralysis");
-                    if ui.add(egui::DragValue::new(&mut paralysis_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut paralysis_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.paralysis_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.paralysis_lv2_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
                     ui.label("Sleep");
-                    if ui.add(egui::DragValue::new(&mut sleep_lv1).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
-                    if ui.add(egui::DragValue::new(&mut sleep_lv2).speed(1.0).clamp_range(0..=255)).changed() { *was_modified = true; }
+                    modified |= ui.add(egui::DragValue::new(&mut set.sleep_lv1_capacity).clamp_range(0..=255)).changed();
+                    modified |= ui.add(egui::DragValue::new(&mut set.sleep_lv2_capacity).clamp_range(0..=255)).changed();
                     ui.end_row();
                 });
             });
         });
 
-        // Write back
-        set.normal_lv1_capacity = normal_lv1;
-        set.normal_lv2_capacity = normal_lv2;
-        set.normal_lv3_capacity = normal_lv3;
-        set.pierce_lv1_capacity = pierce_lv1;
-        set.pierce_lv2_capacity = pierce_lv2;
-        set.pierce_lv3_capacity = pierce_lv3;
-        set.spread_lv1_capacity = spread_lv1;
-        set.spread_lv2_capacity = spread_lv2;
-        set.spread_lv3_capacity = spread_lv3;
-        set.crag_lv1_capacity = crag_lv1;
-        set.crag_lv2_capacity = crag_lv2;
-        set.crag_lv3_capacity = crag_lv3;
-        set.cluster_lv1_capacity = cluster_lv1;
-        set.cluster_lv2_capacity = cluster_lv2;
-        set.cluster_lv3_capacity = cluster_lv3;
-        set.fire_capacity = fire;
-        set.water_capacity = water;
-        set.thunder_capacity = thunder;
-        set.ice_capacity = ice;
-        set.dragon_capacity = dragon;
-        set.recovery_lv1_capacity = recovery_lv1;
-        set.recovery_lv2_capacity = recovery_lv2;
-        set.poison_lv1_capacity = poison_lv1;
-        set.poison_lv2_capacity = poison_lv2;
-        set.paralysis_lv1_capacity = paralysis_lv1;
-        set.paralysis_lv2_capacity = paralysis_lv2;
-        set.sleep_lv1_capacity = sleep_lv1;
-        set.sleep_lv2_capacity = sleep_lv2;
-        set.tranquilizer_capacity = tranquilizer;
-        set.paint_capacity = paint;
-        set.demon_capacity = demon;
-        set.armor_capacity = armor;
+        if modified {
+            self.bullet_sets_modified = true;
+        }
     }
 }
-

@@ -2,31 +2,124 @@ use eframe::egui;
 use super::{MhfdatApp, QuestTab, ViewMode};
 use crate::model::mhfdat::QuestItem;
 
+const PAGE_SIZE: usize = 15;
+const HR_RANKS: &[&str] = &["HR1", "HR2", "HR3", "HR4", "HR5", "HR6"];
+const GR_RANKS: &[&str] = &["G1", "G2", "G3", "G4", "G5", "G6", "G7"];
+
 impl MhfdatApp {
     pub fn show_quests_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.selectable_label(self.quest_tab == QuestTab::HR, "HR Quests").clicked() {
-                self.quest_tab = QuestTab::HR;
-                self.selected_quest_index = None;
-                self.selected_quest_rank = 0;
+            for (tab, label) in [(QuestTab::HR, "HR Quests"), (QuestTab::GR, "GR Quests")] {
+                if ui.selectable_label(self.quest_tab == tab, label).clicked() {
+                    self.quest_tab = tab;
+                    self.selected_quest_index = None;
+                    self.selected_quest_rank = 0;
+                    self.quest_page = 0;
+                }
             }
-            if ui.selectable_label(self.quest_tab == QuestTab::GR, "GR Quests").clicked() {
-                self.quest_tab = QuestTab::GR;
-                self.selected_quest_index = None;
-                self.selected_quest_rank = 0;
+            ui.separator();
+            if ui.button("Export HR to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.hr_quests) {
+                    let _ = std::fs::write("hr_quests.json", json);
+                }
+            }
+            if ui.button("Import HR from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("hr_quests.json") {
+                    if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::HRQuests>(&data) {
+                        self.hr_quests = imported;
+                        self.hr_quests_modified = true;
+                    }
+                }
+            }
+            if ui.button("Export GR to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.gr_quests) {
+                    let _ = std::fs::write("gr_quests.json", json);
+                }
+            }
+            if ui.button("Import GR from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("gr_quests.json") {
+                    if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::GRQuests>(&data) {
+                        self.gr_quests = imported;
+                        self.gr_quests_modified = true;
+                    }
+                }
             }
         });
         ui.separator();
 
-        match self.quest_tab {
-            QuestTab::HR => self.show_hr_quests(ui),
-            QuestTab::GR => self.show_gr_quests(ui),
+        let is_hr = self.quest_tab == QuestTab::HR;
+        self.show_quest_rank_selector(ui, if is_hr { HR_RANKS } else { GR_RANKS });
+
+        let view_key = self.quest_view_key(is_hr);
+        match self.view_mode.get(&view_key).cloned().unwrap_or(ViewMode::List) {
+            ViewMode::List => self.show_quest_list(ui, is_hr),
+            ViewMode::Details => self.show_quest_details(ui, is_hr),
         }
     }
 
-    fn show_hr_quests(&mut self, ui: &mut egui::Ui) {
-        let ranks = ["HR1", "HR2", "HR3", "HR4", "HR5", "HR6"];
-        
+    fn quest_view_key(&self, is_hr: bool) -> String {
+        format!("{}_quests_{}", if is_hr { "hr" } else { "gr" }, self.selected_quest_rank)
+    }
+
+    fn get_quests(&self, is_hr: bool, rank: usize) -> Option<&Vec<QuestItem>> {
+        if is_hr {
+            match rank {
+                0 => Some(&self.hr_quests.one_star),
+                1 => Some(&self.hr_quests.two_stars),
+                2 => Some(&self.hr_quests.three_stars),
+                3 => Some(&self.hr_quests.four_stars),
+                4 => Some(&self.hr_quests.five_stars),
+                5 => Some(&self.hr_quests.six_stars),
+                _ => None,
+            }
+        } else {
+            match rank {
+                0 => Some(&self.gr_quests.g1),
+                1 => Some(&self.gr_quests.g2),
+                2 => Some(&self.gr_quests.g3),
+                3 => Some(&self.gr_quests.g4),
+                4 => Some(&self.gr_quests.g5),
+                5 => Some(&self.gr_quests.g6),
+                6 => Some(&self.gr_quests.g7),
+                _ => None,
+            }
+        }
+    }
+
+    fn get_quests_mut(&mut self, is_hr: bool, rank: usize) -> Option<&mut Vec<QuestItem>> {
+        if is_hr {
+            match rank {
+                0 => Some(&mut self.hr_quests.one_star),
+                1 => Some(&mut self.hr_quests.two_stars),
+                2 => Some(&mut self.hr_quests.three_stars),
+                3 => Some(&mut self.hr_quests.four_stars),
+                4 => Some(&mut self.hr_quests.five_stars),
+                5 => Some(&mut self.hr_quests.six_stars),
+                _ => None,
+            }
+        } else {
+            match rank {
+                0 => Some(&mut self.gr_quests.g1),
+                1 => Some(&mut self.gr_quests.g2),
+                2 => Some(&mut self.gr_quests.g3),
+                3 => Some(&mut self.gr_quests.g4),
+                4 => Some(&mut self.gr_quests.g5),
+                5 => Some(&mut self.gr_quests.g6),
+                6 => Some(&mut self.gr_quests.g7),
+                _ => None,
+            }
+        }
+    }
+
+    fn set_quests_modified(&mut self, is_hr: bool) {
+        if is_hr {
+            self.hr_quests_modified = true;
+        } else {
+            self.gr_quests_modified = true;
+        }
+    }
+
+    fn show_quest_rank_selector(&mut self, ui: &mut egui::Ui, ranks: &[&str]) {
         ui.horizontal(|ui| {
             for (i, name) in ranks.iter().enumerate() {
                 if ui.selectable_label(self.selected_quest_rank == i, *name).clicked() {
@@ -37,56 +130,44 @@ impl MhfdatApp {
             }
         });
         ui.separator();
-
-        let view_key = format!("hr_quests_{}", self.selected_quest_rank);
-        let view_mode = self.view_mode.get(&view_key).cloned().unwrap_or(ViewMode::List);
-
-        match view_mode {
-            ViewMode::List => self.show_hr_quest_list(ui),
-            ViewMode::Details => self.show_hr_quest_details(ui),
-        }
     }
 
-    fn show_hr_quest_list(&mut self, ui: &mut egui::Ui) {
-        let quests = match self.selected_quest_rank {
-            0 => &self.hr_quests.one_star,
-            1 => &self.hr_quests.two_stars,
-            2 => &self.hr_quests.three_stars,
-            3 => &self.hr_quests.four_stars,
-            4 => &self.hr_quests.five_stars,
-            5 => &self.hr_quests.six_stars,
-            _ => return,
-        };
+    fn show_quest_list(&mut self, ui: &mut egui::Ui, is_hr: bool) {
+        let total = self.get_quests(is_hr, self.selected_quest_rank)
+            .map(|q| q.len())
+            .unwrap_or(0);
+        
+        if total == 0 {
+            ui.label("No quests");
+            return;
+        }
 
-        let total = quests.len();
-        let page_size = 15;
-        let total_pages = (total + page_size - 1) / page_size;
+        let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
         let page = (self.quest_page as usize).min(total_pages.saturating_sub(1));
+        let start = page * PAGE_SIZE;
+        let end = (start + PAGE_SIZE).min(total);
 
         ui.label(format!("{} quests", total));
 
         if ui.button("Add New Quest").clicked() {
-            let new_quest = QuestItem::default();
-            match self.selected_quest_rank {
-                0 => self.hr_quests.one_star.push(new_quest),
-                1 => self.hr_quests.two_stars.push(new_quest),
-                2 => self.hr_quests.three_stars.push(new_quest),
-                3 => self.hr_quests.four_stars.push(new_quest),
-                4 => self.hr_quests.five_stars.push(new_quest),
-                5 => self.hr_quests.six_stars.push(new_quest),
-                _ => {}
+            if let Some(list) = self.get_quests_mut(is_hr, self.selected_quest_rank) {
+                list.push(QuestItem::default());
             }
-            self.hr_quests_modified = true;
+            self.set_quests_modified(is_hr);
         }
 
         MhfdatApp::pagination_controls(ui, &mut self.quest_page, total_pages);
         ui.separator();
 
-        let start = page * page_size;
-        let end = (start + page_size).min(total);
+        let view_key = self.quest_view_key(is_hr);
+        let quest_data: Vec<_> = self.get_quests(is_hr, self.selected_quest_rank)
+            .map(|q| q.iter().skip(start).take(end - start)
+                .map(|quest| (quest.quest_id, quest.quest_number, quest.key_quest, quest.urgent_quest))
+                .collect())
+            .unwrap_or_default();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("hr_quest_grid")
+            egui::Grid::new(format!("{}_quest_grid", if is_hr { "hr" } else { "gr" }))
                 .striped(true)
                 .num_columns(5)
                 .show(ui, |ui| {
@@ -97,43 +178,27 @@ impl MhfdatApp {
                     ui.label("Urgent");
                     ui.end_row();
 
-                    let quests = match self.selected_quest_rank {
-                        0 => &self.hr_quests.one_star,
-                        1 => &self.hr_quests.two_stars,
-                        2 => &self.hr_quests.three_stars,
-                        3 => &self.hr_quests.four_stars,
-                        4 => &self.hr_quests.five_stars,
-                        5 => &self.hr_quests.six_stars,
-                        _ => return,
-                    };
-
-                    for idx in start..end {
-                        let quest = &quests[idx];
-                        let quest_id = quest.quest_id;
-                        let quest_number = quest.quest_number;
-                        let key_quest = quest.key_quest;
-                        let urgent_quest = quest.urgent_quest;
-
+                    for (i, (quest_id, quest_number, key_quest, urgent_quest)) in quest_data.iter().enumerate() {
+                        let idx = start + i;
                         if ui.selectable_label(false, format!("{}", idx)).clicked() {
                             self.selected_quest_index = Some(idx);
-                            let view_key = format!("hr_quests_{}", self.selected_quest_rank);
-                            self.view_mode.insert(view_key, ViewMode::Details);
+                            self.view_mode.insert(view_key.clone(), ViewMode::Details);
                         }
                         ui.label(format!("{}", quest_id));
                         ui.label(format!("{}", quest_number));
-                        ui.label(if key_quest != 0 { "Yes" } else { "No" });
-                        ui.label(if urgent_quest != 0 { "Yes" } else { "No" });
+                        ui.label(if *key_quest != 0 { "Yes" } else { "No" });
+                        ui.label(if *urgent_quest != 0 { "Yes" } else { "No" });
                         ui.end_row();
                     }
                 });
         });
     }
 
-    fn show_hr_quest_details(&mut self, ui: &mut egui::Ui) {
-        let view_key = format!("hr_quests_{}", self.selected_quest_rank);
-        
+    fn show_quest_details(&mut self, ui: &mut egui::Ui, is_hr: bool) {
+        let view_key = self.quest_view_key(is_hr);
+
         if ui.button("← Back to List").clicked() {
-            self.view_mode.insert(view_key.clone(), ViewMode::List);
+            self.view_mode.insert(view_key, ViewMode::List);
             self.selected_quest_index = None;
             return;
         }
@@ -144,57 +209,37 @@ impl MhfdatApp {
             None => return,
         };
 
-        let quest = match self.selected_quest_rank {
-            0 => self.hr_quests.one_star.get_mut(idx),
-            1 => self.hr_quests.two_stars.get_mut(idx),
-            2 => self.hr_quests.three_stars.get_mut(idx),
-            3 => self.hr_quests.four_stars.get_mut(idx),
-            4 => self.hr_quests.five_stars.get_mut(idx),
-            5 => self.hr_quests.six_stars.get_mut(idx),
-            _ => None,
-        };
-
-        let quest = match quest {
+        let quest = match self.get_quests_mut(is_hr, self.selected_quest_rank).and_then(|q| q.get_mut(idx)) {
             Some(q) => q,
             None => return,
         };
 
-        let mut changed = false;
         let mut quest_id = quest.quest_id;
         let mut quest_number = quest.quest_number;
         let mut key_quest = quest.key_quest;
         let mut urgent_quest = quest.urgent_quest;
         let mut unknown = quest.unknown;
+        let mut changed = false;
 
         egui::Grid::new("quest_details_grid").show(ui, |ui| {
             ui.label("Quest ID:");
-            if ui.add(egui::DragValue::new(&mut quest_id)).changed() {
-                changed = true;
-            }
+            changed |= ui.add(egui::DragValue::new(&mut quest_id)).changed();
             ui.end_row();
 
             ui.label("Quest Number:");
-            if ui.add(egui::DragValue::new(&mut quest_number)).changed() {
-                changed = true;
-            }
+            changed |= ui.add(egui::DragValue::new(&mut quest_number)).changed();
             ui.end_row();
 
             ui.label("Key Quest:");
-            if ui.add(egui::DragValue::new(&mut key_quest).clamp_range(0..=1)).changed() {
-                changed = true;
-            }
+            changed |= ui.add(egui::DragValue::new(&mut key_quest).clamp_range(0..=1)).changed();
             ui.end_row();
 
             ui.label("Urgent Quest:");
-            if ui.add(egui::DragValue::new(&mut urgent_quest).clamp_range(0..=1)).changed() {
-                changed = true;
-            }
+            changed |= ui.add(egui::DragValue::new(&mut urgent_quest).clamp_range(0..=1)).changed();
             ui.end_row();
 
             ui.label("Unknown:");
-            if ui.add(egui::DragValue::new(&mut unknown)).changed() {
-                changed = true;
-            }
+            changed |= ui.add(egui::DragValue::new(&mut unknown)).changed();
             ui.end_row();
         });
 
@@ -204,196 +249,7 @@ impl MhfdatApp {
             quest.key_quest = key_quest;
             quest.urgent_quest = urgent_quest;
             quest.unknown = unknown;
-            self.hr_quests_modified = true;
-        }
-    }
-
-    fn show_gr_quests(&mut self, ui: &mut egui::Ui) {
-        let ranks = ["G1", "G2", "G3", "G4", "G5", "G6", "G7"];
-        
-        ui.horizontal(|ui| {
-            for (i, name) in ranks.iter().enumerate() {
-                if ui.selectable_label(self.selected_quest_rank == i, *name).clicked() {
-                    self.selected_quest_rank = i;
-                    self.selected_quest_index = None;
-                    self.quest_page = 0;
-                }
-            }
-        });
-        ui.separator();
-
-        let view_key = format!("gr_quests_{}", self.selected_quest_rank);
-        let view_mode = self.view_mode.get(&view_key).cloned().unwrap_or(ViewMode::List);
-
-        match view_mode {
-            ViewMode::List => self.show_gr_quest_list(ui),
-            ViewMode::Details => self.show_gr_quest_details(ui),
-        }
-    }
-
-    fn show_gr_quest_list(&mut self, ui: &mut egui::Ui) {
-        let quests = match self.selected_quest_rank {
-            0 => &self.gr_quests.g1,
-            1 => &self.gr_quests.g2,
-            2 => &self.gr_quests.g3,
-            3 => &self.gr_quests.g4,
-            4 => &self.gr_quests.g5,
-            5 => &self.gr_quests.g6,
-            6 => &self.gr_quests.g7,
-            _ => return,
-        };
-
-        let total = quests.len();
-        let page_size = 15;
-        let total_pages = (total + page_size - 1) / page_size;
-        let page = (self.quest_page as usize).min(total_pages.saturating_sub(1));
-
-        ui.label(format!("{} quests", total));
-
-        if ui.button("Add New Quest").clicked() {
-            let new_quest = QuestItem::default();
-            match self.selected_quest_rank {
-                0 => self.gr_quests.g1.push(new_quest),
-                1 => self.gr_quests.g2.push(new_quest),
-                2 => self.gr_quests.g3.push(new_quest),
-                3 => self.gr_quests.g4.push(new_quest),
-                4 => self.gr_quests.g5.push(new_quest),
-                5 => self.gr_quests.g6.push(new_quest),
-                6 => self.gr_quests.g7.push(new_quest),
-                _ => {}
-            }
-            self.gr_quests_modified = true;
-        }
-
-        MhfdatApp::pagination_controls(ui, &mut self.quest_page, total_pages);
-        ui.separator();
-
-        let start = page * page_size;
-        let end = (start + page_size).min(total);
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("gr_quest_grid")
-                .striped(true)
-                .num_columns(5)
-                .show(ui, |ui| {
-                    ui.label("ID");
-                    ui.label("Quest ID");
-                    ui.label("Quest Num");
-                    ui.label("Key");
-                    ui.label("Urgent");
-                    ui.end_row();
-
-                    let quests = match self.selected_quest_rank {
-                        0 => &self.gr_quests.g1,
-                        1 => &self.gr_quests.g2,
-                        2 => &self.gr_quests.g3,
-                        3 => &self.gr_quests.g4,
-                        4 => &self.gr_quests.g5,
-                        5 => &self.gr_quests.g6,
-                        6 => &self.gr_quests.g7,
-                        _ => return,
-                    };
-
-                    for idx in start..end {
-                        let quest = &quests[idx];
-                        let quest_id = quest.quest_id;
-                        let quest_number = quest.quest_number;
-                        let key_quest = quest.key_quest;
-                        let urgent_quest = quest.urgent_quest;
-
-                        if ui.selectable_label(false, format!("{}", idx)).clicked() {
-                            self.selected_quest_index = Some(idx);
-                            let view_key = format!("gr_quests_{}", self.selected_quest_rank);
-                            self.view_mode.insert(view_key, ViewMode::Details);
-                        }
-                        ui.label(format!("{}", quest_id));
-                        ui.label(format!("{}", quest_number));
-                        ui.label(if key_quest != 0 { "Yes" } else { "No" });
-                        ui.label(if urgent_quest != 0 { "Yes" } else { "No" });
-                        ui.end_row();
-                    }
-                });
-        });
-    }
-
-    fn show_gr_quest_details(&mut self, ui: &mut egui::Ui) {
-        let view_key = format!("gr_quests_{}", self.selected_quest_rank);
-        
-        if ui.button("← Back to List").clicked() {
-            self.view_mode.insert(view_key.clone(), ViewMode::List);
-            self.selected_quest_index = None;
-            return;
-        }
-        ui.separator();
-
-        let idx = match self.selected_quest_index {
-            Some(i) => i,
-            None => return,
-        };
-
-        let quest = match self.selected_quest_rank {
-            0 => self.gr_quests.g1.get_mut(idx),
-            1 => self.gr_quests.g2.get_mut(idx),
-            2 => self.gr_quests.g3.get_mut(idx),
-            3 => self.gr_quests.g4.get_mut(idx),
-            4 => self.gr_quests.g5.get_mut(idx),
-            5 => self.gr_quests.g6.get_mut(idx),
-            6 => self.gr_quests.g7.get_mut(idx),
-            _ => None,
-        };
-
-        let quest = match quest {
-            Some(q) => q,
-            None => return,
-        };
-
-        let mut changed = false;
-        let mut quest_id = quest.quest_id;
-        let mut quest_number = quest.quest_number;
-        let mut key_quest = quest.key_quest;
-        let mut urgent_quest = quest.urgent_quest;
-        let mut unknown = quest.unknown;
-
-        egui::Grid::new("gr_quest_details_grid").show(ui, |ui| {
-            ui.label("Quest ID:");
-            if ui.add(egui::DragValue::new(&mut quest_id)).changed() {
-                changed = true;
-            }
-            ui.end_row();
-
-            ui.label("Quest Number:");
-            if ui.add(egui::DragValue::new(&mut quest_number)).changed() {
-                changed = true;
-            }
-            ui.end_row();
-
-            ui.label("Key Quest:");
-            if ui.add(egui::DragValue::new(&mut key_quest).clamp_range(0..=1)).changed() {
-                changed = true;
-            }
-            ui.end_row();
-
-            ui.label("Urgent Quest:");
-            if ui.add(egui::DragValue::new(&mut urgent_quest).clamp_range(0..=1)).changed() {
-                changed = true;
-            }
-            ui.end_row();
-
-            ui.label("Unknown:");
-            if ui.add(egui::DragValue::new(&mut unknown)).changed() {
-                changed = true;
-            }
-            ui.end_row();
-        });
-
-        if changed {
-            quest.quest_id = quest_id;
-            quest.quest_number = quest_number;
-            quest.key_quest = key_quest;
-            quest.urgent_quest = urgent_quest;
-            quest.unknown = unknown;
-            self.gr_quests_modified = true;
+            self.set_quests_modified(is_hr);
         }
     }
 }
-

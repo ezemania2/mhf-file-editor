@@ -292,8 +292,6 @@ pub fn load_mhfjmp_bin_from_reader_with_log<R: Read + Seek>(reader: &mut R) -> i
     let strings_ptr = read_u32_le(reader)?;
     let num_strings = read_u32_le(reader)?;
 
-    eprintln!("[DEBUG] file_size={file_size} menu_entries_ptr={menu_entries_ptr} areas_ptr={areas_ptr} num_areas={num_areas} strings_ptr={strings_ptr} num_strings={num_strings}");
-
     let menu_entry_count = 24;
     let _menu_entry_size = 56;
     let mut menu_entries = Vec::with_capacity(menu_entry_count);

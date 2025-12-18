@@ -2183,7 +2183,6 @@ pub fn read_items_until_sentinel<R: Read + Seek>(reader: &mut R, offset: u64) ->
         
         // Limit maximum number of items to prevent memory issues
         if items.len() >= MAX_ITEMS {
-            println!("Warning: Maximum item limit ({}) reached", MAX_ITEMS);
             break;
         }
     }

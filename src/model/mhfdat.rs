@@ -3,6 +3,10 @@
 use serde::{Serialize, Deserialize};
 use crate::utils::equip_flags::{EquipType, WeaponType, BulletTypes, EquipableBy};
 
+fn default_padding_68() -> [u8; 68] {
+    [0u8; 68]
+}
+
 // Sharpness structures
 #[repr(C, packed)]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -29,7 +33,7 @@ pub type SharpnessData = Vec<SharpnessItem>;
 
 // Bullet Set structure (100 bytes total: 32 u8 fields + 68 bytes padding)
 #[repr(C, packed)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BulletSet {
     pub normal_lv1_capacity: u8,
     pub normal_lv2_capacity: u8,
@@ -63,6 +67,7 @@ pub struct BulletSet {
     pub paint_capacity: u8,
     pub demon_capacity: u8,
     pub armor_capacity: u8,
+    #[serde(skip, default = "default_padding_68")]
     pub _padding: [u8; 68], // Padding to make total size 100 bytes
 }
 
@@ -894,13 +899,13 @@ pub struct TowerG50WeaponParams {
 }
 
 // A single weapon's G50 data: 50 level entries
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct G50WeaponLevels {
     pub levels: Vec<TowerG50WeaponParams>, // 50 entries per weapon
 }
 
 // A weapon type's G50 data: 130 weapons
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct G50WeaponTypeData {
     pub weapons: Vec<G50WeaponLevels>, // 130 weapons per type
 }
@@ -1070,7 +1075,7 @@ pub struct QuestItem {
     pub unknown: u16,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct HRQuests {
     pub one_star: Vec<QuestItem>,
     pub two_stars: Vec<QuestItem>,
@@ -1080,7 +1085,7 @@ pub struct HRQuests {
     pub six_stars: Vec<QuestItem>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct GRQuests {
     pub g1: Vec<QuestItem>,
     pub g2: Vec<QuestItem>,

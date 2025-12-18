@@ -444,12 +444,6 @@ impl MhfdatApp {
             
             // Write weapon names after the separator
             let min_count = self.melee_weapons.len().min(self.melee_weapon_names.len()).min(self.melee_weapon_descriptions.len());
-            println!("[DEBUG] save: melee_weapons={}, names={}, descriptions={}, min_count={}", 
-                self.melee_weapons.len(), 
-                self.melee_weapon_names.len(), 
-                self.melee_weapon_descriptions.len(), 
-                min_count
-            );
             write_weapon_names(&mut file, &self.melee_weapon_names[..min_count])?;
 
             // Write melee descriptions table (4 pointers per weapon: 3 real + 1 null)
@@ -1759,73 +1753,56 @@ fn show_shop_entries(
         // Head armors
         self.debug_logs.push(format!("[DEBUG] Loading head armors at offset 0x{:X}", HEAD_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, HEAD_ARMOR_PTR as u64) {
-            println!("[DEBUG] Loaded {} head armors", armors.len());
             self.head_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, HEAD_ARMOR_NAMES_PTR, self.head_armors.len()) {
-                println!("[DEBUG] Loaded {} head armor names, first: {:?}", names.len(), names.get(0));
                 self.head_armor_names = names;
             }
             if let Ok(descs) = extract_armor_descriptions(&mut cursor, EQUIP_DESC_PTR, self.head_armors.len()) {
-                println!("[DEBUG] Loaded {} head armor descriptions, first: {:?}", descs.len(), descs.get(0));
                 self.head_armor_descriptions = descs;
             }
         }
 
-        // Répète pour chest, arms, waist, legs...
         // Chest armors
         self.debug_logs.push(format!("[DEBUG] Loading chest armors at offset 0x{:X}", BODY_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, BODY_ARMOR_PTR as u64) {
-            println!("[DEBUG] Loaded {} chest armors", armors.len());
             self.chest_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, BODY_ARMOR_NAMES_PTR, self.chest_armors.len()) {
-                println!("[DEBUG] Loaded {} chest armor names, first: {:?}", names.len(), names.get(0));
                 self.chest_armor_names = names;
             }
             if let Ok(descs) = extract_armor_descriptions(&mut cursor, EQUIP_DESC_PTR, self.chest_armors.len()) {
-                println!("[DEBUG] Loaded {} chest armor descriptions, first: {:?}", descs.len(), descs.get(0));
                 self.chest_armor_descriptions = descs;
             }
         }
-        // ...et ainsi de suite pour arms, waist, legs
         // Arms armors
         self.debug_logs.push(format!("[DEBUG] Loading arms armors at offset 0x{:X}", ARM_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, ARM_ARMOR_PTR as u64) {
-            println!("[DEBUG] Loaded {} arms armors", armors.len());
             self.arms_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, ARM_ARMOR_NAMES_PTR, self.arms_armors.len()) {
-                println!("[DEBUG] Loaded {} arms armor names, first: {:?}", names.len(), names.get(0));
                 self.arms_armor_names = names;
             }
             if let Ok(descs) = extract_armor_descriptions(&mut cursor, EQUIP_DESC_PTR, self.arms_armors.len()) {
-                println!("[DEBUG] Loaded {} arms armor descriptions, first: {:?}", descs.len(), descs.get(0));
                 self.arms_armor_descriptions = descs;
             }
         }
         // Waist armors
         self.debug_logs.push(format!("[DEBUG] Loading waist armors at offset 0x{:X}", WAIST_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, WAIST_ARMOR_PTR as u64) {
-            println!("[DEBUG] Loaded {} waist armors", armors.len());
             self.waist_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, WAIST_ARMOR_NAMES_PTR, self.waist_armors.len()) {
-                println!("[DEBUG] Loaded {} waist armor names, first: {:?}", names.len(), names.get(0));
                 self.waist_armor_names = names;
             }
             if let Ok(descs) = extract_armor_descriptions(&mut cursor, EQUIP_DESC_PTR, self.waist_armors.len()) {
-                println!("[DEBUG] Loaded {} waist armor descriptions, first: {:?}", descs.len(), descs.get(0));
                 self.waist_armor_descriptions = descs;
             }
         }
         // Legs armors
         self.debug_logs.push(format!("[DEBUG] Loading legs armors at offset 0x{:X}", LEG_ARMOR_PTR));
         if let Ok(armors) = read_equipments_until_sentinel(&mut cursor, LEG_ARMOR_PTR as u64) {
-            println!("[DEBUG] Loaded {} legs armors", armors.len());
             self.legs_armors = armors;
             if let Ok(names) = extract_armor_names(&mut cursor, LEG_ARMOR_NAMES_PTR, self.legs_armors.len()) {
-                println!("[DEBUG] Loaded {} legs armor names, first: {:?}", names.len(), names.get(0));
                 self.legs_armor_names = names;
             }
             if let Ok(descs) = extract_armor_descriptions(&mut cursor, EQUIP_DESC_PTR, self.legs_armors.len()) {
-                println!("[DEBUG] Loaded {} legs armor descriptions, first: {:?}", descs.len(), descs.get(0));
                 self.legs_armor_descriptions = descs;
             }
         }

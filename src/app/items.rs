@@ -110,6 +110,15 @@ impl MhfdatApp {
                     let _ = std::fs::write("decorations.json", json);
                 }
             }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("deco_ids.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatDecoId>>(&data) {
+                        self.deco_ids = imported;
+                        self.deco_id_count_limiter = self.deco_ids.len() as u16;
+                        self.deco_id_count_limiter_modified = true;
+                    }
+                }
+            }
         });
         // Filters
         MhfdatApp::responsive_row(ui, |ui| {
@@ -254,6 +263,14 @@ impl MhfdatApp {
                              })
                              .collect();
                          if let Ok(json) = serde_json::to_string_pretty(&export_items) { let _ = std::fs::write("items.json", json); }
+                     }
+                     if ui.button("Import from JSON").clicked() {
+                         if let Ok(data) = std::fs::read_to_string("items_raw.json") {
+                             if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatItem>>(&data) {
+                                 self.items = imported;
+                                 self.items_modified = true;
+                             }
+                         }
                      }
                  });
 
