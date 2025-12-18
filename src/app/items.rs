@@ -606,69 +606,86 @@ impl MhfdatApp {
                     ui.label("Flags:"); ui.add(egui::DragValue::new(&mut flags)); ui.end_row();
                     ui.label("Price:"); ui.add(egui::DragValue::new(&mut price)); ui.end_row();
 
+                });
+
+                // Skills section with search (like armor)
+                ui.horizontal(|ui| {
                     ui.label("Skill1:");
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[0]).desired_width(150.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[0]).hint_text("Search...").desired_width(100.0));
                     let q1 = self.deco_detail_skill_search[0].to_lowercase();
                     egui::ComboBox::from_id_source("deco_s1").selected_text(skill_name(skill_id1)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::skills::SKILL_LIST { 
-                            if q1.is_empty() || name.to_lowercase().contains(&q1) {
-                                if ui.selectable_value(&mut skill_id1, *id, *name).clicked() {} 
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::skills::SKILL_LIST { 
+                                if q1.is_empty() || name.to_lowercase().contains(&q1) {
+                                    ui.selectable_value(&mut skill_id1, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        }
+                        });
                     });
-                    ui.end_row();
-                    ui.label("Pts1:"); ui.add(egui::DragValue::new(&mut skill_pts1)); ui.end_row();
+                    ui.label("Pts:"); ui.add(egui::DragValue::new(&mut skill_pts1));
+                });
 
+                ui.horizontal(|ui| {
                     ui.label("Skill2:");
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[1]).desired_width(150.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[1]).hint_text("Search...").desired_width(100.0));
                     let q2 = self.deco_detail_skill_search[1].to_lowercase();
                     egui::ComboBox::from_id_source("deco_s2").selected_text(skill_name(skill_id2)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::skills::SKILL_LIST { 
-                            if q2.is_empty() || name.to_lowercase().contains(&q2) {
-                                if ui.selectable_value(&mut skill_id2, *id, *name).clicked() {} 
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::skills::SKILL_LIST { 
+                                if q2.is_empty() || name.to_lowercase().contains(&q2) {
+                                    ui.selectable_value(&mut skill_id2, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        }
+                        });
                     });
-                    ui.end_row();
-                    ui.label("Pts2:"); ui.add(egui::DragValue::new(&mut skill_pts2)); ui.end_row();
+                    ui.label("Pts:"); ui.add(egui::DragValue::new(&mut skill_pts2));
+                });
 
+                ui.horizontal(|ui| {
                     ui.label("Skill3:");
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[2]).desired_width(150.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[2]).hint_text("Search...").desired_width(100.0));
                     let q3 = self.deco_detail_skill_search[2].to_lowercase();
                     egui::ComboBox::from_id_source("deco_s3").selected_text(skill_name(skill_id3)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::skills::SKILL_LIST { 
-                            if q3.is_empty() || name.to_lowercase().contains(&q3) {
-                                if ui.selectable_value(&mut skill_id3, *id, *name).clicked() {} 
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::skills::SKILL_LIST { 
+                                if q3.is_empty() || name.to_lowercase().contains(&q3) {
+                                    ui.selectable_value(&mut skill_id3, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        }
+                        });
                     });
-                    ui.end_row();
-                    ui.label("Pts3:"); ui.add(egui::DragValue::new(&mut skill_pts3)); ui.end_row();
+                    ui.label("Pts:"); ui.add(egui::DragValue::new(&mut skill_pts3));
+                });
 
+                ui.horizontal(|ui| {
                     ui.label("Skill4:");
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[3]).desired_width(150.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[3]).hint_text("Search...").desired_width(100.0));
                     let q4 = self.deco_detail_skill_search[3].to_lowercase();
                     egui::ComboBox::from_id_source("deco_s4").selected_text(skill_name(skill_id4)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::skills::SKILL_LIST { 
-                            if q4.is_empty() || name.to_lowercase().contains(&q4) {
-                                if ui.selectable_value(&mut skill_id4, *id, *name).clicked() {} 
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::skills::SKILL_LIST { 
+                                if q4.is_empty() || name.to_lowercase().contains(&q4) {
+                                    ui.selectable_value(&mut skill_id4, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        }
+                        });
                     });
-                    ui.end_row();
-                    ui.label("Pts4:"); ui.add(egui::DragValue::new(&mut skill_pts4)); ui.end_row();
+                    ui.label("Pts:"); ui.add(egui::DragValue::new(&mut skill_pts4));
+                });
 
+                ui.horizontal(|ui| {
                     ui.label("Zenith:");
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[4]).desired_width(150.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[4]).hint_text("Search...").desired_width(100.0));
                     let qz = self.deco_detail_skill_search[4].to_lowercase();
                     egui::ComboBox::from_id_source("deco_zen").selected_text(crate::utils::weapon_patterns::zenith_skill_name(zen)).show_ui(ui, |ui| {
-                        for (id, name) in crate::utils::weapon_patterns::ZENITH_SKILL_LIST { 
-                            if qz.is_empty() || name.to_lowercase().contains(&qz) {
-                                if ui.selectable_value(&mut zen, *id, *name).clicked() {} 
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::weapon_patterns::ZENITH_SKILL_LIST { 
+                                if qz.is_empty() || name.to_lowercase().contains(&qz) {
+                                    ui.selectable_value(&mut zen, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        }
+                        });
                     });
-                    ui.end_row();
                 });
 
                 // Write back edited values using full struct replacement
@@ -719,74 +736,90 @@ impl MhfdatApp {
                     if !name.is_empty() { ui.label(format!("Deco Name: {}", name)); }
                 }
 
-                egui::Grid::new("deco_details_grid2").num_columns(3).show(ui, |ui| {
+                egui::Grid::new("deco_details_grid2").num_columns(2).show(ui, |ui| {
                     ui.label("Slots:"); ui.add(egui::DragValue::new(&mut slot_nb).clamp_range(0..=3)); ui.end_row();
                     ui.label("Flags:"); ui.add(egui::DragValue::new(&mut flags)); ui.end_row();
                     ui.label("Price:"); ui.add(egui::DragValue::new(&mut price)); ui.end_row();
-                    
-                    ui.label("Skill1:"); 
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[0]).desired_width(150.0));
+                });
+
+                // Skills section with search (like armor)
+                ui.horizontal(|ui| {
+                    ui.label("Skill1:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[0]).hint_text("Search...").desired_width(100.0));
                     let q1 = self.deco_detail_skill_search[0].to_lowercase();
-                    egui::ComboBox::from_id_source("deco_s1_2").selected_text(skill_name(skill_id1)).show_ui(ui, |ui| { 
-                        for (id, name) in crate::utils::skills::SKILL_LIST { 
-                            if q1.is_empty() || name.to_lowercase().contains(&q1) {
-                                if ui.selectable_value(&mut skill_id1, *id, *name).clicked() {} 
+                    egui::ComboBox::from_id_source("deco_s1_2").selected_text(skill_name(skill_id1)).show_ui(ui, |ui| {
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::skills::SKILL_LIST { 
+                                if q1.is_empty() || name.to_lowercase().contains(&q1) {
+                                    ui.selectable_value(&mut skill_id1, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        } 
-                    }); 
-                    ui.end_row();
-                    ui.label("Pts1:"); ui.add(egui::DragValue::new(&mut skill_pts1)); ui.end_row();
-                    
-                    ui.label("Skill2:"); 
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[1]).desired_width(150.0));
+                        });
+                    });
+                    ui.label("Pts:"); ui.add(egui::DragValue::new(&mut skill_pts1));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Skill2:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[1]).hint_text("Search...").desired_width(100.0));
                     let q2 = self.deco_detail_skill_search[1].to_lowercase();
-                    egui::ComboBox::from_id_source("deco_s2_2").selected_text(skill_name(skill_id2)).show_ui(ui, |ui| { 
-                        for (id, name) in crate::utils::skills::SKILL_LIST { 
-                            if q2.is_empty() || name.to_lowercase().contains(&q2) {
-                                if ui.selectable_value(&mut skill_id2, *id, *name).clicked() {} 
+                    egui::ComboBox::from_id_source("deco_s2_2").selected_text(skill_name(skill_id2)).show_ui(ui, |ui| {
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::skills::SKILL_LIST { 
+                                if q2.is_empty() || name.to_lowercase().contains(&q2) {
+                                    ui.selectable_value(&mut skill_id2, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        } 
-                    }); 
-                    ui.end_row();
-                    ui.label("Pts2:"); ui.add(egui::DragValue::new(&mut skill_pts2)); ui.end_row();
-                    
-                    ui.label("Skill3:"); 
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[2]).desired_width(150.0));
+                        });
+                    });
+                    ui.label("Pts:"); ui.add(egui::DragValue::new(&mut skill_pts2));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Skill3:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[2]).hint_text("Search...").desired_width(100.0));
                     let q3 = self.deco_detail_skill_search[2].to_lowercase();
-                    egui::ComboBox::from_id_source("deco_s3_2").selected_text(skill_name(skill_id3)).show_ui(ui, |ui| { 
-                        for (id, name) in crate::utils::skills::SKILL_LIST { 
-                            if q3.is_empty() || name.to_lowercase().contains(&q3) {
-                                if ui.selectable_value(&mut skill_id3, *id, *name).clicked() {} 
+                    egui::ComboBox::from_id_source("deco_s3_2").selected_text(skill_name(skill_id3)).show_ui(ui, |ui| {
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::skills::SKILL_LIST { 
+                                if q3.is_empty() || name.to_lowercase().contains(&q3) {
+                                    ui.selectable_value(&mut skill_id3, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        } 
-                    }); 
-                    ui.end_row();
-                    ui.label("Pts3:"); ui.add(egui::DragValue::new(&mut skill_pts3)); ui.end_row();
-                    
-                    ui.label("Skill4:"); 
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[3]).desired_width(150.0));
+                        });
+                    });
+                    ui.label("Pts:"); ui.add(egui::DragValue::new(&mut skill_pts3));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Skill4:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[3]).hint_text("Search...").desired_width(100.0));
                     let q4 = self.deco_detail_skill_search[3].to_lowercase();
-                    egui::ComboBox::from_id_source("deco_s4_2").selected_text(skill_name(skill_id4)).show_ui(ui, |ui| { 
-                        for (id, name) in crate::utils::skills::SKILL_LIST { 
-                            if q4.is_empty() || name.to_lowercase().contains(&q4) {
-                                if ui.selectable_value(&mut skill_id4, *id, *name).clicked() {} 
+                    egui::ComboBox::from_id_source("deco_s4_2").selected_text(skill_name(skill_id4)).show_ui(ui, |ui| {
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::skills::SKILL_LIST { 
+                                if q4.is_empty() || name.to_lowercase().contains(&q4) {
+                                    ui.selectable_value(&mut skill_id4, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        } 
-                    }); 
-                    ui.end_row();
-                    ui.label("Pts4:"); ui.add(egui::DragValue::new(&mut skill_pts4)); ui.end_row();
-                    
-                    ui.label("Zenith:"); 
-                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[4]).desired_width(150.0));
+                        });
+                    });
+                    ui.label("Pts:"); ui.add(egui::DragValue::new(&mut skill_pts4));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Zenith:");
+                    ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[4]).hint_text("Search...").desired_width(100.0));
                     let qz = self.deco_detail_skill_search[4].to_lowercase();
-                    egui::ComboBox::from_id_source("deco_zen_2").selected_text(crate::utils::weapon_patterns::zenith_skill_name(zen)).show_ui(ui, |ui| { 
-                        for (id, name) in crate::utils::weapon_patterns::ZENITH_SKILL_LIST { 
-                            if qz.is_empty() || name.to_lowercase().contains(&qz) {
-                                if ui.selectable_value(&mut zen, *id, *name).clicked() {} 
+                    egui::ComboBox::from_id_source("deco_zen_2").selected_text(crate::utils::weapon_patterns::zenith_skill_name(zen)).show_ui(ui, |ui| {
+                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                            for (id, name) in crate::utils::weapon_patterns::ZENITH_SKILL_LIST { 
+                                if qz.is_empty() || name.to_lowercase().contains(&qz) {
+                                    ui.selectable_value(&mut zen, *id, format!("{} - {}", id, name));
+                                }
                             }
-                        } 
-                    }); 
-                    ui.end_row();
+                        });
+                    });
                 });
 
                 // Write back using full struct replacement
