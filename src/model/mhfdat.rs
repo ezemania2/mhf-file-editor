@@ -874,6 +874,37 @@ pub struct SigilTowerTable {
     pub item_unlock_flag4: u8,
 }
 
+// G50 Tower Weapon Parameters - 16 bytes per entry
+// Structure: Each weapon type has 130 weapon pointers, each pointing to 50 level entries
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct TowerG50WeaponParams {
+    pub model_id: u16,
+    pub sharpness_id: u8,
+    pub max_sharpness: u8,
+    pub weapon_raw: u16,
+    pub element_id: u8,
+    pub ele_damage: u8,
+    pub ailment_id: u8,
+    pub ail_damage: u8,
+    pub defense: u16,
+    pub chance_rate: u8,  // Chance to get upgraded on low cost upgrade?
+    pub unk_0d: u8,
+    pub upgrade_path: u16,
+}
+
+// A single weapon's G50 data: 50 level entries
+#[derive(Clone, Debug, Default)]
+pub struct G50WeaponLevels {
+    pub levels: Vec<TowerG50WeaponParams>, // 50 entries per weapon
+}
+
+// A weapon type's G50 data: 130 weapons
+#[derive(Clone, Debug, Default)]
+pub struct G50WeaponTypeData {
+    pub weapons: Vec<G50WeaponLevels>, // 130 weapons per type
+}
+
 #[repr(C, packed)]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct G50WUpgrade {
@@ -1026,4 +1057,36 @@ pub struct MhfdatDecoId {
     pub skill_pts4: i8,
     pub special_flags: u16,
     pub zenith_skill: u16,
+}
+
+// Quest structures
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct QuestItem {
+    pub quest_id: u16,
+    pub quest_number: u16,
+    pub key_quest: u8,
+    pub urgent_quest: u8,
+    pub unknown: u16,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct HRQuests {
+    pub one_star: Vec<QuestItem>,
+    pub two_stars: Vec<QuestItem>,
+    pub three_stars: Vec<QuestItem>,
+    pub four_stars: Vec<QuestItem>,
+    pub five_stars: Vec<QuestItem>,
+    pub six_stars: Vec<QuestItem>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GRQuests {
+    pub g1: Vec<QuestItem>,
+    pub g2: Vec<QuestItem>,
+    pub g3: Vec<QuestItem>,
+    pub g4: Vec<QuestItem>,
+    pub g5: Vec<QuestItem>,
+    pub g6: Vec<QuestItem>,
+    pub g7: Vec<QuestItem>,
 }

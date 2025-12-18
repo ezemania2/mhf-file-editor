@@ -435,4 +435,119 @@ impl MhfdatApp {
             self.bullet_sets = read_bullet_sets(&self.buffer, off as usize, 44);
         }
     }
+
+    pub fn load_quests(&mut self) {
+        use crate::model::mhfdat_pointers::{HR_QUEST_LIST_PTR, GR_QUEST_LIST_PTR};
+        use crate::core::mhfdat::{read_hr_quests, read_gr_quests};
+        
+        fn read_ptr(buffer: &[u8], ptr_offset: u32) -> Option<u32> {
+            if buffer.len() >= ptr_offset as usize + 4 {
+                Some(u32::from_le_bytes(buffer[ptr_offset as usize..ptr_offset as usize+4].try_into().unwrap()))
+            } else {
+                None
+            }
+        }
+
+        // Load HR Quests
+        if let Some(off) = read_ptr(&self.buffer, HR_QUEST_LIST_PTR) {
+            self.original_hr_quests_offset = Some(off);
+            self.hr_quests_modified = false;
+            self.hr_quests = read_hr_quests(&self.buffer, off);
+        }
+
+        // Load GR Quests
+        if let Some(off) = read_ptr(&self.buffer, GR_QUEST_LIST_PTR) {
+            self.original_gr_quests_offset = Some(off);
+            self.gr_quests_modified = false;
+            self.gr_quests = read_gr_quests(&self.buffer, off);
+        }
+    }
+
+    pub fn load_g50_weapon_upgrades(&mut self) {
+        use crate::model::mhfdat_pointers::{
+            G50_MELEE_WEAPON_UPGRADE_PTR, G50_RANGED_WEAPON_UPGRADE_PTR,
+            G50_MELEE_WEAPON_UPGRADE_COUNT_LIMITER_PTR, G50_RANGED_WEAPON_UPGRADE_COUNT_LIMITER_PTR
+        };
+        use crate::core::mhfdat::read_g50_weapon_until_sentinel;
+        use std::io::Cursor;
+        
+        fn read_ptr(buffer: &[u8], ptr_offset: u32) -> Option<u32> {
+            if buffer.len() >= ptr_offset as usize + 4 {
+                Some(u32::from_le_bytes(buffer[ptr_offset as usize..ptr_offset as usize+4].try_into().unwrap()))
+            } else {
+                None
+            }
+        }
+        
+        fn read_u16_val(buffer: &[u8], offset: u32) -> u16 {
+            if buffer.len() >= offset as usize + 2 {
+                u16::from_le_bytes(buffer[offset as usize..offset as usize+2].try_into().unwrap())
+            } else {
+                0
+            }
+        }
+
+        // Load G50 Melee Weapon Upgrades
+        if let Some(off) = read_ptr(&self.buffer, G50_MELEE_WEAPON_UPGRADE_PTR) {
+            self.original_g50_melee_weapon_upgrades_offset = Some(off);
+            self.g50_melee_weapon_upgrades_modified = false;
+            // Read counter first to know how many entries to read
+            let count = read_u16_val(&self.buffer, G50_MELEE_WEAPON_UPGRADE_COUNT_LIMITER_PTR) as usize;
+            self.g50_melee_count_limiter = count as u16;
+            self.g50_melee_count_limiter_modified = false;
+            
+            let mut cursor = Cursor::new(self.buffer.clone());
+            if let Ok(entries) = crate::core::mhfdat::read_g50_weapon_by_count(&mut cursor, off as u64, count) {
+                self.g50_melee_weapon_upgrades = entries;
+            }
+        }
+
+        // Load G50 Ranged Weapon Upgrades
+        if let Some(off) = read_ptr(&self.buffer, G50_RANGED_WEAPON_UPGRADE_PTR) {
+            self.original_g50_ranged_weapon_upgrades_offset = Some(off);
+            self.g50_ranged_weapon_upgrades_modified = false;
+            // Read counter first to know how many entries to read
+            let count = read_u16_val(&self.buffer, G50_RANGED_WEAPON_UPGRADE_COUNT_LIMITER_PTR) as usize;
+            self.g50_ranged_count_limiter = count as u16;
+            self.g50_ranged_count_limiter_modified = false;
+            
+            let mut cursor = Cursor::new(self.buffer.clone());
+            if let Ok(entries) = crate::core::mhfdat::read_g50_weapon_by_count(&mut cursor, off as u64, count) {
+                self.g50_ranged_weapon_upgrades = entries;
+            }
+        }
+    }
+
+    pub fn load_g50_tower_params(&mut self) {
+        use crate::model::mhfdat_pointers::*;
+        use crate::core::mhfdat::read_tower_g50_weapon_type;
+        
+        let ptrs = [
+            SWORD_AND_SHIELD_G50_TOWER_PARAMS_PTR,
+            DUAL_BLADES_G50_TOWER_PARAMS_PTR,
+            GREAT_SWORD_G50_TOWER_PARAMS_PTR,
+            LONG_SWORD_G50_TOWER_PARAMS_PTR,
+            LANCE_G50_TOWER_PARAMS_PTR,
+            GUNLANCE_G50_TOWER_PARAMS_PTR,
+            HAMMER_G50_TOWER_PARAMS_PTR,
+            HUNTING_HORN_G50_TOWER_PARAMS_PTR,
+            HEAVY_BOWGUN_G50_TOWER_PARAMS_PTR,
+            LIGHT_BOWGUN_G50_TOWER_PARAMS_PTR,
+            BOW_G50_TOWER_PARAMS_PTR,
+            TONFA_G50_TOWER_PARAMS_PTR,
+            SWITCH_AXE_G50_TOWER_PARAMS_PTR,
+            MAGNET_SPIKE_G50_TOWER_PARAMS_PTR,
+        ];
+        
+        for (i, &ptr_offset) in ptrs.iter().enumerate() {
+            if self.buffer.len() >= ptr_offset as usize + 4 {
+                let ptr_table_offset = u32::from_le_bytes(
+                    self.buffer[ptr_offset as usize..ptr_offset as usize + 4].try_into().unwrap()
+                );
+                self.original_g50_tower_params_offsets[i] = Some(ptr_table_offset);
+                self.g50_tower_params_modified[i] = false;
+                self.g50_tower_params[i] = read_tower_g50_weapon_type(&self.buffer, ptr_table_offset as usize);
+            }
+        }
+    }
 }

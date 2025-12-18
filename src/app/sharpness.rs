@@ -61,37 +61,39 @@ impl MhfdatApp {
             return;
         }
 
-        ui.label(format!("Total sharpness entries: {}", sharpness_data.len()));
+        let total = sharpness_data.len();
+        let page_size = 15;
+        let total_pages = (total + page_size - 1) / page_size;
+        let page = (self.sharpness_page as usize).min(total_pages.saturating_sub(1));
+        
+        ui.label(format!("Total sharpness entries: {}", total));
+        MhfdatApp::pagination_controls(ui, &mut self.sharpness_page, total_pages);
         ui.separator();
 
-        // Sharpness list
-        egui::CollapsingHeader::new(format!("Sharpness List ({} entries)", sharpness_data.len()))
-            .default_open(true)
-            .show(ui, |ui| {
-                MhfdatApp::list_scroll(ui, "sharpness_list_scroll", |ui| {
-                    egui::Grid::new("sharpness_list_grid")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.label("ID");
-                            ui.label("Preview");
-                            ui.end_row();
+        let start = page * page_size;
+        let end = (start + page_size).min(total);
 
-                            for (idx, item) in sharpness_data.iter().enumerate() {
-                                let selected = self.selected_sharpness_id == Some(idx);
-                                if ui.selectable_label(selected, format!("{}", idx)).clicked() {
-                                    self.selected_sharpness_id = Some(idx);
-                                    if !self.view_mode.contains_key("sharpness") {
-                                        self.view_mode.insert("sharpness".to_string(), ViewMode::List);
-                                    }
-                                    *self.view_mode.get_mut("sharpness").unwrap() = ViewMode::Details;
-                                }
-                                // Mini preview bar
-                                Self::render_mini_sharpness_bar(ui, item);
-                                ui.end_row();
-                            }
-                        });
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("sharpness_list_grid")
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label("ID");
+                    ui.label("Preview");
+                    ui.end_row();
+
+                    for idx in start..end {
+                        let item = &sharpness_data[idx];
+                        let selected = self.selected_sharpness_id == Some(idx);
+                        if ui.selectable_label(selected, format!("{}", idx)).clicked() {
+                            self.selected_sharpness_id = Some(idx);
+                            self.view_mode.insert("sharpness".to_string(), ViewMode::Details);
+                        }
+                        // Mini preview bar
+                        Self::render_mini_sharpness_bar(ui, item);
+                        ui.end_row();
+                    }
                 });
-            });
+        });
     }
 
     fn show_sharpness_details_view(&mut self, ui: &mut egui::Ui) {

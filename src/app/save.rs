@@ -531,6 +531,57 @@ impl MhfdatApp {
             self.original_bullet_sets_offset.unwrap_or(0)
         };
 
+        // 12c) HR Quests data block - write only if modified
+        use crate::core::mhfdat::{write_hr_quests_block, write_gr_quests_block};
+        let (hr_quests_offset, hr_offsets) = if self.hr_quests_modified {
+            let base_offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let (block, rel_offsets) = write_hr_quests_block(&self.hr_quests)?;
+            writer.write_all(&block)?;
+            // Calculate absolute offsets
+            let abs_offsets: [u32; 6] = [
+                base_offset + rel_offsets[0],
+                base_offset + rel_offsets[1],
+                base_offset + rel_offsets[2],
+                base_offset + rel_offsets[3],
+                base_offset + rel_offsets[4],
+                base_offset + rel_offsets[5],
+            ];
+            (base_offset, abs_offsets)
+        } else {
+            (self.original_hr_quests_offset.unwrap_or(0), [0u32; 6])
+        };
+
+        // 12d) GR Quests data block - write only if modified
+        let gr_quests_offset = if self.gr_quests_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let block = write_gr_quests_block(&self.gr_quests, offset)?;
+            writer.write_all(&block)?;
+            offset
+        } else {
+            self.original_gr_quests_offset.unwrap_or(0)
+        };
+
+        // 12e) G50 Melee Weapon Upgrades - write only if modified
+        use crate::core::mhfdat::write_g50_weapon_upgrades_block;
+        let g50_melee_offset = if self.g50_melee_weapon_upgrades_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let block = write_g50_weapon_upgrades_block(&self.g50_melee_weapon_upgrades)?;
+            writer.write_all(&block)?;
+            offset
+        } else {
+            self.original_g50_melee_weapon_upgrades_offset.unwrap_or(0)
+        };
+
+        // 12f) G50 Ranged Weapon Upgrades - write only if modified
+        let g50_ranged_offset = if self.g50_ranged_weapon_upgrades_modified {
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let block = write_g50_weapon_upgrades_block(&self.g50_ranged_weapon_upgrades)?;
+            writer.write_all(&block)?;
+            offset
+        } else {
+            self.original_g50_ranged_weapon_upgrades_offset.unwrap_or(0)
+        };
+
         // 13) Weapon names and descriptions tables - écrire seulement si modifié
         // Melee names
         let melee_names_count = self.melee_weapons.len().min(self.melee_weapon_names.len()).min(self.melee_weapon_descriptions.len());
@@ -855,6 +906,81 @@ impl MhfdatApp {
             use crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR;
             writer.seek(SeekFrom::Start(DECO_ID_COUNT_LIMITER_PTR as u64))?;
             writer.write_all(&self.deco_id_count_limiter.to_le_bytes())?;
+        }
+
+        // Update HR quests pointers if modified
+        if self.hr_quests_modified {
+            use crate::model::mhfdat_pointers::HR_QUEST_LIST_PTR;
+            writer.seek(SeekFrom::Start(HR_QUEST_LIST_PTR as u64))?;
+            for off in &hr_offsets {
+                writer.write_all(&off.to_le_bytes())?;
+            }
+        }
+
+        // Update GR quests pointer if modified
+        // GR_QUEST_LIST_PTR contains the address of G7 data directly
+        if self.gr_quests_modified {
+            use crate::model::mhfdat_pointers::GR_QUEST_LIST_PTR;
+            writer.seek(SeekFrom::Start(GR_QUEST_LIST_PTR as u64))?;
+            writer.write_all(&gr_quests_offset.to_le_bytes())?;
+        }
+
+        // Update G50 Melee Weapon Upgrades pointer and limiter if modified
+        if self.g50_melee_weapon_upgrades_modified {
+            use crate::model::mhfdat_pointers::G50_MELEE_WEAPON_UPGRADE_PTR;
+            writer.seek(SeekFrom::Start(G50_MELEE_WEAPON_UPGRADE_PTR as u64))?;
+            writer.write_all(&g50_melee_offset.to_le_bytes())?;
+        }
+        if self.g50_melee_count_limiter_modified {
+            use crate::model::mhfdat_pointers::G50_MELEE_WEAPON_UPGRADE_COUNT_LIMITER_PTR;
+            writer.seek(SeekFrom::Start(G50_MELEE_WEAPON_UPGRADE_COUNT_LIMITER_PTR as u64))?;
+            writer.write_all(&self.g50_melee_count_limiter.to_le_bytes())?;
+        }
+
+        // Update G50 Ranged Weapon Upgrades pointer and limiter if modified
+        if self.g50_ranged_weapon_upgrades_modified {
+            use crate::model::mhfdat_pointers::G50_RANGED_WEAPON_UPGRADE_PTR;
+            writer.seek(SeekFrom::Start(G50_RANGED_WEAPON_UPGRADE_PTR as u64))?;
+            writer.write_all(&g50_ranged_offset.to_le_bytes())?;
+        }
+        if self.g50_ranged_count_limiter_modified {
+            use crate::model::mhfdat_pointers::G50_RANGED_WEAPON_UPGRADE_COUNT_LIMITER_PTR;
+            writer.seek(SeekFrom::Start(G50_RANGED_WEAPON_UPGRADE_COUNT_LIMITER_PTR as u64))?;
+            writer.write_all(&self.g50_ranged_count_limiter.to_le_bytes())?;
+        }
+
+        // G50 Tower Params - write data blocks and update pointers if modified
+        use crate::model::mhfdat_pointers::*;
+        use crate::core::mhfdat::write_tower_g50_weapon_type;
+        
+        let tower_ptrs = [
+            SWORD_AND_SHIELD_G50_TOWER_PARAMS_PTR,
+            DUAL_BLADES_G50_TOWER_PARAMS_PTR,
+            GREAT_SWORD_G50_TOWER_PARAMS_PTR,
+            LONG_SWORD_G50_TOWER_PARAMS_PTR,
+            LANCE_G50_TOWER_PARAMS_PTR,
+            GUNLANCE_G50_TOWER_PARAMS_PTR,
+            HAMMER_G50_TOWER_PARAMS_PTR,
+            HUNTING_HORN_G50_TOWER_PARAMS_PTR,
+            HEAVY_BOWGUN_G50_TOWER_PARAMS_PTR,
+            LIGHT_BOWGUN_G50_TOWER_PARAMS_PTR,
+            BOW_G50_TOWER_PARAMS_PTR,
+            TONFA_G50_TOWER_PARAMS_PTR,
+            SWITCH_AXE_G50_TOWER_PARAMS_PTR,
+            MAGNET_SPIKE_G50_TOWER_PARAMS_PTR,
+        ];
+        
+        for i in 0..14 {
+            if self.g50_tower_params_modified[i] {
+                let base_offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let (ptr_table, data_block) = write_tower_g50_weapon_type(&self.g50_tower_params[i], base_offset)?;
+                writer.write_all(&ptr_table)?;
+                writer.write_all(&data_block)?;
+                // Update main pointer
+                writer.seek(SeekFrom::Start(tower_ptrs[i] as u64))?;
+                writer.write_all(&base_offset.to_le_bytes())?;
+                writer.seek(SeekFrom::End(0))?;
+            }
         }
 
         Ok(())

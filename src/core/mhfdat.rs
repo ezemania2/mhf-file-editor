@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom, Result, Read, Cursor};
-use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill, SharpnessItem, SharpnessData, BulletSet};
+use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill, SharpnessItem, SharpnessData, BulletSet, TowerG50WeaponParams};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use encoding_rs::SHIFT_JIS;
 use std::env;
@@ -757,6 +757,79 @@ pub fn read_g50_weapon_until_sentinel<R: Read + Seek>(reader: &mut R, offset: u6
     Ok(entries)
 }
 
+pub fn read_g50_weapon_by_count<R: Read + Seek>(reader: &mut R, offset: u64, count: usize) -> Result<Vec<G50WUpgrade>> {
+    let mut entries = Vec::with_capacity(count);
+    reader.seek(SeekFrom::Start(offset))?;
+    for _ in 0..count {
+        let entry = read_g50_weapon_entry(reader)?;
+        entries.push(entry);
+    }
+    Ok(entries)
+}
+
+use crate::model::mhfdat::{G50WeaponLevels, G50WeaponTypeData};
+
+// G50 Tower Weapon Params - read 130 weapon pointers, each pointing to 50 level entries
+pub fn read_tower_g50_weapon_type(buffer: &[u8], ptr_table_offset: usize) -> G50WeaponTypeData {
+    const TABLE_COUNT: usize = 130;
+    const LEVEL_COUNT: usize = 50;
+    let entry_size = std::mem::size_of::<TowerG50WeaponParams>(); // 16 bytes
+    
+    let mut weapons = Vec::with_capacity(TABLE_COUNT);
+    
+    for w in 0..TABLE_COUNT {
+        let ptr_offset = ptr_table_offset + w * 4;
+        if ptr_offset + 4 > buffer.len() {
+            break;
+        }
+        let data_offset = u32::from_le_bytes(buffer[ptr_offset..ptr_offset + 4].try_into().unwrap()) as usize;
+        
+        let mut levels = Vec::with_capacity(LEVEL_COUNT);
+        for l in 0..LEVEL_COUNT {
+            let start = data_offset + l * entry_size;
+            if start + entry_size > buffer.len() {
+                break;
+            }
+            let entry = unsafe {
+                std::ptr::read_unaligned(buffer.as_ptr().add(start) as *const TowerG50WeaponParams)
+            };
+            levels.push(entry);
+        }
+        weapons.push(G50WeaponLevels { levels });
+    }
+    
+    G50WeaponTypeData { weapons }
+}
+
+pub fn write_tower_g50_weapon_type(data: &G50WeaponTypeData, base_offset: u32) -> Result<(Vec<u8>, Vec<u8>)> {
+    let entry_size = std::mem::size_of::<TowerG50WeaponParams>();
+    let level_block_size = 50 * entry_size;
+    
+    // Calculate total data size: 130 weapons * 50 levels * 16 bytes
+    let mut data_block = Vec::new();
+    let mut ptr_table = Vec::new();
+    
+    let data_start = base_offset + (130 * 4) as u32; // After pointer table
+    
+    for (w, weapon) in data.weapons.iter().enumerate() {
+        let weapon_data_offset = data_start + (w * level_block_size) as u32;
+        ptr_table.extend_from_slice(&weapon_data_offset.to_le_bytes());
+        
+        for level in &weapon.levels {
+            let bytes = unsafe {
+                std::slice::from_raw_parts(level as *const TowerG50WeaponParams as *const u8, entry_size)
+            };
+            data_block.extend_from_slice(bytes);
+        }
+        // Pad if less than 50 levels
+        for _ in weapon.levels.len()..50 {
+            data_block.extend_from_slice(&[0u8; 16]);
+        }
+    }
+    
+    Ok((ptr_table, data_block))
+}
+
 pub fn read_mw_upgrade_until_sentinel<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<Vec<MWUpgradePath>> {
     let mut entries = Vec::new();
     reader.seek(SeekFrom::Start(offset))?;
@@ -1291,6 +1364,16 @@ pub fn write_g50_weapon_upgrade(writer: &mut impl Write, entry: &G50WUpgrade) ->
     writer.write_all(&[entry.num_material3])?;
     writer.write_all(&entry.padding3)?;
     Ok(())
+}
+
+pub fn write_g50_weapon_upgrades_block(entries: &[G50WUpgrade]) -> Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    for entry in entries {
+        write_g50_weapon_upgrade(&mut buffer, entry)?;
+    }
+    // Add sentinel (all zeros - same size as G50WUpgrade: 44 bytes)
+    buffer.write_all(&[0u8; 44])?;
+    Ok(buffer)
 }
 
 pub fn write_mw_upgrade_path(writer: &mut impl Write, entry: &MWUpgradePath) -> Result<()> {
@@ -2513,5 +2596,310 @@ pub fn write_bullet_sets_block(data: &[crate::model::mhfdat::BulletSet]) -> Resu
     for item in data {
         write_bullet_set(&mut buffer, item)?;
     }
+    Ok(buffer)
+}
+
+// Quest reading/writing functions
+use crate::model::mhfdat::{QuestItem, HRQuests, GRQuests};
+
+pub fn read_quest_item<R: Read>(reader: &mut R) -> Result<QuestItem> {
+    let mut buf = [0u8; 8];
+    reader.read_exact(&mut buf)?;
+    Ok(QuestItem {
+        quest_id: u16::from_le_bytes([buf[0], buf[1]]),
+        quest_number: u16::from_le_bytes([buf[2], buf[3]]),
+        key_quest: buf[4],
+        urgent_quest: buf[5],
+        unknown: u16::from_le_bytes([buf[6], buf[7]]),
+    })
+}
+
+pub fn write_quest_item<W: Write>(w: &mut W, item: &QuestItem) -> Result<()> {
+    w.write_all(&item.quest_id.to_le_bytes())?;
+    w.write_all(&item.quest_number.to_le_bytes())?;
+    w.write_all(&[item.key_quest])?;
+    w.write_all(&[item.urgent_quest])?;
+    w.write_all(&item.unknown.to_le_bytes())?;
+    Ok(())
+}
+
+fn is_quest_terminator(buffer: &[u8], offset: usize) -> bool {
+    if offset + 8 > buffer.len() {
+        return true;
+    }
+    let quest_id = u16::from_le_bytes([buffer[offset], buffer[offset + 1]]);
+    let quest_number = u16::from_le_bytes([buffer[offset + 2], buffer[offset + 3]]);
+    
+    // Check for padding: questId == 0 && questNumber == 0 AND 6+ zeroes in 8 bytes
+    if quest_id == 0x0000 && quest_number == 0x0000 {
+        let mut zeroes = 0;
+        for i in 0..8 {
+            if offset + i < buffer.len() && buffer[offset + i] == 0x00 {
+                zeroes += 1;
+            }
+        }
+        if zeroes >= 6 {
+            return true;
+        }
+    }
+    
+    if quest_id > 0x8000 || quest_id == 0xFFFF {
+        return true;
+    }
+    false
+}
+
+fn read_quest_list_dynamic(buffer: &[u8], start: usize) -> Vec<QuestItem> {
+    let mut items = Vec::new();
+    let mut offset = start;
+    
+    while offset + 8 <= buffer.len() && items.len() < 300 {
+        if is_quest_terminator(buffer, offset) {
+            break;
+        }
+        let mut cursor = Cursor::new(&buffer[offset..offset + 8]);
+        if let Ok(item) = read_quest_item(&mut cursor) {
+            items.push(item);
+            offset += 8;
+        } else {
+            break;
+        }
+    }
+    items
+}
+
+fn read_quest_list_by_range(buffer: &[u8], start: u32, end: u32) -> Vec<QuestItem> {
+    if end <= start {
+        return read_quest_list_dynamic(buffer, start as usize);
+    }
+    let count = ((end - start) / 8) as usize;
+    if count == 0 || count > 500 {
+        return read_quest_list_dynamic(buffer, start as usize);
+    }
+    
+    let mut items = Vec::with_capacity(count);
+    let mut offset = start as usize;
+    for _ in 0..count {
+        if offset + 8 > buffer.len() {
+            break;
+        }
+        let mut cursor = Cursor::new(&buffer[offset..offset + 8]);
+        if let Ok(item) = read_quest_item(&mut cursor) {
+            items.push(item);
+            offset += 8;
+        } else {
+            break;
+        }
+    }
+    items
+}
+
+pub fn read_hr_quests(buffer: &[u8], pointers_offset: u32) -> HRQuests {
+    let off = pointers_offset as usize;
+    if off + 24 > buffer.len() {
+        return HRQuests::default();
+    }
+    
+    // Read 6 pointers
+    let one_star_ptr = u32::from_le_bytes([buffer[off], buffer[off + 1], buffer[off + 2], buffer[off + 3]]);
+    let two_stars_ptr = u32::from_le_bytes([buffer[off + 4], buffer[off + 5], buffer[off + 6], buffer[off + 7]]);
+    let three_stars_ptr = u32::from_le_bytes([buffer[off + 8], buffer[off + 9], buffer[off + 10], buffer[off + 11]]);
+    let four_stars_ptr = u32::from_le_bytes([buffer[off + 12], buffer[off + 13], buffer[off + 14], buffer[off + 15]]);
+    let five_stars_ptr = u32::from_le_bytes([buffer[off + 16], buffer[off + 17], buffer[off + 18], buffer[off + 19]]);
+    let six_stars_ptr = u32::from_le_bytes([buffer[off + 20], buffer[off + 21], buffer[off + 22], buffer[off + 23]]);
+    
+    HRQuests {
+        one_star: read_quest_list_by_range(buffer, one_star_ptr, two_stars_ptr),
+        two_stars: read_quest_list_by_range(buffer, two_stars_ptr, three_stars_ptr),
+        three_stars: read_quest_list_by_range(buffer, three_stars_ptr, four_stars_ptr),
+        four_stars: read_quest_list_by_range(buffer, four_stars_ptr, five_stars_ptr),
+        five_stars: read_quest_list_by_range(buffer, five_stars_ptr, six_stars_ptr),
+        six_stars: read_quest_list_dynamic(buffer, six_stars_ptr as usize),
+    }
+}
+
+/// Returns the number of quest items in a GR quest list
+fn get_gr_count(buffer: &[u8], start: usize) -> usize {
+    let mut offset = start;
+    let mut count = 0;
+    
+    while offset + 8 <= buffer.len() && count < 300 {
+        let quest_id = u16::from_le_bytes([buffer[offset], buffer[offset + 1]]);
+        let quest_number = u16::from_le_bytes([buffer[offset + 2], buffer[offset + 3]]);
+        
+        if quest_id == 0x0000 && quest_number == 0x0000 {
+            // Check for padding (6+ zeroes)
+            let mut zeroes = 0;
+            for i in 0..8 {
+                if offset + i < buffer.len() && buffer[offset + i] == 0x00 {
+                    zeroes += 1;
+                }
+            }
+            if zeroes >= 6 {
+                break;
+            }
+        }
+        if quest_id == 0xFFFF || quest_id > 0x8000 {
+            break;
+        }
+        count += 1;
+        offset += 8;
+    }
+    count
+}
+
+pub fn read_gr_quests(buffer: &[u8], struct_ptr: u32) -> GRQuests {
+    // Layout: G7_ptr -> G7_data[n] -> padding[8] -> G6_ptr -> G6_data[n] -> padding[8] -> ...
+    
+    let struct_offset = struct_ptr as usize;
+    if struct_offset + 4 > buffer.len() {
+        return GRQuests::default();
+    }
+    
+    let read_ptr = |off: usize| -> usize {
+        if off + 4 > buffer.len() { return 0; }
+        u32::from_le_bytes([buffer[off], buffer[off+1], buffer[off+2], buffer[off+3]]) as usize
+    };
+    
+    // G7
+    let g7_ptr = read_ptr(struct_offset);
+    if g7_ptr == 0 || g7_ptr >= buffer.len() { return GRQuests::default(); }
+    let g7 = read_quest_list_dynamic(buffer, g7_ptr);
+    
+    // G6
+    let g6_ptr_offset = g7_ptr + g7.len() * 8 + 8;
+    let g6_ptr = read_ptr(g6_ptr_offset);
+    let g6 = if g6_ptr > 0 && g6_ptr < buffer.len() { read_quest_list_dynamic(buffer, g6_ptr) } else { Vec::new() };
+    
+    // G5
+    let g5_ptr_offset = g6_ptr + g6.len() * 8 + 8;
+    let g5_ptr = read_ptr(g5_ptr_offset);
+    let g5 = if g5_ptr > 0 && g5_ptr < buffer.len() { read_quest_list_dynamic(buffer, g5_ptr) } else { Vec::new() };
+    
+    // G4
+    let g4_ptr_offset = g5_ptr + g5.len() * 8 + 8;
+    let g4_ptr = read_ptr(g4_ptr_offset);
+    let g4 = if g4_ptr > 0 && g4_ptr < buffer.len() { read_quest_list_dynamic(buffer, g4_ptr) } else { Vec::new() };
+    
+    // G3
+    let g3_ptr_offset = g4_ptr + g4.len() * 8 + 8;
+    let g3_ptr = read_ptr(g3_ptr_offset);
+    let g3 = if g3_ptr > 0 && g3_ptr < buffer.len() { read_quest_list_dynamic(buffer, g3_ptr) } else { Vec::new() };
+    
+    // G2
+    let g2_ptr_offset = g3_ptr + g3.len() * 8 + 8;
+    let g2_ptr = read_ptr(g2_ptr_offset);
+    let g2 = if g2_ptr > 0 && g2_ptr < buffer.len() { read_quest_list_dynamic(buffer, g2_ptr) } else { Vec::new() };
+    
+    // G1
+    let g1_ptr_offset = g2_ptr + g2.len() * 8 + 8;
+    let g1_ptr = read_ptr(g1_ptr_offset);
+    let g1 = if g1_ptr > 0 && g1_ptr < buffer.len() { read_quest_list_dynamic(buffer, g1_ptr) } else { Vec::new() };
+    
+    GRQuests { g1, g2, g3, g4, g5, g6, g7 }
+}
+
+pub fn write_quest_list_block(quests: &[QuestItem]) -> Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    for quest in quests {
+        write_quest_item(&mut buffer, quest)?;
+    }
+    // Add terminator (8 zero bytes)
+    buffer.write_all(&[0u8; 8])?;
+    Ok(buffer)
+}
+
+pub fn write_hr_quests_block(hr: &HRQuests) -> Result<(Vec<u8>, [u32; 6])> {
+    let mut buffer = Vec::new();
+    let mut offsets = [0u32; 6];
+    
+    offsets[0] = buffer.len() as u32;
+    for q in &hr.one_star { write_quest_item(&mut buffer, q)?; }
+    
+    offsets[1] = buffer.len() as u32;
+    for q in &hr.two_stars { write_quest_item(&mut buffer, q)?; }
+    
+    offsets[2] = buffer.len() as u32;
+    for q in &hr.three_stars { write_quest_item(&mut buffer, q)?; }
+    
+    offsets[3] = buffer.len() as u32;
+    for q in &hr.four_stars { write_quest_item(&mut buffer, q)?; }
+    
+    offsets[4] = buffer.len() as u32;
+    for q in &hr.five_stars { write_quest_item(&mut buffer, q)?; }
+    
+    offsets[5] = buffer.len() as u32;
+    for q in &hr.six_stars { write_quest_item(&mut buffer, q)?; }
+    // Terminator for last list
+    buffer.write_all(&[0u8; 8])?;
+    
+    Ok((buffer, offsets))
+}
+
+/// Layout: [G7_ptr][G7_data][padding8][G6_ptr][G6_data][padding8]...[G1_ptr][G1_data][padding8]
+pub fn write_gr_quests_block(gr: &GRQuests, base_addr: u32) -> Result<Vec<u8>> {
+    // Calculate offsets sequentially
+    // Each section: ptr(4) + data(n*8) + padding(8)
+    let mut off = 0u32;
+    
+    let g7_ptr_off = off; off += 4;
+    let g7_data_off = off; off += gr.g7.len() as u32 * 8 + 8;
+    
+    let g6_ptr_off = off; off += 4;
+    let g6_data_off = off; off += gr.g6.len() as u32 * 8 + 8;
+    
+    let g5_ptr_off = off; off += 4;
+    let g5_data_off = off; off += gr.g5.len() as u32 * 8 + 8;
+    
+    let g4_ptr_off = off; off += 4;
+    let g4_data_off = off; off += gr.g4.len() as u32 * 8 + 8;
+    
+    let g3_ptr_off = off; off += 4;
+    let g3_data_off = off; off += gr.g3.len() as u32 * 8 + 8;
+    
+    let g2_ptr_off = off; off += 4;
+    let g2_data_off = off; off += gr.g2.len() as u32 * 8 + 8;
+    
+    let g1_ptr_off = off; off += 4;
+    let g1_data_off = off;
+    let _ = (g7_ptr_off, g6_ptr_off, g5_ptr_off, g4_ptr_off, g3_ptr_off, g2_ptr_off, g1_ptr_off); // silence warnings
+    
+    let mut buffer = Vec::new();
+    
+    // G7
+    buffer.write_all(&(base_addr + g7_data_off).to_le_bytes())?;
+    for q in &gr.g7 { write_quest_item(&mut buffer, q)?; }
+    buffer.write_all(&[0u8; 8])?;
+    
+    // G6
+    buffer.write_all(&(base_addr + g6_data_off).to_le_bytes())?;
+    for q in &gr.g6 { write_quest_item(&mut buffer, q)?; }
+    buffer.write_all(&[0u8; 8])?;
+    
+    // G5
+    buffer.write_all(&(base_addr + g5_data_off).to_le_bytes())?;
+    for q in &gr.g5 { write_quest_item(&mut buffer, q)?; }
+    buffer.write_all(&[0u8; 8])?;
+    
+    // G4
+    buffer.write_all(&(base_addr + g4_data_off).to_le_bytes())?;
+    for q in &gr.g4 { write_quest_item(&mut buffer, q)?; }
+    buffer.write_all(&[0u8; 8])?;
+    
+    // G3
+    buffer.write_all(&(base_addr + g3_data_off).to_le_bytes())?;
+    for q in &gr.g3 { write_quest_item(&mut buffer, q)?; }
+    buffer.write_all(&[0u8; 8])?;
+    
+    // G2
+    buffer.write_all(&(base_addr + g2_data_off).to_le_bytes())?;
+    for q in &gr.g2 { write_quest_item(&mut buffer, q)?; }
+    buffer.write_all(&[0u8; 8])?;
+    
+    // G1
+    buffer.write_all(&(base_addr + g1_data_off).to_le_bytes())?;
+    for q in &gr.g1 { write_quest_item(&mut buffer, q)?; }
+    buffer.write_all(&[0u8; 8])?;
+    
     Ok(buffer)
 } 

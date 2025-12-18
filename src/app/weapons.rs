@@ -57,6 +57,15 @@ impl MhfdatApp {
             if ui.selectable_label(self.weapon_tab == WeaponTab::Ranged, "Ranged Weapons").clicked() {
                 self.weapon_tab = WeaponTab::Ranged;
             }
+            if ui.selectable_label(self.weapon_tab == WeaponTab::G50Melee, "G50 Melee Upgrades").clicked() {
+                self.weapon_tab = WeaponTab::G50Melee;
+            }
+            if ui.selectable_label(self.weapon_tab == WeaponTab::G50Ranged, "G50 Ranged Upgrades").clicked() {
+                self.weapon_tab = WeaponTab::G50Ranged;
+            }
+            if ui.selectable_label(self.weapon_tab == WeaponTab::G50Tower, "G50 Tower Params").clicked() {
+                self.weapon_tab = WeaponTab::G50Tower;
+            }
         });
         ui.separator();
 
@@ -71,6 +80,24 @@ impl MhfdatApp {
                 match self.view_mode.get("ranged_weapons").unwrap_or(&ViewMode::List) {
                     ViewMode::List => self.show_ranged_weapons_list(ui),
                     ViewMode::Details => self.show_ranged_weapon_details_view(ui),
+                }
+            }
+            WeaponTab::G50Melee => {
+                match self.view_mode.get("g50_melee").unwrap_or(&ViewMode::List) {
+                    ViewMode::List => self.show_g50_melee_list(ui),
+                    ViewMode::Details => self.show_g50_melee_details(ui),
+                }
+            }
+            WeaponTab::G50Ranged => {
+                match self.view_mode.get("g50_ranged").unwrap_or(&ViewMode::List) {
+                    ViewMode::List => self.show_g50_ranged_list(ui),
+                    ViewMode::Details => self.show_g50_ranged_details(ui),
+                }
+            }
+            WeaponTab::G50Tower => {
+                match self.view_mode.get("g50_tower").unwrap_or(&ViewMode::List) {
+                    ViewMode::List => self.show_g50_tower_list(ui),
+                    ViewMode::Details => self.show_g50_tower_details(ui),
                 }
             }
         }
@@ -1489,4 +1516,521 @@ impl MhfdatApp {
             ui.label("No weapon selected");
         }
     }
-} 
+
+    // ===== G50 Melee Upgrades =====
+    pub fn show_g50_melee_list(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Add New").clicked() {
+                self.g50_melee_weapon_upgrades.push(crate::model::mhfdat::G50WUpgrade::default());
+                self.g50_melee_weapon_upgrades_modified = true;
+                self.g50_melee_count_limiter = self.g50_melee_weapon_upgrades.len() as u16;
+                self.g50_melee_count_limiter_modified = true;
+            }
+            ui.label("Search:");
+            ui.text_edit_singleline(&mut self.g50_melee_search);
+        });
+
+        let search = self.g50_melee_search.to_lowercase();
+        let filtered: Vec<(usize, String)> = self.g50_melee_weapon_upgrades.iter().enumerate()
+            .map(|(i, e)| {
+                let name = self.melee_weapon_names.get(e.weapon_id as usize).cloned().unwrap_or_default();
+                (i, name)
+            })
+            .filter(|(_, name)| search.is_empty() || name.to_lowercase().contains(&search))
+            .collect();
+
+        let total = filtered.len();
+        let page_size = 15;
+        let total_pages = (total + page_size - 1) / page_size;
+        let page = (self.g50_melee_page as usize).min(total_pages.saturating_sub(1));
+        
+        MhfdatApp::pagination_controls(ui, &mut self.g50_melee_page, total_pages);
+
+        let start = page * page_size;
+        let end = (start + page_size).min(total);
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("g50_melee_grid").striped(true).show(ui, |ui| {
+                ui.label("ID"); ui.label("Weapon ID"); ui.label("Level1"); ui.label("Level2"); ui.label("Succ Rate"); ui.label("Zenny"); ui.end_row();
+                
+                for &(i, ref weapon_name) in &filtered[start..end] {
+                    let entry = self.g50_melee_weapon_upgrades[i].clone();
+                    let weapon_id = entry.weapon_id;
+                    let level1 = entry.level1;
+                    let level2 = entry.level2;
+                    let succ_rate = entry.full_succ_rate;
+                    let zenny = entry.zenny_cost;
+                    
+                    if ui.selectable_label(false, format!("{}", i)).clicked() {
+                        self.selected_g50_melee_index = Some(i);
+                        self.view_mode.insert("g50_melee".to_string(), ViewMode::Details);
+                    }
+                    ui.label(format!("{} - {}", weapon_id, weapon_name));
+                    ui.label(format!("{}", level1));
+                    ui.label(format!("{}", level2));
+                    ui.label(format!("{}", succ_rate));
+                    ui.label(format!("{}", zenny));
+                    ui.end_row();
+                }
+            });
+        });
+    }
+
+    pub fn show_g50_melee_details(&mut self, ui: &mut egui::Ui) {
+        if ui.button("← Back to List").clicked() {
+            self.view_mode.insert("g50_melee".to_string(), ViewMode::List);
+            return;
+        }
+        
+        if let Some(idx) = self.selected_g50_melee_index {
+            if idx < self.g50_melee_weapon_upgrades.len() {
+                let entry = self.g50_melee_weapon_upgrades[idx].clone();
+                let mut weapon_id = entry.weapon_id;
+                let mut level1 = entry.level1;
+                let mut level2 = entry.level2;
+                let mut succ_rate = entry.full_succ_rate;
+                let mut zenny = entry.zenny_cost;
+                let mut mat1 = entry.upgrade_material1;
+                let mut qty1 = entry.num_material1;
+                let mut mat2 = entry.upgrade_material2;
+                let mut qty2 = entry.num_material2;
+                let mut mat3 = entry.upgrade_material3;
+                let mut qty3 = entry.num_material3;
+
+                let mut changed = false;
+
+                egui::Grid::new("g50_melee_details").show(ui, |ui| {
+                    ui.label("Weapon ID:"); 
+                    if ui.add(egui::DragValue::new(&mut weapon_id)).changed() { changed = true; }
+                    let name = self.melee_weapon_names.get(weapon_id as usize).cloned().unwrap_or_default();
+                    ui.label(&name);
+                    ui.end_row();
+
+                    ui.label("Level 1:"); if ui.add(egui::DragValue::new(&mut level1)).changed() { changed = true; } ui.end_row();
+                    ui.label("Level 2:"); if ui.add(egui::DragValue::new(&mut level2)).changed() { changed = true; } ui.end_row();
+                    ui.label("Success Rate:"); if ui.add(egui::DragValue::new(&mut succ_rate)).changed() { changed = true; } ui.end_row();
+                    ui.label("Zenny Cost:"); if ui.add(egui::DragValue::new(&mut zenny)).changed() { changed = true; } ui.end_row();
+
+                    ui.label("Material 1:"); 
+                    if ui.add(egui::DragValue::new(&mut mat1)).changed() { changed = true; }
+                    let mat1_name = self.item_names.get(mat1 as usize).cloned().unwrap_or_default();
+                    ui.label(&mat1_name);
+                    ui.label("Qty:"); if ui.add(egui::DragValue::new(&mut qty1)).changed() { changed = true; }
+                    ui.end_row();
+
+                    ui.label("Material 2:"); 
+                    if ui.add(egui::DragValue::new(&mut mat2)).changed() { changed = true; }
+                    let mat2_name = self.item_names.get(mat2 as usize).cloned().unwrap_or_default();
+                    ui.label(&mat2_name);
+                    ui.label("Qty:"); if ui.add(egui::DragValue::new(&mut qty2)).changed() { changed = true; }
+                    ui.end_row();
+
+                    ui.label("Material 3:"); 
+                    if ui.add(egui::DragValue::new(&mut mat3)).changed() { changed = true; }
+                    let mat3_name = self.item_names.get(mat3 as usize).cloned().unwrap_or_default();
+                    ui.label(&mat3_name);
+                    ui.label("Qty:"); if ui.add(egui::DragValue::new(&mut qty3)).changed() { changed = true; }
+                    ui.end_row();
+                });
+
+                if changed {
+                    let e = &mut self.g50_melee_weapon_upgrades[idx];
+                    e.weapon_id = weapon_id;
+                    e.level1 = level1;
+                    e.level2 = level2;
+                    e.full_succ_rate = succ_rate;
+                    e.zenny_cost = zenny;
+                    e.upgrade_material1 = mat1;
+                    e.num_material1 = qty1;
+                    e.upgrade_material2 = mat2;
+                    e.num_material2 = qty2;
+                    e.upgrade_material3 = mat3;
+                    e.num_material3 = qty3;
+                    self.g50_melee_weapon_upgrades_modified = true;
+                }
+            }
+        }
+    }
+
+    // ===== G50 Ranged Upgrades =====
+    pub fn show_g50_ranged_list(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Add New").clicked() {
+                self.g50_ranged_weapon_upgrades.push(crate::model::mhfdat::G50WUpgrade::default());
+                self.g50_ranged_weapon_upgrades_modified = true;
+                self.g50_ranged_count_limiter = self.g50_ranged_weapon_upgrades.len() as u16;
+                self.g50_ranged_count_limiter_modified = true;
+            }
+            ui.label("Search:");
+            ui.text_edit_singleline(&mut self.g50_ranged_search);
+        });
+
+        let search = self.g50_ranged_search.to_lowercase();
+        let filtered: Vec<(usize, String)> = self.g50_ranged_weapon_upgrades.iter().enumerate()
+            .map(|(i, e)| {
+                let name = self.ranged_weapon_names.get(e.weapon_id as usize).cloned().unwrap_or_default();
+                (i, name)
+            })
+            .filter(|(_, name)| search.is_empty() || name.to_lowercase().contains(&search))
+            .collect();
+
+        let total = filtered.len();
+        let page_size = 15;
+        let total_pages = (total + page_size - 1) / page_size;
+        let page = (self.g50_ranged_page as usize).min(total_pages.saturating_sub(1));
+        
+        MhfdatApp::pagination_controls(ui, &mut self.g50_ranged_page, total_pages);
+
+        let start = page * page_size;
+        let end = (start + page_size).min(total);
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("g50_ranged_grid").striped(true).show(ui, |ui| {
+                ui.label("ID"); ui.label("Weapon ID"); ui.label("Level1"); ui.label("Level2"); ui.label("Succ Rate"); ui.label("Zenny"); ui.end_row();
+                
+                for &(i, ref weapon_name) in &filtered[start..end] {
+                    let entry = self.g50_ranged_weapon_upgrades[i].clone();
+                    let weapon_id = entry.weapon_id;
+                    let level1 = entry.level1;
+                    let level2 = entry.level2;
+                    let succ_rate = entry.full_succ_rate;
+                    let zenny = entry.zenny_cost;
+                    
+                    if ui.selectable_label(false, format!("{}", i)).clicked() {
+                        self.selected_g50_ranged_index = Some(i);
+                        self.view_mode.insert("g50_ranged".to_string(), ViewMode::Details);
+                    }
+                    ui.label(format!("{} - {}", weapon_id, weapon_name));
+                    ui.label(format!("{}", level1));
+                    ui.label(format!("{}", level2));
+                    ui.label(format!("{}", succ_rate));
+                    ui.label(format!("{}", zenny));
+                    ui.end_row();
+                }
+            });
+        });
+    }
+
+    pub fn show_g50_ranged_details(&mut self, ui: &mut egui::Ui) {
+        if ui.button("← Back to List").clicked() {
+            self.view_mode.insert("g50_ranged".to_string(), ViewMode::List);
+            return;
+        }
+        
+        if let Some(idx) = self.selected_g50_ranged_index {
+            if idx < self.g50_ranged_weapon_upgrades.len() {
+                let entry = self.g50_ranged_weapon_upgrades[idx].clone();
+                let mut weapon_id = entry.weapon_id;
+                let mut level1 = entry.level1;
+                let mut level2 = entry.level2;
+                let mut succ_rate = entry.full_succ_rate;
+                let mut zenny = entry.zenny_cost;
+                let mut mat1 = entry.upgrade_material1;
+                let mut qty1 = entry.num_material1;
+                let mut mat2 = entry.upgrade_material2;
+                let mut qty2 = entry.num_material2;
+                let mut mat3 = entry.upgrade_material3;
+                let mut qty3 = entry.num_material3;
+
+                let mut changed = false;
+
+                egui::Grid::new("g50_ranged_details").show(ui, |ui| {
+                    ui.label("Weapon ID:"); 
+                    if ui.add(egui::DragValue::new(&mut weapon_id)).changed() { changed = true; }
+                    let name = self.ranged_weapon_names.get(weapon_id as usize).cloned().unwrap_or_default();
+                    ui.label(&name);
+                    ui.end_row();
+
+                    ui.label("Level 1:"); if ui.add(egui::DragValue::new(&mut level1)).changed() { changed = true; } ui.end_row();
+                    ui.label("Level 2:"); if ui.add(egui::DragValue::new(&mut level2)).changed() { changed = true; } ui.end_row();
+                    ui.label("Success Rate:"); if ui.add(egui::DragValue::new(&mut succ_rate)).changed() { changed = true; } ui.end_row();
+                    ui.label("Zenny Cost:"); if ui.add(egui::DragValue::new(&mut zenny)).changed() { changed = true; } ui.end_row();
+
+                    ui.label("Material 1:"); 
+                    if ui.add(egui::DragValue::new(&mut mat1)).changed() { changed = true; }
+                    let mat1_name = self.item_names.get(mat1 as usize).cloned().unwrap_or_default();
+                    ui.label(&mat1_name);
+                    ui.label("Qty:"); if ui.add(egui::DragValue::new(&mut qty1)).changed() { changed = true; }
+                    ui.end_row();
+
+                    ui.label("Material 2:"); 
+                    if ui.add(egui::DragValue::new(&mut mat2)).changed() { changed = true; }
+                    let mat2_name = self.item_names.get(mat2 as usize).cloned().unwrap_or_default();
+                    ui.label(&mat2_name);
+                    ui.label("Qty:"); if ui.add(egui::DragValue::new(&mut qty2)).changed() { changed = true; }
+                    ui.end_row();
+
+                    ui.label("Material 3:"); 
+                    if ui.add(egui::DragValue::new(&mut mat3)).changed() { changed = true; }
+                    let mat3_name = self.item_names.get(mat3 as usize).cloned().unwrap_or_default();
+                    ui.label(&mat3_name);
+                    ui.label("Qty:"); if ui.add(egui::DragValue::new(&mut qty3)).changed() { changed = true; }
+                    ui.end_row();
+                });
+
+                if changed {
+                    let e = &mut self.g50_ranged_weapon_upgrades[idx];
+                    e.weapon_id = weapon_id;
+                    e.level1 = level1;
+                    e.level2 = level2;
+                    e.full_succ_rate = succ_rate;
+                    e.zenny_cost = zenny;
+                    e.upgrade_material1 = mat1;
+                    e.num_material1 = qty1;
+                    e.upgrade_material2 = mat2;
+                    e.num_material2 = qty2;
+                    e.upgrade_material3 = mat3;
+                    e.num_material3 = qty3;
+                    self.g50_ranged_weapon_upgrades_modified = true;
+                }
+            }
+        }
+    }
+
+    // ===== G50 Tower Params =====
+    fn get_g50_tower_type_name(idx: usize) -> &'static str {
+        match idx {
+            0 => "Sword and Shield",
+            1 => "Dual Blades",
+            2 => "Great Sword",
+            3 => "Long Sword",
+            4 => "Lance",
+            5 => "Gunlance",
+            6 => "Hammer",
+            7 => "Hunting Horn",
+            8 => "Heavy Bowgun",
+            9 => "Light Bowgun",
+            10 => "Bow",
+            11 => "Tonfa",
+            12 => "Switch Axe",
+            13 => "Magnet Spike",
+            _ => "Unknown",
+        }
+    }
+
+    fn get_weapon_name_for_g50(&self, type_idx: usize, tower_g50_param_id: usize) -> String {
+        // Map G50 tower type index to class_id based on weapon_patterns.rs:
+        // 0x00=GS, 0x01=HBG, 0x02=Hammer, 0x03=Lance, 0x04=SnS, 0x05=LBG, 0x06=DS, 0x07=LS, 
+        // 0x08=HH, 0x09=GL, 0x0A=Bow, 0x0B=Tonfa, 0x0C=SA, 0x0D=MS
+        // G50 Tower order: 0=SnS, 1=DS, 2=GS, 3=LS, 4=Lance, 5=GL, 6=Hammer, 7=HH, 8=HBG, 9=LBG, 10=Bow, 11=Tonfa, 12=SA, 13=MS
+        let class_id: u8 = match type_idx {
+            0 => 0x04,  // Sword and Shield
+            1 => 0x06,  // Dual Blades
+            2 => 0x00,  // Great Sword
+            3 => 0x07,  // Long Sword
+            4 => 0x03,  // Lance
+            5 => 0x09,  // Gunlance
+            6 => 0x02,  // Hammer
+            7 => 0x08,  // Hunting Horn
+            8 => 0x01,  // Heavy Bowgun
+            9 => 0x05,  // Light Bowgun
+            10 => 0x0A, // Bow
+            11 => 0x0B, // Tonfa
+            12 => 0x0C, // Switch Axe
+            13 => 0x0D, // Magnet Spike
+            _ => 0xFF,
+        };
+        
+        let is_ranged = matches!(type_idx, 8 | 9 | 10);
+        
+        // Find weapon where class_id AND tower_g50_param_id match
+        if is_ranged {
+            for idx in 0..self.ranged_weapons.len() {
+                let weapon_ptr = self.ranged_weapons.as_ptr().wrapping_add(idx);
+                let weapon: crate::model::mhfdat::MhfdatRangedWeapon = unsafe { std::ptr::read_unaligned(weapon_ptr) };
+                if weapon.class_id == class_id && weapon.tower_g50_param_id as usize == tower_g50_param_id {
+                    return self.ranged_weapon_names.get(idx)
+                        .cloned()
+                        .unwrap_or_else(|| format!("{} #{}", Self::get_g50_tower_type_name(type_idx), tower_g50_param_id));
+                }
+            }
+            format!("{} #{}", Self::get_g50_tower_type_name(type_idx), tower_g50_param_id)
+        } else {
+            for idx in 0..self.melee_weapons.len() {
+                let weapon_ptr = self.melee_weapons.as_ptr().wrapping_add(idx);
+                let weapon: crate::model::mhfdat::MhfdatMeleeWeapon = unsafe { std::ptr::read_unaligned(weapon_ptr) };
+                if weapon.class_id == class_id && weapon.tower_g50_param_id as usize == tower_g50_param_id {
+                    return self.melee_weapon_names.get(idx)
+                        .cloned()
+                        .unwrap_or_else(|| format!("{} #{}", Self::get_g50_tower_type_name(type_idx), tower_g50_param_id));
+                }
+            }
+            format!("{} #{}", Self::get_g50_tower_type_name(type_idx), tower_g50_param_id)
+        }
+    }
+
+    pub fn show_g50_tower_list(&mut self, ui: &mut egui::Ui) {
+        // Weapon type selector
+        ui.horizontal(|ui| {
+            ui.label("Weapon Type:");
+            egui::ComboBox::from_id_source("g50_tower_type")
+                .selected_text(Self::get_g50_tower_type_name(self.selected_g50_tower_type))
+                .show_ui(ui, |ui| {
+                    for i in 0..14 {
+                        if ui.selectable_label(self.selected_g50_tower_type == i, Self::get_g50_tower_type_name(i)).clicked() {
+                            self.selected_g50_tower_type = i;
+                            self.g50_tower_page = 0;
+                            self.selected_g50_tower_weapon = None;
+                        }
+                    }
+                });
+        });
+
+        let weapon_type_data = &self.g50_tower_params[self.selected_g50_tower_type];
+        let total = weapon_type_data.weapons.len();
+        let page_size = 15;
+        let total_pages = (total + page_size - 1) / page_size;
+        let page = (self.g50_tower_page as usize).min(total_pages.saturating_sub(1));
+
+        ui.label(format!("Total weapons: {} (50 levels each)", total));
+        MhfdatApp::pagination_controls(ui, &mut self.g50_tower_page, total_pages);
+        ui.separator();
+
+        let start = page * page_size;
+        let end = (start + page_size).min(total);
+
+        // Pre-collect weapon info to avoid borrow issues
+        let type_idx = self.selected_g50_tower_type;
+        let weapon_infos: Vec<(usize, usize, String)> = (start..end)
+            .map(|w| {
+                let levels_count = weapon_type_data.weapons[w].levels.len();
+                let weapon_name = self.get_weapon_name_for_g50(type_idx, w);
+                (w, levels_count, weapon_name)
+            })
+            .collect();
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("g50_tower_grid").striped(true).show(ui, |ui| {
+                ui.label("ID"); ui.label("Weapon Name"); ui.label("Levels"); ui.end_row();
+                
+                for (w, levels_count, weapon_name) in &weapon_infos {
+                    if ui.selectable_label(false, format!("{}", w)).clicked() {
+                        self.selected_g50_tower_weapon = Some(*w);
+                        self.selected_g50_tower_level = None;
+                        self.view_mode.insert("g50_tower".to_string(), ViewMode::Details);
+                    }
+                    ui.label(weapon_name);
+                    ui.label(format!("{} levels", levels_count));
+                    ui.end_row();
+                }
+            });
+        });
+    }
+
+    pub fn show_g50_tower_details(&mut self, ui: &mut egui::Ui) {
+        let type_idx = self.selected_g50_tower_type;
+        
+        if let Some(weapon_idx) = self.selected_g50_tower_weapon {
+            if let Some(level_idx) = self.selected_g50_tower_level {
+                // Show level details
+                if ui.button("← Back to Levels").clicked() {
+                    self.selected_g50_tower_level = None;
+                    return;
+                }
+                
+                if weapon_idx < self.g50_tower_params[type_idx].weapons.len() {
+                    let weapon = &self.g50_tower_params[type_idx].weapons[weapon_idx];
+                    if level_idx < weapon.levels.len() {
+                        let entry_ptr = &weapon.levels[level_idx] as *const _;
+                        let entry: crate::model::mhfdat::TowerG50WeaponParams = unsafe { std::ptr::read_unaligned(entry_ptr) };
+                        
+                        let mut model_id = entry.model_id;
+                        let mut sharpness_id = entry.sharpness_id;
+                        let mut max_sharpness = entry.max_sharpness;
+                        let mut weapon_raw = entry.weapon_raw;
+                        let mut element_id = entry.element_id;
+                        let mut ele_damage = entry.ele_damage;
+                        let mut ailment_id = entry.ailment_id;
+                        let mut ail_damage = entry.ail_damage;
+                        let mut defense = entry.defense;
+                        let mut chance_rate = entry.chance_rate;
+                        let mut unk_0d = entry.unk_0d;
+                        let mut upgrade_path = entry.upgrade_path;
+
+                        let mut changed = false;
+                        let weapon_name = self.get_weapon_name_for_g50(type_idx, weapon_idx);
+
+                        ui.label(format!("{} - {} - Level {}", Self::get_g50_tower_type_name(type_idx), weapon_name, level_idx));
+                        ui.separator();
+
+                        egui::Grid::new("g50_tower_level_details").show(ui, |ui| {
+                            ui.label("Model ID:"); if ui.add(egui::DragValue::new(&mut model_id)).changed() { changed = true; } ui.end_row();
+                            ui.label("Sharpness ID:"); if ui.add(egui::DragValue::new(&mut sharpness_id)).changed() { changed = true; } ui.end_row();
+                            ui.label("Max Sharpness:"); if ui.add(egui::DragValue::new(&mut max_sharpness)).changed() { changed = true; } ui.end_row();
+                            ui.label("Weapon Raw:"); if ui.add(egui::DragValue::new(&mut weapon_raw)).changed() { changed = true; } ui.end_row();
+                            ui.label("Element ID:"); if ui.add(egui::DragValue::new(&mut element_id)).changed() { changed = true; } ui.end_row();
+                            ui.label("Ele Damage:"); if ui.add(egui::DragValue::new(&mut ele_damage)).changed() { changed = true; } ui.end_row();
+                            ui.label("Ailment ID:"); if ui.add(egui::DragValue::new(&mut ailment_id)).changed() { changed = true; } ui.end_row();
+                            ui.label("Ail Damage:"); if ui.add(egui::DragValue::new(&mut ail_damage)).changed() { changed = true; } ui.end_row();
+                            ui.label("Defense:"); if ui.add(egui::DragValue::new(&mut defense)).changed() { changed = true; } ui.end_row();
+                            ui.label("Chance Rate:"); if ui.add(egui::DragValue::new(&mut chance_rate)).changed() { changed = true; } ui.end_row();
+                            ui.label("Unknown 0D:"); if ui.add(egui::DragValue::new(&mut unk_0d)).changed() { changed = true; } ui.end_row();
+                            ui.label("Upgrade Path:"); if ui.add(egui::DragValue::new(&mut upgrade_path)).changed() { changed = true; } ui.end_row();
+                        });
+
+                        if changed {
+                            use crate::model::mhfdat::TowerG50WeaponParams;
+                            self.g50_tower_params[type_idx].weapons[weapon_idx].levels[level_idx] = TowerG50WeaponParams {
+                                model_id,
+                                sharpness_id,
+                                max_sharpness,
+                                weapon_raw,
+                                element_id,
+                                ele_damage,
+                                ailment_id,
+                                ail_damage,
+                                defense,
+                                chance_rate,
+                                unk_0d,
+                                upgrade_path,
+                            };
+                            self.g50_tower_params_modified[type_idx] = true;
+                        }
+                    }
+                }
+            } else {
+                // Show weapon's 50 levels list
+                if ui.button("← Back to Weapons").clicked() {
+                    self.selected_g50_tower_weapon = None;
+                    self.view_mode.insert("g50_tower".to_string(), ViewMode::List);
+                    return;
+                }
+                
+                if weapon_idx < self.g50_tower_params[type_idx].weapons.len() {
+                    let weapon = &self.g50_tower_params[type_idx].weapons[weapon_idx];
+                    
+                    let weapon_name = self.get_weapon_name_for_g50(type_idx, weapon_idx);
+                    
+                    ui.label(format!("{} - {}", Self::get_g50_tower_type_name(type_idx), weapon_name));
+                    ui.separator();
+                    
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        egui::Grid::new("g50_tower_levels").striped(true).show(ui, |ui| {
+                            ui.label("Level"); ui.label("Raw"); ui.label("Element"); ui.label("Ailment"); ui.end_row();
+                            
+                            for l in 0..weapon.levels.len() {
+                                let entry_ptr = &weapon.levels[l] as *const _;
+                                let entry: crate::model::mhfdat::TowerG50WeaponParams = unsafe { std::ptr::read_unaligned(entry_ptr) };
+                                let weapon_raw = entry.weapon_raw;
+                                let element_id = entry.element_id;
+                                let ele_damage = entry.ele_damage;
+                                let ailment_id = entry.ailment_id;
+                                let ail_damage = entry.ail_damage;
+                                
+                                if ui.selectable_label(false, format!("{}", l)).clicked() {
+                                    self.selected_g50_tower_level = Some(l);
+                                }
+                                ui.label(format!("{}", weapon_raw));
+                                ui.label(format!("{}/{}", element_id, ele_damage));
+                                ui.label(format!("{}/{}", ailment_id, ail_damage));
+                                ui.end_row();
+                            }
+                        });
+                    });
+                }
+            }
+        } else {
+            ui.label("No weapon selected");
+        }
+    }
+}

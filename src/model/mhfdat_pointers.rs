@@ -39,11 +39,30 @@ pub const ARMOR_NAME_ARRAY_PTR: u32 = 0x9C;
 pub const BULLET_SETS_PTR: u32 = 0xA4;
 
 pub const EQUIPEMENT_COUNT_PTR: u32 = 0xE8;
+pub const SWORD_AND_SHIELD_G50_TOWER_PARAMS_PTR: u32 = 0x5C4;
+pub const DUAL_BLADES_G50_TOWER_PARAMS_PTR: u32 = 0x5C8;
+pub const GREAT_SWORD_G50_TOWER_PARAMS_PTR: u32 = 0x5CC;
+pub const LONG_SWORD_G50_TOWER_PARAMS_PTR: u32 = 0x5D0;
+pub const LANCE_G50_TOWER_PARAMS_PTR: u32 = 0x5D4;
+pub const GUNLANCE_G50_TOWER_PARAMS_PTR: u32 = 0x5D8;
+pub const HAMMER_G50_TOWER_PARAMS_PTR: u32 = 0x5DC;
+pub const HUNTING_HORN_G50_TOWER_PARAMS_PTR: u32 = 0x5E0;
+pub const HEAVY_BOWGUN_G50_TOWER_PARAMS_PTR: u32 = 0x5E4;
+pub const LIGHT_BOWGUN_G50_TOWER_PARAMS_PTR: u32 = 0x5E8;
+pub const BOW_G50_TOWER_PARAMS_PTR: u32 = 0x5EC;
+pub const TONFA_G50_TOWER_PARAMS_PTR: u32 = 0x888;
+pub const SWITCH_AXE_G50_TOWER_PARAMS_PTR: u32 = 0xA90;
+pub const MAGNET_SPIKE_G50_TOWER_PARAMS_PTR: u32 = 0xB98;
+pub const G50_MELEE_WEAPON_UPGRADE_PTR: u32 = 0x5F8;
+pub const G50_MELEE_WEAPON_UPGRADE_COUNT_LIMITER_PTR: u32 = 0x00CD43AA;
+pub const G50_RANGED_WEAPON_UPGRADE_PTR: u32 = 0x5FC;
+pub const G50_RANGED_WEAPON_UPGRADE_COUNT_LIMITER_PTR: u32 = 0x00CD43AC;
+pub const GR_QUEST_LIST_PTR: u32 = 0x6E0;
+pub const HR_QUEST_LIST_PTR: u32 = 0xA98;
 
 pub const CARAVAN_SKILLS_PTR: u32 = 0x0F0;
 pub const DECO_ID_PTR: u32 = 0xF8;
-pub const DECO_ID_COUNT: usize = 6539;
-pub const DECO_ID_COUNT_LIMITER_PTR: u32 = 0x00CD418A; // Limiter for deco count (u16)
+pub const DECO_ID_COUNT_LIMITER_PTR: u32 = 0x00CD418A;
 
 pub const ITEM_DATA_PTR: u32 = 0xFC;
 pub const ITEM_NAMES_PTR: u32 = 0x100;
@@ -58,7 +77,7 @@ pub const TRANSMOG_FORGING_PTR: u32 = 0xAB8;
 pub const DECO_G_SHOP_PTR: u32 = 0xB48;
 
 pub const AUTOMATIC_SKILLS_TABLE_PTR: u32 = 0x804;
-pub const AUTOMATIC_SKILLS_COUNT_LIMITER_PTR: u32 = 0x00CD4478; // Limiter for automatic skills count (u16)
+pub const AUTOMATIC_SKILLS_COUNT_LIMITER_PTR: u32 = 0x00CD4478;
 
 // Sharpness pointers (base address: 0x018FF4C0)
 // Note: Light Bowgun and Heavy Bowgun are ranged weapons and don't have sharpness

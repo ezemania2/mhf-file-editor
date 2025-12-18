@@ -23,44 +23,46 @@ impl MhfdatApp {
             return;
         }
 
-        ui.label(format!("Total bullet sets: {}", self.bullet_sets.len()));
+        let total = self.bullet_sets.len();
+        let page_size = 15;
+        let total_pages = (total + page_size - 1) / page_size;
+        let page = (self.bullet_sets_page as usize).min(total_pages.saturating_sub(1));
+
+        ui.label(format!("Total bullet sets: {}", total));
+        MhfdatApp::pagination_controls(ui, &mut self.bullet_sets_page, total_pages);
         ui.separator();
 
-        // Bullet sets list
-        egui::CollapsingHeader::new(format!("Bullet Sets List ({} entries)", self.bullet_sets.len()))
-            .default_open(true)
-            .show(ui, |ui| {
-                MhfdatApp::list_scroll(ui, "bullet_sets_list_scroll", |ui| {
-                    egui::Grid::new("bullet_sets_list_grid")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.label("ID");
-                            ui.label("Normal Lv1-3");
-                            ui.label("Pierce Lv1-3");
-                            ui.label("Spread Lv1-3");
-                            ui.label("Crag Lv1-3");
-                            ui.label("Cluster Lv1-3");
-                            ui.end_row();
+        let start = page * page_size;
+        let end = (start + page_size).min(total);
 
-                            for (idx, set) in self.bullet_sets.iter().enumerate() {
-                                let selected = self.selected_bullet_set_id == Some(idx);
-                                if ui.selectable_label(selected, format!("{}", idx)).clicked() {
-                                    self.selected_bullet_set_id = Some(idx);
-                                    if !self.view_mode.contains_key("bullet_sets") {
-                                        self.view_mode.insert("bullet_sets".to_string(), ViewMode::List);
-                                    }
-                                    *self.view_mode.get_mut("bullet_sets").unwrap() = ViewMode::Details;
-                                }
-                                ui.label(format!("{}/{}/{}", set.normal_lv1_capacity, set.normal_lv2_capacity, set.normal_lv3_capacity));
-                                ui.label(format!("{}/{}/{}", set.pierce_lv1_capacity, set.pierce_lv2_capacity, set.pierce_lv3_capacity));
-                                ui.label(format!("{}/{}/{}", set.spread_lv1_capacity, set.spread_lv2_capacity, set.spread_lv3_capacity));
-                                ui.label(format!("{}/{}/{}", set.crag_lv1_capacity, set.crag_lv2_capacity, set.crag_lv3_capacity));
-                                ui.label(format!("{}/{}/{}", set.cluster_lv1_capacity, set.cluster_lv2_capacity, set.cluster_lv3_capacity));
-                                ui.end_row();
-                            }
-                        });
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("bullet_sets_list_grid")
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label("ID");
+                    ui.label("Normal Lv1-3");
+                    ui.label("Pierce Lv1-3");
+                    ui.label("Spread Lv1-3");
+                    ui.label("Crag Lv1-3");
+                    ui.label("Cluster Lv1-3");
+                    ui.end_row();
+
+                    for idx in start..end {
+                        let set = &self.bullet_sets[idx];
+                        let selected = self.selected_bullet_set_id == Some(idx);
+                        if ui.selectable_label(selected, format!("{}", idx)).clicked() {
+                            self.selected_bullet_set_id = Some(idx);
+                            self.view_mode.insert("bullet_sets".to_string(), ViewMode::Details);
+                        }
+                        ui.label(format!("{}/{}/{}", set.normal_lv1_capacity, set.normal_lv2_capacity, set.normal_lv3_capacity));
+                        ui.label(format!("{}/{}/{}", set.pierce_lv1_capacity, set.pierce_lv2_capacity, set.pierce_lv3_capacity));
+                        ui.label(format!("{}/{}/{}", set.spread_lv1_capacity, set.spread_lv2_capacity, set.spread_lv3_capacity));
+                        ui.label(format!("{}/{}/{}", set.crag_lv1_capacity, set.crag_lv2_capacity, set.crag_lv3_capacity));
+                        ui.label(format!("{}/{}/{}", set.cluster_lv1_capacity, set.cluster_lv2_capacity, set.cluster_lv3_capacity));
+                        ui.end_row();
+                    }
                 });
-            });
+        });
     }
 
     fn show_bullet_set_details_view(&mut self, ui: &mut egui::Ui) {

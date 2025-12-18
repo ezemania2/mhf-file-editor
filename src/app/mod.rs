@@ -8,6 +8,7 @@ pub mod mhfjmp;
 pub mod automatic_skills;
 pub mod sharpness;
 pub mod bullet_sets;
+pub mod quests;
 
 pub use mhfjmp::MhfjmpApp;
 
@@ -20,7 +21,7 @@ use crate::model::mhfdat::{
     MhfdatMeleeWeapon, MhfdatRangedWeapon, MeleeWeaponExport, RangedWeaponExport, 
     ArmorExport, MhfdatItem, ItemExport, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade,
     MWUpgradePath, RWUpgradePath, EvoUpgrade, AutomaticSkill,
-    MhfdatEquipment, EquipmentCounts, SharpnessCollection
+    MhfdatEquipment, EquipmentCounts, SharpnessCollection, HRQuests, GRQuests
 };
 use crate::utils::weapon_patterns::{class_name, CLASS_ID_LIST, element_name, ELEMENT_ID_LIST, ailment_name, AILMENT_ID_LIST, equip_type_name, EQUIP_TYPE_LIST, weapon_type_name, WEAPON_TYPE_LIST, zenith_skill_name, ZENITH_SKILL_LIST, recoil, RECOIL_LIST, reload, RELOAD_LIST};
 use crate::core::mhfdat::{
@@ -91,7 +92,7 @@ pub enum MainTab {
     Items,
     Shop,
     AutomaticSkills,
-
+    Quests,
 }
 
 impl Default for MainTab {
@@ -110,6 +111,18 @@ pub enum WorkshopCategory {
 impl Default for WorkshopCategory {
     fn default() -> Self {
         Self::ArmorShops
+    }
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum QuestTab {
+    HR,
+    GR,
+}
+
+impl Default for QuestTab {
+    fn default() -> Self {
+        Self::HR
     }
 }
 
@@ -144,6 +157,9 @@ impl Default for ArmorShopTab {
 pub enum WeaponTab {
     Melee,
     Ranged,
+    G50Melee,
+    G50Ranged,
+    G50Tower,
 }
 
 impl Default for WeaponTab {
@@ -209,7 +225,30 @@ pub struct MhfdatApp {
     pub should_pack: bool,
     pub deco_shop_entries: Vec<DecoShop>,
     pub sigil_tower_entries: Vec<SigilTowerTable>,
-    pub g50_weapon_entries: Vec<G50WUpgrade>,
+    pub g50_melee_weapon_upgrades: Vec<G50WUpgrade>,
+    pub g50_ranged_weapon_upgrades: Vec<G50WUpgrade>,
+    pub g50_melee_weapon_upgrades_modified: bool,
+    pub g50_ranged_weapon_upgrades_modified: bool,
+    pub original_g50_melee_weapon_upgrades_offset: Option<u32>,
+    pub original_g50_ranged_weapon_upgrades_offset: Option<u32>,
+    pub g50_melee_count_limiter: u16,
+    pub g50_ranged_count_limiter: u16,
+    pub g50_melee_count_limiter_modified: bool,
+    pub g50_ranged_count_limiter_modified: bool,
+    pub selected_g50_melee_index: Option<usize>,
+    pub selected_g50_ranged_index: Option<usize>,
+    pub g50_melee_page: u32,
+    pub g50_ranged_page: u32,
+    pub g50_melee_search: String,
+    pub g50_ranged_search: String,
+    // G50 Tower Params for each weapon type (14 types, 130 weapons, 50 levels each)
+    pub g50_tower_params: [crate::model::mhfdat::G50WeaponTypeData; 14],
+    pub g50_tower_params_modified: [bool; 14],
+    pub original_g50_tower_params_offsets: [Option<u32>; 14],
+    pub selected_g50_tower_type: usize,
+    pub selected_g50_tower_weapon: Option<usize>,  // 0-129
+    pub selected_g50_tower_level: Option<usize>,   // 0-49
+    pub g50_tower_page: u32,
     pub mw_upgrade_entries: Vec<MWUpgradePath>,
     pub rw_upgrade_entries: Vec<RWUpgradePath>,
     pub evo_upgrade_entries: Vec<EvoUpgrade>,
@@ -279,12 +318,14 @@ pub struct MhfdatApp {
     pub sharpness: SharpnessCollection,
     pub selected_sharpness_weapon_type: usize, // 0-13 for the 14 weapon types
     pub selected_sharpness_id: Option<usize>, // 0-127
+    pub sharpness_page: u32,
     pub sharpness_modified: [bool; 12], // One flag per weapon type (melee only, no bowguns)
     pub original_sharpness_offsets: [Option<u32>; 12], // Original offsets for each weapon type
     
     // Bullet Sets
     pub bullet_sets: Vec<crate::model::mhfdat::BulletSet>,
     pub selected_bullet_set_id: Option<usize>, // 0-43
+    pub bullet_sets_page: u32,
     pub bullet_sets_modified: bool,
     pub original_bullet_sets_offset: Option<u32>,
     pub deco_search: String,
@@ -378,6 +419,18 @@ pub struct MhfdatApp {
     pub original_item_names_offset: Option<u32>,
     pub item_descriptions_modified: bool,
     pub original_item_descriptions_offset: Option<u32>,
+    
+    // Quests
+    pub hr_quests: HRQuests,
+    pub gr_quests: GRQuests,
+    pub hr_quests_modified: bool,
+    pub gr_quests_modified: bool,
+    pub original_hr_quests_offset: Option<u32>,
+    pub original_gr_quests_offset: Option<u32>,
+    pub quest_tab: QuestTab,
+    pub selected_quest_index: Option<usize>,
+    pub selected_quest_rank: usize, // 0-5 for HR, 0-6 for GR
+    pub quest_page: u32,
 }
 
 impl Default for MhfdatApp {
@@ -421,7 +474,29 @@ impl Default for MhfdatApp {
             armor_shop_tab: ArmorShopTab::default(),
             deco_shop_entries: Vec::new(),
             sigil_tower_entries: Vec::new(),
-            g50_weapon_entries: Vec::new(),
+            g50_melee_weapon_upgrades: Vec::new(),
+            g50_ranged_weapon_upgrades: Vec::new(),
+            g50_melee_weapon_upgrades_modified: false,
+            g50_ranged_weapon_upgrades_modified: false,
+            original_g50_melee_weapon_upgrades_offset: None,
+            original_g50_ranged_weapon_upgrades_offset: None,
+            g50_melee_count_limiter: 0,
+            g50_ranged_count_limiter: 0,
+            g50_melee_count_limiter_modified: false,
+            g50_ranged_count_limiter_modified: false,
+            selected_g50_melee_index: None,
+            selected_g50_ranged_index: None,
+            g50_melee_page: 0,
+            g50_ranged_page: 0,
+            g50_melee_search: String::new(),
+            g50_ranged_search: String::new(),
+            g50_tower_params: Default::default(),
+            g50_tower_params_modified: [false; 14],
+            original_g50_tower_params_offsets: [None; 14],
+            selected_g50_tower_type: 0,
+            selected_g50_tower_weapon: None,
+            selected_g50_tower_level: None,
+            g50_tower_page: 0,
             mw_upgrade_entries: Vec::new(),
             rw_upgrade_entries: Vec::new(),
             evo_upgrade_entries: Vec::new(),
@@ -577,12 +652,26 @@ impl Default for MhfdatApp {
             sharpness: SharpnessCollection::default(),
             selected_sharpness_weapon_type: 0,
             selected_sharpness_id: None,
+            sharpness_page: 0,
             sharpness_modified: [false; 12],
             original_sharpness_offsets: [None; 12],
             bullet_sets: Vec::new(),
             selected_bullet_set_id: None,
+            bullet_sets_page: 0,
             bullet_sets_modified: false,
             original_bullet_sets_offset: None,
+            
+            // Quests
+            hr_quests: HRQuests::default(),
+            gr_quests: GRQuests::default(),
+            hr_quests_modified: false,
+            gr_quests_modified: false,
+            original_hr_quests_offset: None,
+            original_gr_quests_offset: None,
+            quest_tab: QuestTab::default(),
+            selected_quest_index: None,
+            selected_quest_rank: 0,
+            quest_page: 0,
         }
     }
 }
@@ -643,6 +732,9 @@ impl MhfdatApp {
         // Load sharpness data
         self.load_sharpness_data();
         self.load_bullet_sets();
+        self.load_quests();
+        self.load_g50_weapon_upgrades();
+        self.load_g50_tower_params();
         
         // Load weapon names and descriptions
         {
@@ -734,7 +826,7 @@ impl MhfdatApp {
             let off = DECO_ID_PTR as usize;
             if self.buffer.len() >= off + 4 { Some(u32::from_le_bytes(self.buffer[off..off+4].try_into().unwrap())) } else { None }
         } {
-            self.deco_ids = read_deco_id_table(&self.buffer, deco_off as usize, Some(crate::model::mhfdat_pointers::DECO_ID_COUNT));
+            self.deco_ids = read_deco_id_table(&self.buffer, deco_off as usize, Some(self.deco_id_count_limiter as usize));
         }
 
         // Load deco count limiter from 0x00cd418a
@@ -836,7 +928,16 @@ impl MhfdatApp {
         self.zenith_entries.clear();
         self.deco_shop_entries.clear();
         self.sigil_tower_entries.clear();
-        self.g50_weapon_entries.clear();
+        self.g50_melee_weapon_upgrades.clear();
+        self.g50_ranged_weapon_upgrades.clear();
+        self.g50_melee_weapon_upgrades_modified = false;
+        self.g50_ranged_weapon_upgrades_modified = false;
+        self.original_g50_melee_weapon_upgrades_offset = None;
+        self.original_g50_ranged_weapon_upgrades_offset = None;
+        self.g50_melee_count_limiter = 0;
+        self.g50_ranged_count_limiter = 0;
+        self.g50_melee_count_limiter_modified = false;
+        self.g50_ranged_count_limiter_modified = false;
         self.mw_upgrade_entries.clear();
         self.rw_upgrade_entries.clear();
         self.evo_upgrade_entries.clear();
@@ -996,6 +1097,9 @@ impl App for MhfdatApp {
                 if ui.selectable_label(self.main_tab == MainTab::BulletSets, "Bullet Sets").clicked() {
                     self.main_tab = MainTab::BulletSets;
                 }
+                if ui.selectable_label(self.main_tab == MainTab::Quests, "Quests").clicked() {
+                    self.main_tab = MainTab::Quests;
+                }
             });
             ui.separator();
 
@@ -1020,6 +1124,9 @@ impl App for MhfdatApp {
                 }
                 MainTab::BulletSets => {
                     self.show_bullet_sets_tab(ui);
+                }
+                MainTab::Quests => {
+                    self.show_quests_tab(ui);
                 }
             }
 
