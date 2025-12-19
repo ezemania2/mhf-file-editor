@@ -186,6 +186,14 @@ impl MhfdatApp {
                 self.buffer[ARMOR_UPGRADE_MATS_PTR as usize..(ARMOR_UPGRADE_MATS_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[ARMOR_UPGRADE_MATS_PTR as usize..(ARMOR_UPGRADE_MATS_PTR + 4) as usize]);
             }
+            if self.carve_parts_modified && saved_file_data.len() >= (crate::model::mhfdat_pointers::CARVE_PARTS_PTR + 4) as usize {
+                self.buffer[crate::model::mhfdat_pointers::CARVE_PARTS_PTR as usize..(crate::model::mhfdat_pointers::CARVE_PARTS_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[crate::model::mhfdat_pointers::CARVE_PARTS_PTR as usize..(crate::model::mhfdat_pointers::CARVE_PARTS_PTR + 4) as usize]);
+            }
+            if self.carve_parts_count_modified && saved_file_data.len() >= (crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR + 2) as usize {
+                self.buffer[crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR as usize..(crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR + 2) as usize]
+                    .copy_from_slice(&saved_file_data[crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR as usize..(crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR + 2) as usize]);
+            }
             
             // Mettre à jour les pointeurs d'upgrades seulement si modifiés
             if self.mw_upgrades_modified && saved_file_data.len() >= (MELEE_WEAPON_UPGRADE_PATH_PTR + 4) as usize {
@@ -237,6 +245,22 @@ impl MhfdatApp {
                 let off = u32::from_le_bytes(self.buffer[ARMOR_UPGRADE_MATS_PTR as usize..(ARMOR_UPGRADE_MATS_PTR + 4) as usize].try_into().unwrap());
                 self.original_armor_upgrade_mats_offset = Some(off);
                 self.armor_upgrade_mats_modified = false;
+            }
+            if self.carve_parts_modified {
+                use crate::model::mhfdat_pointers::{CARVE_PARTS_PTR, CARVE_PARTS_COUNT_PTR};
+                let off = u32::from_le_bytes(self.buffer[CARVE_PARTS_PTR as usize..(CARVE_PARTS_PTR + 4) as usize].try_into().unwrap());
+                self.original_carve_parts_offset = Some(off);
+                // Update count from the buffer after save (it should match the actual number of tables written)
+                if self.buffer.len() >= CARVE_PARTS_COUNT_PTR as usize + 2 {
+                    self.carve_parts_count = u16::from_le_bytes(
+                        self.buffer[CARVE_PARTS_COUNT_PTR as usize..CARVE_PARTS_COUNT_PTR as usize + 2]
+                            .try_into().unwrap()
+                    );
+                }
+                self.carve_parts_modified = false;
+            }
+            if self.carve_parts_count_modified {
+                self.carve_parts_count_modified = false;
             }
         }
         Ok(())
@@ -1225,6 +1249,29 @@ impl MhfdatApp {
             // Update pointer
             writer.seek(SeekFrom::Start(ARMOR_UPGRADE_MATS_PTR as u64))?;
             writer.write_all(&offset.to_le_bytes())?;
+            writer.seek(SeekFrom::End(0))?;
+        }
+
+        // Carve Parts - write only if modified
+        if self.carve_parts_modified {
+            use crate::model::mhfdat_pointers::{CARVE_PARTS_PTR, CARVE_PARTS_COUNT_PTR};
+            use crate::core::mhfdat::write_carve_parts_block;
+            
+            // Calculate count from actual number of tables
+            let count = self.carve_parts.tables.len() as u16;
+            
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let block = write_carve_parts_block(&self.carve_parts)?;
+            writer.write_all(&block)?;
+            
+            // Update pointer
+            writer.seek(SeekFrom::Start(CARVE_PARTS_PTR as u64))?;
+            writer.write_all(&offset.to_le_bytes())?;
+            
+            // Update count (always update to match actual number of tables)
+            writer.seek(SeekFrom::Start(CARVE_PARTS_COUNT_PTR as u64))?;
+            writer.write_all(&count.to_le_bytes())?;
+            
             writer.seek(SeekFrom::End(0))?;
         }
 

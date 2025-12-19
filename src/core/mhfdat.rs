@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom, Result, Read, Cursor};
-use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill, SharpnessItem, SharpnessData, BulletSet, TowerG50WeaponParams};
+use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill, SharpnessItem, SharpnessData, BulletSet, TowerG50WeaponParams, ArmorUpgradeRow, ArmorUpgradeTable, ArmorUpgradeMats, CarveDrop, CarveDropTable, CarveParts};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use encoding_rs::SHIFT_JIS;
 use std::env;
@@ -623,8 +623,6 @@ pub fn write_deco_ids_block(entries: &[crate::model::mhfdat::MhfdatDecoId]) -> R
     Ok(data)
 }
 
-use crate::model::mhfdat::{ArmorUpgradeRow, ArmorUpgradeTable, ArmorUpgradeMats};
-
 /// Read armor upgrade materials from buffer
 /// Structure: pointer at ARMOR_UPGRADE_MATS_PTR points to array of u32 pointers
 /// Each pointer points to a table of ArmorUpgradeRow entries until item_id == 0
@@ -737,6 +735,120 @@ pub fn write_armor_upgrade_mats_block(mats: &ArmorUpgradeMats) -> Result<Vec<u8>
         }
         // Write terminator for this table (16 zero bytes)
         data.extend_from_slice(&[0u8; ROW_SIZE]);
+    }
+    
+    Ok(data)
+}
+
+/// Read carve parts from buffer
+/// Structure: pointer at CARVE_PARTS_PTR points to array of u32 pointers
+/// The number of pointers is given by count parameter (from CARVE_PARTS_COUNT_PTR)
+/// Each pointer points to a table of CarveDrop entries until a signed u16 == -1
+pub fn read_carve_parts(buffer: &[u8], ptr_offset: u32, count: usize) -> CarveParts {
+    let mut parts = CarveParts { tables: Vec::new() };
+    
+    // Read the main offset from the pointer (points to a table of pointers)
+    if ptr_offset as usize + 4 > buffer.len() {
+        return parts;
+    }
+    let ptr_table_offset = u32::from_le_bytes([
+        buffer[ptr_offset as usize],
+        buffer[ptr_offset as usize + 1],
+        buffer[ptr_offset as usize + 2],
+        buffer[ptr_offset as usize + 3],
+    ]) as usize;
+    
+    if ptr_table_offset == 0 || ptr_table_offset >= buffer.len() {
+        return parts;
+    }
+    
+    // Read exactly 'count' pointers
+    let carve_size = size_of::<CarveDrop>(); // 4 bytes (2 u16)
+    let mut ptr_cursor = ptr_table_offset;
+    
+    for _ in 0..count {
+        if ptr_cursor + 4 > buffer.len() {
+            break;
+        }
+        
+        let table_offset = u32::from_le_bytes([
+            buffer[ptr_cursor],
+            buffer[ptr_cursor + 1],
+            buffer[ptr_cursor + 2],
+            buffer[ptr_cursor + 3],
+        ]) as usize;
+        
+        ptr_cursor += 4;
+        
+        if table_offset == 0 || table_offset >= buffer.len() {
+            parts.tables.push(CarveDropTable { carves: Vec::new() });
+            continue;
+        }
+        
+        // Read carves for this table until we hit a signed u16 == -1
+        let mut table = CarveDropTable { carves: Vec::new() };
+        let mut carve_cursor = table_offset;
+        
+        while carve_cursor + carve_size <= buffer.len() {
+            // Read the next u16 as signed to check for -1 terminator
+            let terminator_check = i16::from_le_bytes([
+                buffer[carve_cursor],
+                buffer[carve_cursor + 1],
+            ]);
+            
+            if terminator_check == -1 {
+                break;
+            }
+            
+            let carve = unsafe {
+                std::ptr::read_unaligned(buffer.as_ptr().add(carve_cursor) as *const CarveDrop)
+            };
+            
+            table.carves.push(carve);
+            carve_cursor += carve_size;
+        }
+        
+        parts.tables.push(table);
+    }
+    
+    parts
+}
+
+/// Write carve parts to a byte buffer
+/// Structure: pointer table (u32 per table), then data blocks
+pub fn write_carve_parts_block(parts: &CarveParts) -> Result<Vec<u8>> {
+    const CARVE_SIZE: usize = size_of::<CarveDrop>(); // 4 bytes
+    let table_count = parts.tables.len();
+    
+    // Calculate pointer table size: table_count * 4 bytes
+    let ptr_table_size = table_count * 4;
+    
+    // Calculate data offsets for each table
+    let mut data_offsets = Vec::new();
+    let mut current_offset = ptr_table_size as u32;
+    
+    for table in &parts.tables {
+        data_offsets.push(current_offset);
+        // Each carve is 4 bytes, plus 2 bytes for -1 terminator
+        current_offset += (table.carves.len() * CARVE_SIZE) as u32;
+        current_offset += 2; // Add 2 bytes for -1 terminator (signed u16)
+    }
+    
+    let mut data = Vec::new();
+    
+    // Write pointer table
+    for offset in &data_offsets {
+        data.extend_from_slice(&offset.to_le_bytes());
+    }
+    
+    // Write data blocks for each table
+    for table in &parts.tables {
+        for carve in &table.carves {
+            data.extend_from_slice(&carve.percentage.to_le_bytes());
+            data.extend_from_slice(&carve.item_id.to_le_bytes());
+        }
+        // Write terminator for this table (-1 as signed u16)
+        data.extend_from_slice(&(-1i16).to_le_bytes());
     }
     
     Ok(data)

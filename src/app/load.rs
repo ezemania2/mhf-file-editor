@@ -564,4 +564,32 @@ impl MhfdatApp {
             self.armor_upgrade_mats = read_armor_upgrade_mats(&self.buffer, ARMOR_UPGRADE_MATS_PTR);
         }
     }
+    
+    pub fn load_carve_parts(&mut self) {
+        use crate::model::mhfdat_pointers::{CARVE_PARTS_PTR, CARVE_PARTS_COUNT_PTR};
+        use crate::core::mhfdat::read_carve_parts;
+        
+        // Read count from CARVE_PARTS_COUNT_PTR first
+        let count = if self.buffer.len() >= CARVE_PARTS_COUNT_PTR as usize + 2 {
+            u16::from_le_bytes(
+                self.buffer[CARVE_PARTS_COUNT_PTR as usize..CARVE_PARTS_COUNT_PTR as usize + 2]
+                    .try_into().unwrap()
+            )
+        } else {
+            0
+        };
+        self.carve_parts_count = count;
+        self.carve_parts_count_modified = false;
+        
+        // Read carve parts data using the count
+        if self.buffer.len() >= CARVE_PARTS_PTR as usize + 4 {
+            let offset = u32::from_le_bytes(
+                self.buffer[CARVE_PARTS_PTR as usize..CARVE_PARTS_PTR as usize + 4]
+                    .try_into().unwrap()
+            );
+            self.original_carve_parts_offset = Some(offset);
+            self.carve_parts_modified = false;
+            self.carve_parts = read_carve_parts(&self.buffer, CARVE_PARTS_PTR, count as usize);
+        }
+    }
 }

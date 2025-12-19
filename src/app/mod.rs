@@ -1,5 +1,6 @@
 pub mod weapons;
 pub mod armor;
+pub mod monster;
 pub mod items;
 pub mod shop;
 pub mod save;
@@ -93,6 +94,7 @@ pub enum MainTab {
     Shop,
     AutomaticSkills,
     Quests,
+    Monsters,
 }
 
 impl Default for MainTab {
@@ -445,6 +447,17 @@ pub struct MhfdatApp {
     pub selected_armor_upgrade_row_index: Option<usize>,
     pub armor_upgrade_page: u32,
     pub armor_upgrade_tables_page: u32,
+    
+    // Carve Parts
+    pub carve_parts: crate::model::mhfdat::CarveParts,
+    pub carve_parts_modified: bool,
+    pub original_carve_parts_offset: Option<u32>,
+    pub carve_parts_count: u16,
+    pub carve_parts_count_modified: bool,
+    pub selected_carve_parts_table_index: Option<usize>,
+    pub selected_carve_parts_row_index: Option<usize>,
+    pub carve_parts_page: u32,
+    pub carve_parts_tables_page: u32,
 }
 
 impl Default for MhfdatApp {
@@ -699,6 +712,17 @@ impl Default for MhfdatApp {
             selected_armor_upgrade_row_index: None,
             armor_upgrade_page: 0,
             armor_upgrade_tables_page: 0,
+            
+            // Carve Parts
+            carve_parts: Default::default(),
+            carve_parts_modified: false,
+            original_carve_parts_offset: None,
+            carve_parts_count: 0,
+            carve_parts_count_modified: false,
+            selected_carve_parts_table_index: None,
+            selected_carve_parts_row_index: None,
+            carve_parts_page: 0,
+            carve_parts_tables_page: 0,
         }
     }
 }
@@ -763,6 +787,7 @@ impl MhfdatApp {
         self.load_g50_weapon_upgrades();
         self.load_g50_tower_params();
         self.load_armor_upgrade_mats();
+        self.load_carve_parts();
         
         // Load weapon names and descriptions
         {
@@ -1130,6 +1155,9 @@ impl App for MhfdatApp {
                 if ui.selectable_label(self.main_tab == MainTab::Quests, "Quests").clicked() {
                     self.main_tab = MainTab::Quests;
                 }
+                if ui.selectable_label(self.main_tab == MainTab::Monsters, "Monsters").clicked() {
+                    self.main_tab = MainTab::Monsters;
+                }
             });
             ui.separator();
 
@@ -1157,6 +1185,9 @@ impl App for MhfdatApp {
                 }
                 MainTab::Quests => {
                     self.show_quests_tab(ui);
+                }
+                MainTab::Monsters => {
+                    self.show_monster_tab(ui);
                 }
             }
 

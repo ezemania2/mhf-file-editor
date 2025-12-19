@@ -853,7 +853,7 @@ impl MhfdatApp {
         ui.separator();
         
         let table_idx = self.selected_armor_upgrade_table_index.unwrap_or(0);
-        let Some(table) = self.armor_upgrade_mats.tables.get(table_idx) else {
+        let Some(table) = self.armor_upgrade_mats.tables.get_mut(table_idx) else {
             ui.label("No table loaded");
             return;
         };
@@ -891,26 +891,62 @@ impl MhfdatApp {
                     ui.end_row();
                     
                     for i in start..end {
-                        if let Some(row) = table.rows.get(i) {
-                            let row_copy: crate::model::mhfdat::ArmorUpgradeRow = unsafe { std::ptr::read_unaligned(row as *const _) };
-                            let item_id = row_copy.item_id;
-                            let lv1 = row_copy.lv1_upgrade;
-                            let lv2 = row_copy.lv2_upgrade;
-                            let lv3 = row_copy.lv3_upgrade;
-                            let lv4 = row_copy.lv4_upgrade;
-                            let lv5 = row_copy.lv5_upgrade;
-                            let lv6 = row_copy.lv6_upgrade;
-                            let lv7 = row_copy.lv7_upgrade;
-                            let item_name = self.item_names.get(item_id as usize).cloned().unwrap_or_default();
+                        if let Some(row) = table.rows.get_mut(i) {
+                            let item_name = self.item_names.get(row.item_id as usize).cloned().unwrap_or_default();
                             
-                            ui.label(format!("{} ({})", item_id, item_name));
-                            ui.label(format!("{}", lv1));
-                            ui.label(format!("{}", lv2));
-                            ui.label(format!("{}", lv3));
-                            ui.label(format!("{}", lv4));
-                            ui.label(format!("{}", lv5));
-                            ui.label(format!("{}", lv6));
-                            ui.label(format!("{}", lv7));
+                            // Item ID (editable)
+                            let mut item_id = row.item_id;
+                            ui.horizontal(|ui| {
+                                if ui.add(egui::DragValue::new(&mut item_id).clamp_range(0..=65535)).changed() {
+                                    row.item_id = item_id;
+                                    self.armor_upgrade_mats_modified = true;
+                                }
+                                ui.label(format!("({})", item_name));
+                            });
+                            
+                            // Level upgrade values (editable)
+                            let mut lv1 = row.lv1_upgrade;
+                            if ui.add(egui::DragValue::new(&mut lv1).clamp_range(0..=65535)).changed() {
+                                row.lv1_upgrade = lv1;
+                                self.armor_upgrade_mats_modified = true;
+                            }
+                            
+                            let mut lv2 = row.lv2_upgrade;
+                            if ui.add(egui::DragValue::new(&mut lv2).clamp_range(0..=65535)).changed() {
+                                row.lv2_upgrade = lv2;
+                                self.armor_upgrade_mats_modified = true;
+                            }
+                            
+                            let mut lv3 = row.lv3_upgrade;
+                            if ui.add(egui::DragValue::new(&mut lv3).clamp_range(0..=65535)).changed() {
+                                row.lv3_upgrade = lv3;
+                                self.armor_upgrade_mats_modified = true;
+                            }
+                            
+                            let mut lv4 = row.lv4_upgrade;
+                            if ui.add(egui::DragValue::new(&mut lv4).clamp_range(0..=65535)).changed() {
+                                row.lv4_upgrade = lv4;
+                                self.armor_upgrade_mats_modified = true;
+                            }
+                            
+                            let mut lv5 = row.lv5_upgrade;
+                            if ui.add(egui::DragValue::new(&mut lv5).clamp_range(0..=65535)).changed() {
+                                row.lv5_upgrade = lv5;
+                                self.armor_upgrade_mats_modified = true;
+                            }
+                            
+                            let mut lv6 = row.lv6_upgrade;
+                            if ui.add(egui::DragValue::new(&mut lv6).clamp_range(0..=65535)).changed() {
+                                row.lv6_upgrade = lv6;
+                                self.armor_upgrade_mats_modified = true;
+                            }
+                            
+                            let mut lv7 = row.lv7_upgrade;
+                            if ui.add(egui::DragValue::new(&mut lv7).clamp_range(0..=65535)).changed() {
+                                row.lv7_upgrade = lv7;
+                                self.armor_upgrade_mats_modified = true;
+                            }
+                            
                             ui.end_row();
                         }
                     }

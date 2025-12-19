@@ -870,6 +870,24 @@ pub struct ArmorUpgradeMats {
     pub tables: Vec<ArmorUpgradeTable>,
 }
 
+// Carve drop structure
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct CarveDrop {
+    pub percentage: u16,
+    pub item_id: u16,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CarveDropTable {
+    pub carves: Vec<CarveDrop>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CarveParts {
+    pub tables: Vec<CarveDropTable>,
+}
+
 #[repr(C, packed)]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SigilTowerTable {
