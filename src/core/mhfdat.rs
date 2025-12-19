@@ -623,6 +623,125 @@ pub fn write_deco_ids_block(entries: &[crate::model::mhfdat::MhfdatDecoId]) -> R
     Ok(data)
 }
 
+use crate::model::mhfdat::{ArmorUpgradeRow, ArmorUpgradeTable, ArmorUpgradeMats};
+
+/// Read armor upgrade materials from buffer
+/// Structure: pointer at ARMOR_UPGRADE_MATS_PTR points to array of u32 pointers
+/// Each pointer points to a table of ArmorUpgradeRow entries until item_id == 0
+/// The pointer array ends when pointer == 0x00000000
+pub fn read_armor_upgrade_mats(buffer: &[u8], ptr_offset: u32) -> ArmorUpgradeMats {
+    let mut mats = ArmorUpgradeMats { tables: Vec::new() };
+    
+    // Read the main offset from the pointer (points to a table of pointers)
+    if ptr_offset as usize + 4 > buffer.len() {
+        return mats;
+    }
+    let ptr_table_offset = u32::from_le_bytes([
+        buffer[ptr_offset as usize],
+        buffer[ptr_offset as usize + 1],
+        buffer[ptr_offset as usize + 2],
+        buffer[ptr_offset as usize + 3],
+    ]) as usize;
+    
+    if ptr_table_offset == 0 || ptr_table_offset >= buffer.len() {
+        return mats;
+    }
+    
+    // Read successive pointers until we hit 0x00000000
+    let row_size = size_of::<ArmorUpgradeRow>(); // 16 bytes
+    let mut ptr_cursor = ptr_table_offset;
+    
+    while ptr_cursor + 4 <= buffer.len() {
+        let table_offset = u32::from_le_bytes([
+            buffer[ptr_cursor],
+            buffer[ptr_cursor + 1],
+            buffer[ptr_cursor + 2],
+            buffer[ptr_cursor + 3],
+        ]) as usize;
+        
+        // End of pointer list
+        if table_offset == 0 {
+            break;
+        }
+        
+        ptr_cursor += 4;
+        
+        if table_offset >= buffer.len() {
+            continue;
+        }
+        
+        // Read rows for this table until we hit 16 zero bytes
+        let mut table = ArmorUpgradeTable { rows: Vec::new() };
+        let mut row_cursor = table_offset;
+        
+        while row_cursor + row_size <= buffer.len() {
+            // Check if next 16 bytes are all zero (terminator)
+            let chunk = &buffer[row_cursor..row_cursor + row_size];
+            if chunk.iter().all(|&b| b == 0) {
+                break;
+            }
+            
+            let row = unsafe {
+                std::ptr::read_unaligned(buffer.as_ptr().add(row_cursor) as *const ArmorUpgradeRow)
+            };
+            
+            table.rows.push(row);
+            row_cursor += row_size;
+        }
+        
+        mats.tables.push(table);
+    }
+    
+    mats
+}
+
+/// Write armor upgrade materials to a byte buffer
+/// Structure: pointer table (u32 per table) ending with 0x00000000, then data blocks
+pub fn write_armor_upgrade_mats_block(mats: &ArmorUpgradeMats) -> Result<Vec<u8>> {
+    const ROW_SIZE: usize = size_of::<ArmorUpgradeRow>(); // 16 bytes
+    let table_count = mats.tables.len();
+    
+    // Calculate pointer table size: (table_count + 1) * 4 bytes (extra for 0x00000000 terminator)
+    let ptr_table_size = (table_count + 1) * 4;
+    
+    // Calculate data offsets for each table
+    let mut data_offsets = Vec::new();
+    let mut current_offset = ptr_table_size as u32;
+    
+    for table in &mats.tables {
+        data_offsets.push(current_offset);
+        current_offset += (table.rows.len() * ROW_SIZE) as u32;
+        current_offset += ROW_SIZE as u32; // Add 16 bytes for terminator
+    }
+    
+    let mut data = Vec::new();
+    
+    // Write pointer table
+    for offset in &data_offsets {
+        data.extend_from_slice(&offset.to_le_bytes());
+    }
+    // Write terminator for pointer table (0x00000000)
+    data.extend_from_slice(&[0u8; 4]);
+    
+    // Write data blocks for each table
+    for table in &mats.tables {
+        for row in &table.rows {
+            data.extend_from_slice(&row.item_id.to_le_bytes());
+            data.extend_from_slice(&row.lv1_upgrade.to_le_bytes());
+            data.extend_from_slice(&row.lv2_upgrade.to_le_bytes());
+            data.extend_from_slice(&row.lv3_upgrade.to_le_bytes());
+            data.extend_from_slice(&row.lv4_upgrade.to_le_bytes());
+            data.extend_from_slice(&row.lv5_upgrade.to_le_bytes());
+            data.extend_from_slice(&row.lv6_upgrade.to_le_bytes());
+            data.extend_from_slice(&row.lv7_upgrade.to_le_bytes());
+        }
+        // Write terminator for this table (16 zero bytes)
+        data.extend_from_slice(&[0u8; ROW_SIZE]);
+    }
+    
+    Ok(data)
+}
+
 pub fn read_sigil_tower_table(buffer: &[u8], offset: usize) -> Vec<SigilTowerTable> {
     let mut entries = Vec::new();
     let mut cursor = offset;

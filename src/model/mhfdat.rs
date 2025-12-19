@@ -860,6 +860,16 @@ pub struct ArmorUpgradeRow {
     pub lv7_upgrade: u16,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ArmorUpgradeTable {
+    pub rows: Vec<ArmorUpgradeRow>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ArmorUpgradeMats {
+    pub tables: Vec<ArmorUpgradeTable>,
+}
+
 #[repr(C, packed)]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SigilTowerTable {
@@ -1094,4 +1104,41 @@ pub struct GRQuests {
     pub g5: Vec<QuestItem>,
     pub g6: Vec<QuestItem>,
     pub g7: Vec<QuestItem>,
+}
+
+// Armor Stat Pointers structure (6 u32 pointers: 24 bytes total)
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ArmorStatPointers {
+    pub legs: u32,  // Legs armor stats
+    pub head1: u32, // Head armor stats (set 1)
+    pub head2: u32, // Head armor stats (set 2)
+    pub body: u32,  // Body armor stats
+    pub arm: u32,   // Arm armor stats
+    pub waist: u32, // Waist armor stats
+}
+
+// Armor Name Pointers structure (5 u32 pointers: 20 bytes total)
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ArmorNamePointers {
+    pub head: u32,  // Head armor names
+    pub body: u32,  // Body armor names
+    pub arm: u32,   // Arm armor names
+    pub waist: u32, // Waist armor names
+    pub legs: u32,  // Legs armor names
+}
+
+// Armor/Weapon Name Pointers structure (8 u32 pointers: 32 bytes total)
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ArmorWeaponNamePointers {
+    pub legs: u32,     // Legs armor names
+    pub unknown1: u32,  // Unknown/Reserved
+    pub head: u32,     // Head armor names
+    pub body: u32,     // Body armor names
+    pub arm: u32,      // Arm armor names
+    pub waist: u32,    // Waist armor names
+    pub melee: u32,    // Melee weapon names
+    pub ranged: u32,   // Ranged weapon names
 }

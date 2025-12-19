@@ -31,9 +31,8 @@ pub const RANGED_WEAPON_NAMES_PTR: u32 = 0x84;
 pub const MELEE_WEAPON_NAMES_PTR: u32 = 0x88;
 pub const MELEE_WEAPON_DESC_PTR: u32 = 0x8C;
 pub const RANGED_WEAPON_DESC_PTR: u32 = 0x90;
-
 pub const ARMOR_STAT_ARRAY_PTR: u32 = 0x94;
-pub const ARMOR_WEAPON_STAT_ARRAY_PTR: u32 = 0x98;
+pub const ARMOR_WEAPON_NAMES_ARRAY_PTR: u32 = 0x98;
 pub const ARMOR_NAME_ARRAY_PTR: u32 = 0x9C;
 
 pub const BULLET_SETS_PTR: u32 = 0xA4;

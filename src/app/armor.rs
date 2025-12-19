@@ -57,12 +57,26 @@ impl MhfdatApp {
             if ui.selectable_label(self.armor_tab == ArmorTab::Legs, "Legs").clicked() {
                 self.armor_tab = ArmorTab::Legs;
             }
+            if ui.selectable_label(self.armor_tab == ArmorTab::ArmorUpgrade, "Armor Upgrade").clicked() {
+                self.armor_tab = ArmorTab::ArmorUpgrade;
+            }
         });
         ui.separator();
 
-        match self.view_mode.get("armor").unwrap() {
-            ViewMode::List => self.show_armor_list_view(ui),
-            ViewMode::Details => self.show_armor_details_view(ui),
+        match self.armor_tab {
+            ArmorTab::ArmorUpgrade => {
+                let view_mode = self.view_mode.get("armor_upgrade").copied().unwrap_or(ViewMode::List);
+                match view_mode {
+                    ViewMode::List => self.show_armor_upgrade_list(ui),
+                    ViewMode::Details => self.show_armor_upgrade_details(ui),
+                }
+            }
+            _ => {
+                match self.view_mode.get("armor").unwrap() {
+                    ViewMode::List => self.show_armor_list_view(ui),
+                    ViewMode::Details => self.show_armor_details_view(ui),
+                }
+            }
         }
     }
 
@@ -73,6 +87,7 @@ impl MhfdatApp {
             ArmorTab::Arms => (&mut self.arms_armors, &mut self.arms_armor_names),
             ArmorTab::Waist => (&mut self.waist_armors, &mut self.waist_armor_names),
             ArmorTab::Legs => (&mut self.legs_armors, &mut self.legs_armor_names),
+            ArmorTab::ArmorUpgrade => unreachable!(),
         };
 
         let armor_type = match self.armor_tab {
@@ -81,6 +96,7 @@ impl MhfdatApp {
             ArmorTab::Arms => "Arms",
             ArmorTab::Waist => "Waist",
             ArmorTab::Legs => "Legs",
+            ArmorTab::ArmorUpgrade => unreachable!(),
         };
 
         // Compter jusqu'à la première armure avec model_id_male == 0xFFFF
@@ -98,7 +114,8 @@ impl MhfdatApp {
             ArmorTab::Body=>"body", 
             ArmorTab::Arms=>"arms", 
             ArmorTab::Waist=>"waist", 
-            ArmorTab::Legs=>"legs" 
+            ArmorTab::Legs=>"legs",
+            ArmorTab::ArmorUpgrade => unreachable!(),
         };
         
         ui.horizontal(|ui| {
@@ -143,6 +160,7 @@ impl MhfdatApp {
                         ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
                         ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
                         ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
+                        ArmorTab::ArmorUpgrade => {}
                     }
                     return;
                 }
@@ -183,6 +201,7 @@ impl MhfdatApp {
                     self.legs_armors_modified = true;
                     self.legs_armor_names_modified = true;
                 },
+                ArmorTab::ArmorUpgrade => {}
             }
         }
 
@@ -322,6 +341,7 @@ impl MhfdatApp {
                 ArmorTab::Arms => self.arms_armors_modified = true,
                 ArmorTab::Waist => self.waist_armors_modified = true,
                 ArmorTab::Legs => self.legs_armors_modified = true,
+                ArmorTab::ArmorUpgrade => {}
             }
             
             let (armors, names) = match self.armor_tab {
@@ -330,6 +350,7 @@ impl MhfdatApp {
                 ArmorTab::Arms => (&mut self.arms_armors, &mut self.arms_armor_names),
                 ArmorTab::Waist => (&mut self.waist_armors, &mut self.waist_armor_names),
                 ArmorTab::Legs => (&mut self.legs_armors, &mut self.legs_armor_names),
+                ArmorTab::ArmorUpgrade => unreachable!(),
             };
 
             let armor_type = match self.armor_tab {
@@ -338,6 +359,7 @@ impl MhfdatApp {
             ArmorTab::Arms => "Arms",
             ArmorTab::Waist => "Waist",
             ArmorTab::Legs => "Legs",
+            ArmorTab::ArmorUpgrade => unreachable!(),
         };
 
             if let Some(armor) = armors.get_mut(index) {
@@ -360,6 +382,7 @@ impl MhfdatApp {
                                             ArmorTab::Arms => self.arms_armor_names_modified = true,
                                             ArmorTab::Waist => self.waist_armor_names_modified = true,
                                             ArmorTab::Legs => self.legs_armor_names_modified = true,
+                                            ArmorTab::ArmorUpgrade => {}
                                         }
                                     }
                                 }
@@ -383,6 +406,7 @@ impl MhfdatApp {
                         ArmorTab::Arms => self.arms_armors_modified = true,
                         ArmorTab::Waist => self.waist_armors_modified = true,
                         ArmorTab::Legs => self.legs_armors_modified = true,
+                        ArmorTab::ArmorUpgrade => {}
                     }
                 }
             }
@@ -748,5 +772,151 @@ fn armor_type_name(equipable_by: u8) -> String {
         "None".to_string()
     } else {
         parts.join("/")
+    }
+}
+
+impl MhfdatApp {
+    fn show_armor_upgrade_list(&mut self, ui: &mut egui::Ui) {
+        let table_count = self.armor_upgrade_mats.tables.len();
+        
+        MhfdatApp::section_header(ui, &format!("Armor Upgrade Materials ({} tables)", table_count), |ui| {
+            if ui.button("Add Table").clicked() {
+                self.armor_upgrade_mats.tables.push(crate::model::mhfdat::ArmorUpgradeTable { rows: Vec::new() });
+                self.armor_upgrade_mats_modified = true;
+            }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.armor_upgrade_mats) {
+                    let _ = std::fs::write("armor_upgrade_mats.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(json) = std::fs::read_to_string("armor_upgrade_mats.json") {
+                    if let Ok(data) = serde_json::from_str(&json) {
+                        self.armor_upgrade_mats = data;
+                        self.armor_upgrade_mats_modified = true;
+                    }
+                }
+            }
+        });
+        
+        if table_count == 0 {
+            ui.label("No armor upgrade materials loaded.");
+            return;
+        }
+        
+        // List of tables
+        ui.heading("Tables");
+        
+        let tables_page_size = 50usize;
+        let tables_total_pages = (table_count + tables_page_size - 1) / tables_page_size;
+        let tables_page = self.armor_upgrade_tables_page.min(tables_total_pages.saturating_sub(1) as u32);
+        self.armor_upgrade_tables_page = tables_page;
+        
+        let tables_start = (tables_page as usize) * tables_page_size;
+        let tables_end = (tables_start + tables_page_size).min(table_count);
+        
+        MhfdatApp::list_scroll(ui, "armor_upgrade_tables_scroll", |ui| {
+            egui::Grid::new("armor_upgrade_tables_grid")
+                .striped(true)
+                .num_columns(3)
+                .show(ui, |ui| {
+                    ui.label("Table");
+                    ui.label("Rows");
+                    ui.label("Actions");
+                    ui.end_row();
+                    
+                    for idx in tables_start..tables_end {
+                        if let Some(table) = self.armor_upgrade_mats.tables.get(idx) {
+                            let selected = self.selected_armor_upgrade_table_index == Some(idx);
+                            if ui.selectable_label(selected, format!("Table {}", idx)).clicked() {
+                                self.selected_armor_upgrade_table_index = Some(idx);
+                                self.armor_upgrade_page = 0;
+                                self.view_mode.insert("armor_upgrade".to_string(), ViewMode::Details);
+                            }
+                            ui.label(format!("{}", table.rows.len()));
+                            ui.label("");
+                            ui.end_row();
+                        }
+                    }
+                });
+        });
+        
+        MhfdatApp::pagination_controls(ui, &mut self.armor_upgrade_tables_page, tables_total_pages);
+    }
+    
+    fn show_armor_upgrade_details(&mut self, ui: &mut egui::Ui) {
+        if ui.button("← Back to List").clicked() {
+            self.view_mode.insert("armor_upgrade".to_string(), ViewMode::List);
+            self.selected_armor_upgrade_row_index = None;
+            return;
+        }
+        ui.separator();
+        
+        let table_idx = self.selected_armor_upgrade_table_index.unwrap_or(0);
+        let Some(table) = self.armor_upgrade_mats.tables.get(table_idx) else {
+            ui.label("No table loaded");
+            return;
+        };
+        
+        let total = table.rows.len();
+        if total == 0 {
+            ui.label("Table has no rows.");
+            return;
+        }
+        
+        ui.heading(format!("Armor Upgrade Materials - Table {} ({} items)", table_idx, total));
+        ui.separator();
+        
+        let page_size = 50usize;
+        let total_pages = (total + page_size - 1) / page_size;
+        let page = self.armor_upgrade_page.min(total_pages.saturating_sub(1) as u32);
+        self.armor_upgrade_page = page;
+        
+        let start = (page as usize) * page_size;
+        let end = (start + page_size).min(total);
+        
+        MhfdatApp::list_scroll(ui, "armor_upgrade_details_scroll", |ui| {
+            egui::Grid::new("armor_upgrade_details_grid")
+                .striped(true)
+                .num_columns(8)
+                .show(ui, |ui| {
+                    ui.label("Item");
+                    ui.label("Lv1");
+                    ui.label("Lv2");
+                    ui.label("Lv3");
+                    ui.label("Lv4");
+                    ui.label("Lv5");
+                    ui.label("Lv6");
+                    ui.label("Lv7");
+                    ui.end_row();
+                    
+                    for i in start..end {
+                        if let Some(row) = table.rows.get(i) {
+                            let row_copy: crate::model::mhfdat::ArmorUpgradeRow = unsafe { std::ptr::read_unaligned(row as *const _) };
+                            let item_id = row_copy.item_id;
+                            let lv1 = row_copy.lv1_upgrade;
+                            let lv2 = row_copy.lv2_upgrade;
+                            let lv3 = row_copy.lv3_upgrade;
+                            let lv4 = row_copy.lv4_upgrade;
+                            let lv5 = row_copy.lv5_upgrade;
+                            let lv6 = row_copy.lv6_upgrade;
+                            let lv7 = row_copy.lv7_upgrade;
+                            let item_name = self.item_names.get(item_id as usize).cloned().unwrap_or_default();
+                            
+                            ui.label(format!("{} ({})", item_id, item_name));
+                            ui.label(format!("{}", lv1));
+                            ui.label(format!("{}", lv2));
+                            ui.label(format!("{}", lv3));
+                            ui.label(format!("{}", lv4));
+                            ui.label(format!("{}", lv5));
+                            ui.label(format!("{}", lv6));
+                            ui.label(format!("{}", lv7));
+                            ui.end_row();
+                        }
+                    }
+                });
+        });
+        
+        MhfdatApp::pagination_controls(ui, &mut self.armor_upgrade_page, total_pages);
     }
 }

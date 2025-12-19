@@ -17,8 +17,10 @@ use crate::model::mhfdat_pointers::{
     G_RANK_WEAPON_SHOP_PTR, G_RANK_ARMOR_SHOP_PTR, ZENITH_WEAPON_FORGING_PTR, ZENITH_ARMOR_FORGING_PTR,
     DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
-    AUTOMATIC_SKILLS_TABLE_PTR, DECO_ID_PTR,
+    AUTOMATIC_SKILLS_TABLE_PTR, DECO_ID_PTR, ARMOR_UPGRADE_MATS_PTR, ARMOR_STAT_ARRAY_PTR, ARMOR_NAME_ARRAY_PTR, ARMOR_WEAPON_NAMES_ARRAY_PTR,
 };
+use crate::model::mhfdat::{ArmorStatPointers, ArmorNamePointers, ArmorWeaponNamePointers};
+use std::ptr;
 
 impl MhfdatApp {
 
@@ -180,6 +182,10 @@ impl MhfdatApp {
                 self.buffer[DECO_ID_PTR as usize..(DECO_ID_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[DECO_ID_PTR as usize..(DECO_ID_PTR + 4) as usize]);
             }
+            if self.armor_upgrade_mats_modified && saved_file_data.len() >= (ARMOR_UPGRADE_MATS_PTR + 4) as usize {
+                self.buffer[ARMOR_UPGRADE_MATS_PTR as usize..(ARMOR_UPGRADE_MATS_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[ARMOR_UPGRADE_MATS_PTR as usize..(ARMOR_UPGRADE_MATS_PTR + 4) as usize]);
+            }
             
             // Mettre à jour les pointeurs d'upgrades seulement si modifiés
             if self.mw_upgrades_modified && saved_file_data.len() >= (MELEE_WEAPON_UPGRADE_PATH_PTR + 4) as usize {
@@ -226,6 +232,11 @@ impl MhfdatApp {
                 let off = u32::from_le_bytes(self.buffer[DECO_ID_PTR as usize..(DECO_ID_PTR + 4) as usize].try_into().unwrap());
                 self.original_deco_ids_offset = Some(off);
                 self.deco_ids_modified = false;
+            }
+            if self.armor_upgrade_mats_modified {
+                let off = u32::from_le_bytes(self.buffer[ARMOR_UPGRADE_MATS_PTR as usize..(ARMOR_UPGRADE_MATS_PTR + 4) as usize].try_into().unwrap());
+                self.original_armor_upgrade_mats_offset = Some(off);
+                self.armor_upgrade_mats_modified = false;
             }
         }
         Ok(())
@@ -829,6 +840,58 @@ impl MhfdatApp {
             writer.write_all(&legs_armor_offset.to_le_bytes())?;
         }
 
+        // Update ARMOR_STAT_ARRAY_PTR structure if any armor pointer was modified
+        if self.head_armors_modified || self.body_armors_modified || self.arms_armors_modified ||
+           self.waist_armors_modified || self.legs_armors_modified {
+            // Read the pointer to ArmorStatPointers structure
+            if ARMOR_STAT_ARRAY_PTR as usize + 4 <= self.buffer.len() {
+                let armor_stat_array_ptr_offset = u32::from_le_bytes([
+                    self.buffer[ARMOR_STAT_ARRAY_PTR as usize],
+                    self.buffer[ARMOR_STAT_ARRAY_PTR as usize + 1],
+                    self.buffer[ARMOR_STAT_ARRAY_PTR as usize + 2],
+                    self.buffer[ARMOR_STAT_ARRAY_PTR as usize + 3],
+                ]);
+                
+                // Read the current ArmorStatPointers structure
+                if armor_stat_array_ptr_offset as usize + std::mem::size_of::<ArmorStatPointers>() <= self.buffer.len() {
+                    let mut armor_stat_pointers = unsafe {
+                        ptr::read_unaligned(
+                            self.buffer[armor_stat_array_ptr_offset as usize..]
+                                .as_ptr() as *const ArmorStatPointers
+                        )
+                    };
+                    
+                    // Update the corresponding fields based on which armor parts were modified
+                    if self.legs_armors_modified {
+                        armor_stat_pointers.legs = legs_armor_offset;
+                    }
+                    if self.head_armors_modified {
+                        armor_stat_pointers.head1 = head_armor_offset;
+                        armor_stat_pointers.head2 = head_armor_offset;
+                    }
+                    if self.body_armors_modified {
+                        armor_stat_pointers.body = body_armor_offset;
+                    }
+                    if self.arms_armors_modified {
+                        armor_stat_pointers.arm = arms_armor_offset;
+                    }
+                    if self.waist_armors_modified {
+                        armor_stat_pointers.waist = waist_armor_offset;
+                    }
+                    
+                    // Write the updated structure back
+                    writer.seek(SeekFrom::Start(armor_stat_array_ptr_offset as u64))?;
+                    let struct_bytes = unsafe {
+                        std::slice::from_raw_parts(
+                            &armor_stat_pointers as *const ArmorStatPointers as *const u8,
+                            std::mem::size_of::<ArmorStatPointers>()
+                        )
+                    };
+                    writer.write_all(struct_bytes)?;
+                }
+            }
+        }
+
         if self.head_armor_names_modified {
             writer.seek(SeekFrom::Start(HEAD_ARMOR_NAMES_PTR as u64))?;
             writer.write_all(&head_armor_names_offset.to_le_bytes())?;
@@ -852,6 +915,116 @@ impl MhfdatApp {
         if self.legs_armor_names_modified {
             writer.seek(SeekFrom::Start(LEG_ARMOR_NAMES_PTR as u64))?;
             writer.write_all(&legs_armor_names_offset.to_le_bytes())?;
+        }
+
+        // Update ARMOR_NAME_ARRAY_PTR structure if any armor name pointer was modified
+        if self.head_armor_names_modified || self.body_armor_names_modified || self.arms_armor_names_modified ||
+           self.waist_armor_names_modified || self.legs_armor_names_modified {
+            // Read the pointer to ArmorNamePointers structure
+            if ARMOR_NAME_ARRAY_PTR as usize + 4 <= self.buffer.len() {
+                let armor_name_array_ptr_offset = u32::from_le_bytes([
+                    self.buffer[ARMOR_NAME_ARRAY_PTR as usize],
+                    self.buffer[ARMOR_NAME_ARRAY_PTR as usize + 1],
+                    self.buffer[ARMOR_NAME_ARRAY_PTR as usize + 2],
+                    self.buffer[ARMOR_NAME_ARRAY_PTR as usize + 3],
+                ]);
+                
+                // Read the current ArmorNamePointers structure
+                if armor_name_array_ptr_offset as usize + std::mem::size_of::<ArmorNamePointers>() <= self.buffer.len() {
+                    let mut armor_name_pointers = unsafe {
+                        ptr::read_unaligned(
+                            self.buffer[armor_name_array_ptr_offset as usize..]
+                                .as_ptr() as *const ArmorNamePointers
+                        )
+                    };
+                    
+                    // Update the corresponding fields based on which armor name pointers were modified
+                    if self.head_armor_names_modified {
+                        armor_name_pointers.head = head_armor_names_offset;
+                    }
+                    if self.body_armor_names_modified {
+                        armor_name_pointers.body = body_armor_names_offset;
+                    }
+                    if self.arms_armor_names_modified {
+                        armor_name_pointers.arm = arms_armor_names_offset;
+                    }
+                    if self.waist_armor_names_modified {
+                        armor_name_pointers.waist = waist_armor_names_offset;
+                    }
+                    if self.legs_armor_names_modified {
+                        armor_name_pointers.legs = legs_armor_names_offset;
+                    }
+                    
+                    // Write the updated structure back
+                    writer.seek(SeekFrom::Start(armor_name_array_ptr_offset as u64))?;
+                    let struct_bytes = unsafe {
+                        std::slice::from_raw_parts(
+                            &armor_name_pointers as *const ArmorNamePointers as *const u8,
+                            std::mem::size_of::<ArmorNamePointers>()
+                        )
+                    };
+                    writer.write_all(struct_bytes)?;
+                }
+            }
+        }
+
+        // Update ARMOR_WEAPON_NAMES_ARRAY_PTR structure if any armor name or weapon name pointer was modified
+        if self.head_armor_names_modified || self.body_armor_names_modified || self.arms_armor_names_modified ||
+           self.waist_armor_names_modified || self.legs_armor_names_modified ||
+           self.melee_weapon_names_modified || self.ranged_weapon_names_modified {
+            // Read the pointer to ArmorWeaponNamePointers structure
+            if ARMOR_WEAPON_NAMES_ARRAY_PTR as usize + 4 <= self.buffer.len() {
+                let armor_weapon_names_array_ptr_offset = u32::from_le_bytes([
+                    self.buffer[ARMOR_WEAPON_NAMES_ARRAY_PTR as usize],
+                    self.buffer[ARMOR_WEAPON_NAMES_ARRAY_PTR as usize + 1],
+                    self.buffer[ARMOR_WEAPON_NAMES_ARRAY_PTR as usize + 2],
+                    self.buffer[ARMOR_WEAPON_NAMES_ARRAY_PTR as usize + 3],
+                ]);
+                
+                // Read the current ArmorWeaponNamePointers structure
+                if armor_weapon_names_array_ptr_offset as usize + std::mem::size_of::<ArmorWeaponNamePointers>() <= self.buffer.len() {
+                    let mut armor_weapon_name_pointers = unsafe {
+                        ptr::read_unaligned(
+                            self.buffer[armor_weapon_names_array_ptr_offset as usize..]
+                                .as_ptr() as *const ArmorWeaponNamePointers
+                        )
+                    };
+                    
+                    // Update the corresponding fields based on which pointers were modified
+                    if self.legs_armor_names_modified {
+                        armor_weapon_name_pointers.legs = legs_armor_names_offset;
+                    }
+                    // unknown1 is not modified - keep original value
+                    if self.head_armor_names_modified {
+                        armor_weapon_name_pointers.head = head_armor_names_offset;
+                    }
+                    if self.body_armor_names_modified {
+                        armor_weapon_name_pointers.body = body_armor_names_offset;
+                    }
+                    if self.arms_armor_names_modified {
+                        armor_weapon_name_pointers.arm = arms_armor_names_offset;
+                    }
+                    if self.waist_armor_names_modified {
+                        armor_weapon_name_pointers.waist = waist_armor_names_offset;
+                    }
+                    if self.melee_weapon_names_modified {
+                        armor_weapon_name_pointers.melee = melee_names_table_offset;
+                    }
+                    if self.ranged_weapon_names_modified {
+                        armor_weapon_name_pointers.ranged = ranged_names_table_offset;
+                    }
+                    
+                    // Write the updated structure back
+                    writer.seek(SeekFrom::Start(armor_weapon_names_array_ptr_offset as u64))?;
+                    let struct_bytes = unsafe {
+                        std::slice::from_raw_parts(
+                            &armor_weapon_name_pointers as *const ArmorWeaponNamePointers as *const u8,
+                            std::mem::size_of::<ArmorWeaponNamePointers>()
+                        )
+                    };
+                    writer.write_all(struct_bytes)?;
+                }
+            }
         }
 
         if self.items_modified {
@@ -1039,6 +1212,20 @@ impl MhfdatApp {
                 writer.write_all(&base_offset.to_le_bytes())?;
                 writer.seek(SeekFrom::End(0))?;
             }
+        }
+
+        // Armor Upgrade Materials - write only if modified
+        if self.armor_upgrade_mats_modified {
+            use crate::core::mhfdat::write_armor_upgrade_mats_block;
+            
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let block = write_armor_upgrade_mats_block(&self.armor_upgrade_mats)?;
+            writer.write_all(&block)?;
+            
+            // Update pointer
+            writer.seek(SeekFrom::Start(ARMOR_UPGRADE_MATS_PTR as u64))?;
+            writer.write_all(&offset.to_le_bytes())?;
+            writer.seek(SeekFrom::End(0))?;
         }
 
         Ok(())

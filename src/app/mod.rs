@@ -175,6 +175,7 @@ pub enum ArmorTab {
     Arms,
     Waist,
     Legs,
+    ArmorUpgrade,
 }
 
 impl Default for ArmorTab {
@@ -435,6 +436,15 @@ pub struct MhfdatApp {
     pub selected_quest_index: Option<usize>,
     pub selected_quest_rank: usize, // 0-5 for HR, 0-6 for GR
     pub quest_page: u32,
+    
+    // Armor Upgrade Materials
+    pub armor_upgrade_mats: crate::model::mhfdat::ArmorUpgradeMats,
+    pub armor_upgrade_mats_modified: bool,
+    pub original_armor_upgrade_mats_offset: Option<u32>,
+    pub selected_armor_upgrade_table_index: Option<usize>,
+    pub selected_armor_upgrade_row_index: Option<usize>,
+    pub armor_upgrade_page: u32,
+    pub armor_upgrade_tables_page: u32,
 }
 
 impl Default for MhfdatApp {
@@ -680,6 +690,15 @@ impl Default for MhfdatApp {
             selected_quest_index: None,
             selected_quest_rank: 0,
             quest_page: 0,
+            
+            // Armor Upgrade Materials
+            armor_upgrade_mats: Default::default(),
+            armor_upgrade_mats_modified: false,
+            original_armor_upgrade_mats_offset: None,
+            selected_armor_upgrade_table_index: None,
+            selected_armor_upgrade_row_index: None,
+            armor_upgrade_page: 0,
+            armor_upgrade_tables_page: 0,
         }
     }
 }
@@ -743,6 +762,7 @@ impl MhfdatApp {
         self.load_quests();
         self.load_g50_weapon_upgrades();
         self.load_g50_tower_params();
+        self.load_armor_upgrade_mats();
         
         // Load weapon names and descriptions
         {

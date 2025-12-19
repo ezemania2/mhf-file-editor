@@ -327,6 +327,7 @@ impl MhfdatApp {
             ArmorTab::Arms => self.arms_armors = armors,
             ArmorTab::Waist => self.waist_armors = armors,
             ArmorTab::Legs => self.legs_armors = armors,
+            ArmorTab::ArmorUpgrade => {}
         }
         
         Ok(())
@@ -548,6 +549,19 @@ impl MhfdatApp {
                 self.g50_tower_params_modified[i] = false;
                 self.g50_tower_params[i] = read_tower_g50_weapon_type(&self.buffer, ptr_table_offset as usize);
             }
+        }
+    }
+    
+    pub fn load_armor_upgrade_mats(&mut self) {
+        use crate::core::mhfdat::read_armor_upgrade_mats;
+        
+        if self.buffer.len() >= ARMOR_UPGRADE_MATS_PTR as usize + 4 {
+            let offset = u32::from_le_bytes(
+                self.buffer[ARMOR_UPGRADE_MATS_PTR as usize..ARMOR_UPGRADE_MATS_PTR as usize + 4].try_into().unwrap()
+            );
+            self.original_armor_upgrade_mats_offset = Some(offset);
+            self.armor_upgrade_mats_modified = false;
+            self.armor_upgrade_mats = read_armor_upgrade_mats(&self.buffer, ARMOR_UPGRADE_MATS_PTR);
         }
     }
 }
