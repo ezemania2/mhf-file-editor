@@ -111,7 +111,13 @@ impl MhfdatApp {
         cursor.seek(SeekFrom::Start(0)).unwrap();
         let total_armors = self.head_armors.len() + self.body_armors.len() + self.arms_armors.len() + 
                           self.waist_armors.len() + self.legs_armors.len();
-        if let Ok(descriptions) = extract_armor_descriptions(&mut cursor, HEAD_ARMOR_DESC_PTR, total_armors) {
+        if buffer.len() >= ARMOR_DESC_PTR as usize + 4 {
+            self.original_armor_descriptions_offset = Some(
+                u32::from_le_bytes(buffer[ARMOR_DESC_PTR as usize..ARMOR_DESC_PTR as usize + 4].try_into().unwrap())
+            );
+            self.armor_descriptions_modified = false;
+        }
+        if let Ok(descriptions) = extract_armor_descriptions(&mut cursor, ARMOR_DESC_PTR, total_armors) {
             self.armor_descriptions = descriptions;
         }
 

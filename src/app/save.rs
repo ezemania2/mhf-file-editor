@@ -4,7 +4,7 @@ use crate::core::packing::{compress_file, encrypt_file};
 use crate::core::mhfdat::{
     write_melee_weapons_block, write_ranged_weapons_block, write_armors_block, write_items_block, write_transmog_data,
     write_mw_upgrades_block, write_rw_upgrades_block, write_deco_shop_block, write_automatic_skills_block,
-    write_armor_names, write_item_names, write_item_descriptions, write_sharpness_data_block, write_bullet_sets_block,
+    write_armor_names, write_armor_descriptions, write_item_names, write_item_descriptions, write_sharpness_data_block, write_bullet_sets_block,
     write_deco_ids_block, write_monster_descriptions
 };
 use crate::model::mhfdat_pointers::{
@@ -18,7 +18,7 @@ use crate::model::mhfdat_pointers::{
     DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
     AUTOMATIC_SKILLS_TABLE_PTR, DECO_ID_PTR, ARMOR_UPGRADE_MATS_PTR, ARMOR_STAT_ARRAY_PTR, ARMOR_NAME_ARRAY_PTR, ARMOR_WEAPON_NAMES_ARRAY_PTR,
-    MOSNTERS_DESCRIPTION_PTR, MOSNTERS_DESCRIPTION_COUNT_PTR,
+    MOSNTERS_DESCRIPTION_PTR, MOSNTERS_DESCRIPTION_COUNT_PTR, ARMOR_DESC_PTR,
 };
 use crate::model::mhfdat::{ArmorStatPointers, ArmorNamePointers, ArmorWeaponNamePointers};
 use std::ptr;
@@ -304,6 +304,11 @@ impl MhfdatApp {
             }
             if self.monster_descriptions_count_modified {
                 self.monster_descriptions_count_modified = false;
+            }
+            if self.armor_descriptions_modified {
+                let off = u32::from_le_bytes(self.buffer[ARMOR_DESC_PTR as usize..(ARMOR_DESC_PTR + 4) as usize].try_into().unwrap());
+                self.original_armor_descriptions_offset = Some(off);
+                self.armor_descriptions_modified = false;
             }
         }
         Ok(())
@@ -860,6 +865,15 @@ impl MhfdatApp {
         } else {
             self.original_monster_descriptions_offset.unwrap_or(0)
         };
+        
+        let armor_desc_count = self.armor_descriptions.len();
+        let armor_desc_offset = if self.armor_descriptions_modified && armor_desc_count > 0 {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_armor_descriptions(&mut writer, &self.armor_descriptions[..armor_desc_count])?;
+            current_pos
+        } else {
+            self.original_armor_descriptions_offset.unwrap_or(0)
+        };
 
         // Patch header pointers - seulement si modifié
         
@@ -1126,6 +1140,11 @@ impl MhfdatApp {
                 writer.seek(SeekFrom::Start(MOSNTERS_DESCRIPTION_COUNT_PTR as u64))?;
                 writer.write_all(&self.monster_descriptions_count.to_le_bytes())?;
             }
+        }
+        
+        if self.armor_descriptions_modified {
+            writer.seek(SeekFrom::Start(ARMOR_DESC_PTR as u64))?;
+            writer.write_all(&armor_desc_offset.to_le_bytes())?;
         }
 
         if self.transmog_modified {

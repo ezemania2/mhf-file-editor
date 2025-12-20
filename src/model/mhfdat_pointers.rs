@@ -23,7 +23,7 @@ pub const ARM_ARMOR_NAMES_PTR: u32 = 0x6C;
 pub const WAIST_ARMOR_NAMES_PTR: u32 = 0x70;
 pub const LEG_ARMOR_NAMES_PTR: u32 = 0x74;
 
-pub const HEAD_ARMOR_DESC_PTR: u32 = 0x78;
+pub const ARMOR_DESC_PTR: u32 = 0x78;
 
 pub const MELEE_WEAPONS_PTR: u32 = 0x7C;
 pub const RANGED_WEAPONS_PTR: u32 = 0x80;

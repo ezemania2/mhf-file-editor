@@ -2014,12 +2014,12 @@ pub fn read_equipment<R: Read>(r: &mut R) -> Result<MhfdatEquipment> {
         thunder_res: r.read_i8()?,
         dragon_res: r.read_i8()?,
         ice_res: r.read_i8()?,
-        unk19: r.read_u8()?,
+        coef_upgrade: r.read_u8()?,
         unk1A: r.read_u8()?,
         base_slots: r.read_u8()?,
         max_slots: r.read_u8()?,
-        sth_event_crown: r.read_u8()?,
-        unk1E: r.read_u16::<LittleEndian>()?,
+        post_festi: r.read_u8()?,
+        show_next_level: r.read_u16::<LittleEndian>()?,
         equip_id: r.read_u16::<LittleEndian>()?,
         unk22: r.read_u16::<LittleEndian>()?,
         unk24: r.read_u32::<LittleEndian>()?,
@@ -2034,12 +2034,13 @@ pub fn read_equipment<R: Read>(r: &mut R) -> Result<MhfdatEquipment> {
         skill_pts4: r.read_i8()?,
         skill_id5: r.read_u8()?,
         skill_pts5: r.read_i8()?,
-        sth_hidden: r.read_u32::<LittleEndian>()?,
-        unk38: r.read_u32::<LittleEndian>()?,
-        unk3C: r.read_u16::<LittleEndian>()?,
-        unk3E: r.read_u8()?,
+        armor_type: r.read_u32::<LittleEndian>()?,
+        weap_hiden: r.read_u16::<LittleEndian>()?,
+        deco_item_id: r.read_u16::<LittleEndian>()?,
+        towerslots: r.read_u16::<LittleEndian>()?,
+        g_rank: r.read_u8()?,
         zero_f: r.read_u8()?,
-        unk40: r.read_u32::<LittleEndian>()?,
+        app_price: r.read_u32::<LittleEndian>()?,
         unk44: r.read_u16::<LittleEndian>()?,
         zenith_skill: r.read_u16::<LittleEndian>()?,
     })
@@ -2064,12 +2065,12 @@ pub fn write_equipment<W: Write>(w: &mut W, eq: &MhfdatEquipment) -> Result<()> 
     w.write_i8(eq.thunder_res)?;
     w.write_i8(eq.dragon_res)?;
     w.write_i8(eq.ice_res)?;
-    w.write_u8(eq.unk19)?;
+    w.write_u8(eq.coef_upgrade)?;
     w.write_u8(eq.unk1A)?;
     w.write_u8(eq.base_slots)?;
     w.write_u8(eq.max_slots)?;
-    w.write_u8(eq.sth_event_crown)?;
-    w.write_u16::<LittleEndian>(eq.unk1E)?;
+    w.write_u8(eq.post_festi)?;
+    w.write_u16::<LittleEndian>(eq.show_next_level)?;
     w.write_u16::<LittleEndian>(eq.equip_id)?;
     w.write_u16::<LittleEndian>(eq.unk22)?;
     w.write_u32::<LittleEndian>(eq.unk24)?;
@@ -2084,12 +2085,13 @@ pub fn write_equipment<W: Write>(w: &mut W, eq: &MhfdatEquipment) -> Result<()> 
     w.write_i8(eq.skill_pts4)?;
     w.write_u8(eq.skill_id5)?;
     w.write_i8(eq.skill_pts5)?;
-    w.write_u32::<LittleEndian>(eq.sth_hidden)?;
-    w.write_u32::<LittleEndian>(eq.unk38)?;
-    w.write_u16::<LittleEndian>(eq.unk3C)?;
-    w.write_u8(eq.unk3E)?;
+    w.write_u32::<LittleEndian>(eq.armor_type)?;
+    w.write_u16::<LittleEndian>(eq.weap_hiden)?;
+    w.write_u16::<LittleEndian>(eq.deco_item_id)?;
+    w.write_u16::<LittleEndian>(eq.towerslots)?;
+    w.write_u8(eq.g_rank)?;
     w.write_u8(eq.zero_f)?;
-    w.write_u32::<LittleEndian>(eq.unk40)?;
+    w.write_u32::<LittleEndian>(eq.app_price)?;
     w.write_u16::<LittleEndian>(eq.unk44)?;
     w.write_u16::<LittleEndian>(eq.zenith_skill)?;
     Ok(())
@@ -2144,12 +2146,12 @@ pub fn extract_armor_names<R: Read + Seek>(
     Ok(names)
 }
 
-/// Extraction des descriptions d'armures (3 champs par entrée) via table de pointeurs, même format que pour les armes
+/// Extraction des descriptions d'armures (4 pointeurs par entrée, 3 utilisés pour le texte, 1 toujours 0x00000000) via table de pointeurs, même format que pour les armes
 pub fn extract_armor_descriptions<R: Read + Seek>(
     reader: &mut R,
     desc_ptr: u32,
     count: usize,
-) -> std::io::Result<Vec<[String; 3]>> {
+) -> std::io::Result<Vec<[String; 4]>> {
     // Aller à la table de pointeurs principale
     reader.seek(SeekFrom::Start(desc_ptr as u64))?;
     // Lire le pointeur vers la vraie table de pointeurs
@@ -2160,15 +2162,15 @@ pub fn extract_armor_descriptions<R: Read + Seek>(
     // Pour chaque entrée (armure)
     let mut all_descs = Vec::with_capacity(count);
     for _ in 0..count {
-        // Lire 3 pointeurs
-        let mut field_ptrs = [0u32; 3];
-        for i in 0..3 {
+        // Lire 4 pointeurs
+        let mut field_ptrs = [0u32; 4];
+        for i in 0..4 {
             let mut ptr_buf = [0u8; 4];
             reader.read_exact(&mut ptr_buf)?;
             field_ptrs[i] = u32::from_le_bytes(ptr_buf);
         }
-        // Pour chaque champ, lire la chaîne
-        let mut descs = [String::new(), String::new(), String::new()];
+        // Pour chaque champ, lire la chaîne (le 4ème pointeur est toujours 0x00000000)
+        let mut descs = [String::new(), String::new(), String::new(), String::new()];
         for (i, &str_offset) in field_ptrs.iter().enumerate() {
             if str_offset == 0 {
                 descs[i] = String::new();
@@ -2460,7 +2462,7 @@ pub fn write_zenith_data(zenith_entries: &[ShopEntry]) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-pub fn write_armor_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[[String; 3]]) -> Result<u32> {
+pub fn write_armor_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[[String; 4]]) -> Result<u32> {
     let mut data = Vec::new();
     let mut cursor = Cursor::new(&mut data);
     
@@ -2468,28 +2470,31 @@ pub fn write_armor_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &
     let mut field_offsets = Vec::new();
     let mut strings_data = Vec::new();
     
-    // Calculate string offsets
-    let mut current_offset = 4 + (descriptions.len() * 12) as u32; // 4 bytes for table pointer + 12 bytes per entry (3 pointers * 4 bytes)
+    // Calculate string offsets (4 pointers per entry: 3 pour le texte + 1 toujours 0x00000000)
+    let mut current_offset = 4 + (descriptions.len() * 16) as u32; // 4 bytes for table pointer + 16 bytes per entry (4 pointers * 4 bytes)
     
     for desc in descriptions {
         let mut entry_offsets = Vec::new();
-        for field in desc {
+        // Les 3 premiers champs contiennent du texte
+        for j in 0..3 {
             entry_offsets.push(current_offset);
-            let encoded = SHIFT_JIS.encode(field).0;
+            let encoded = SHIFT_JIS.encode(&desc[j]).0;
             strings_data.extend_from_slice(&encoded);
             strings_data.push(0);
             current_offset += encoded.len() as u32 + 1;
         }
+        // Le 4ème pointeur est toujours 0x00000000
+        entry_offsets.push(0u32);
         field_offsets.extend(entry_offsets);
     }
     
     // Write the table pointer (points to the field pointer table)
     cursor.write_all(&(4u32).to_le_bytes())?;
     
-    // Write field pointers for each entry
+    // Write field pointers for each entry (4 pointers par entrée)
     for i in 0..descriptions.len() {
-        for j in 0..3 {
-            let offset = field_offsets[i * 3 + j];
+        for j in 0..4 {
+            let offset = field_offsets[i * 4 + j];
             cursor.write_all(&offset.to_le_bytes())?;
         }
     }

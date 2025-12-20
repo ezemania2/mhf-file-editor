@@ -81,21 +81,27 @@ impl MhfdatApp {
     }
 
     pub fn show_armor_list_view(&mut self, ui: &mut egui::Ui) {
-        let (armors, names) = match self.armor_tab {
-            ArmorTab::Head => (&mut self.head_armors, &mut self.head_armor_names),
-            ArmorTab::Body => (&mut self.body_armors, &mut self.body_armor_names),
-            ArmorTab::Arms => (&mut self.arms_armors, &mut self.arms_armor_names),
-            ArmorTab::Waist => (&mut self.waist_armors, &mut self.waist_armor_names),
-            ArmorTab::Legs => (&mut self.legs_armors, &mut self.legs_armor_names),
-            ArmorTab::ArmorUpgrade => unreachable!(),
-        };
-
         let armor_type = match self.armor_tab {
             ArmorTab::Head => "Head",
             ArmorTab::Body => "Body",
             ArmorTab::Arms => "Arms",
             ArmorTab::Waist => "Waist",
             ArmorTab::Legs => "Legs",
+            ArmorTab::ArmorUpgrade => unreachable!(),
+        };
+        
+        // Store lengths for offset calculation before mutable borrows
+        let head_len = self.head_armors.len();
+        let body_len = self.body_armors.len();
+        let arms_len = self.arms_armors.len();
+        let waist_len = self.waist_armors.len();
+        
+        let (armors, names) = match self.armor_tab {
+            ArmorTab::Head => (&mut self.head_armors, &mut self.head_armor_names),
+            ArmorTab::Body => (&mut self.body_armors, &mut self.body_armor_names),
+            ArmorTab::Arms => (&mut self.arms_armors, &mut self.arms_armor_names),
+            ArmorTab::Waist => (&mut self.waist_armors, &mut self.waist_armor_names),
+            ArmorTab::Legs => (&mut self.legs_armors, &mut self.legs_armor_names),
             ArmorTab::ArmorUpgrade => unreachable!(),
         };
 
@@ -107,7 +113,6 @@ impl MhfdatApp {
             }
             real_count += 1;
         }
-        let max_count = real_count.min(armors.len());
 
         let armor_type_str = match self.armor_tab { 
             ArmorTab::Head=>"head", 
@@ -119,7 +124,7 @@ impl MhfdatApp {
         };
         
         ui.horizontal(|ui| {
-            ui.heading(format!("{} Armor (found: {})", armor_type, max_count));
+            ui.heading(format!("{} Armor (found: {})", armor_type, real_count.min(armors.len())));
         });
 
         // Buttons row
@@ -160,7 +165,7 @@ impl MhfdatApp {
                         ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
                         ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
                         ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
-                        ArmorTab::ArmorUpgrade => {}
+                        ArmorTab::ArmorUpgrade => {},
                     }
                     return;
                 }
@@ -168,6 +173,17 @@ impl MhfdatApp {
         }
 
         if do_add {
+            // Calculate armor part offset using stored lengths
+            let armor_part_offset = match self.armor_tab {
+                ArmorTab::Head => 0,
+                ArmorTab::Body => head_len,
+                ArmorTab::Arms => head_len + body_len,
+                ArmorTab::Waist => head_len + body_len + arms_len,
+                ArmorTab::Legs => head_len + body_len + arms_len + waist_len,
+                ArmorTab::ArmorUpgrade => unreachable!(),
+            };
+            let desc_index = armor_part_offset + real_count;
+            
             let mut new_armor = MhfdatEquipment::default();
             let next_model_id = 0;
             new_armor.model_id_male = 0;
@@ -175,9 +191,17 @@ impl MhfdatApp {
             new_armor.equipable_by = 0x0F; // All flags enabled by default
             new_armor.base_slots = 0;
             new_armor.max_slots = 3;
+            let new_name = format!("New {} Armor", armor_type);
             
-            armors.insert(real_count, new_armor);
-            names.insert(real_count, format!("New {} Armor", armor_type));
+            // Insert into armors and names (limit scope of mutable borrows)
+            {
+                armors.insert(real_count, new_armor);
+                names.insert(real_count, new_name);
+            }
+            
+            // Add new armor description entry
+            self.armor_descriptions.insert(desc_index, [String::new(), String::new(), String::new(), String::new()]);
+            self.armor_descriptions_modified = true;
             
             // Marquer comme modifié selon le type
             match self.armor_tab {
@@ -204,6 +228,26 @@ impl MhfdatApp {
                 ArmorTab::ArmorUpgrade => {}
             }
         }
+
+        // Recreate references if they were dropped in do_add block
+        let (armors, names) = match self.armor_tab {
+            ArmorTab::Head => (&mut self.head_armors, &mut self.head_armor_names),
+            ArmorTab::Body => (&mut self.body_armors, &mut self.body_armor_names),
+            ArmorTab::Arms => (&mut self.arms_armors, &mut self.arms_armor_names),
+            ArmorTab::Waist => (&mut self.waist_armors, &mut self.waist_armor_names),
+            ArmorTab::Legs => (&mut self.legs_armors, &mut self.legs_armor_names),
+            ArmorTab::ArmorUpgrade => unreachable!(),
+        };
+        
+        // Update real_count after potential insertions
+        let mut real_count_after = 0;
+        for armor in armors.iter() {
+            if armor.model_id_male == 0xFFFF {
+                break;
+            }
+            real_count_after += 1;
+        }
+        let max_count = real_count_after.min(armors.len());
 
         // Search and filters
         ui.horizontal(|ui| {
@@ -334,6 +378,17 @@ impl MhfdatApp {
         }
 
         if let Some(index) = self.selected_armor_index {
+            // Calculate armor part offset before mutable borrows
+            let armor_part_offset = match self.armor_tab {
+                ArmorTab::Head => 0,
+                ArmorTab::Body => self.head_armors.len(),
+                ArmorTab::Arms => self.head_armors.len() + self.body_armors.len(),
+                ArmorTab::Waist => self.head_armors.len() + self.body_armors.len() + self.arms_armors.len(),
+                ArmorTab::Legs => self.head_armors.len() + self.body_armors.len() + self.arms_armors.len() + self.waist_armors.len(),
+                ArmorTab::ArmorUpgrade => unreachable!(),
+            };
+            let desc_index = armor_part_offset + index;
+            
             // Marquer comme modifié selon le type d'armure
             match self.armor_tab {
                 ArmorTab::Head => self.head_armors_modified = true,
@@ -388,6 +443,33 @@ impl MhfdatApp {
                                 }
                             });
                 
+                // Armor descriptions
+                ui.heading("Descriptions");
+                if let Some(descs) = self.armor_descriptions.get_mut(desc_index) {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label("Description 1:");
+                            if ui.add(egui::TextEdit::multiline(&mut descs[0]).desired_rows(2)).changed() {
+                                self.armor_descriptions_modified = true;
+                            }
+                        });
+                        ui.vertical(|ui| {
+                            ui.label("Description 2:");
+                            if ui.add(egui::TextEdit::multiline(&mut descs[1]).desired_rows(2)).changed() {
+                                self.armor_descriptions_modified = true;
+                            }
+                        });
+                        ui.vertical(|ui| {
+                            ui.label("Description 3:");
+                            if ui.add(egui::TextEdit::multiline(&mut descs[2]).desired_rows(2)).changed() {
+                                self.armor_descriptions_modified = true;
+                            }
+                        });
+                    });
+                } else {
+                    ui.label(format!("Warning: Description index {} out of range", desc_index));
+                }
+                
                 ui.separator();
                 let armor_changed = Self::render_armor_details(ui, armor, 
                     &mut self.armor_skill1_search,
@@ -395,7 +477,10 @@ impl MhfdatApp {
                     &mut self.armor_skill3_search,
                     &mut self.armor_skill4_search,
                     &mut self.armor_skill5_search,
-                    &mut self.armor_zenith_skill_search
+                    &mut self.armor_zenith_skill_search,
+                    &mut self.armor_deco_item_search,
+                    &self.item_names,
+                    &self.items
                 );
                 
                 // Marquer les armures comme modifiées si des changements ont été faits
@@ -424,6 +509,9 @@ impl MhfdatApp {
         armor_skill4_search: &mut String,
         armor_skill5_search: &mut String,
         armor_zenith_skill_search: &mut String,
+        armor_deco_item_search: &mut String,
+        item_names: &[String],
+        items: &[MhfdatItem],
     ) -> bool {
         // Track if anything changed
         let mut changed = false;
@@ -724,6 +812,123 @@ impl MhfdatApp {
                 }
                             });
                     });
+
+            // Advanced Stats
+            ui.collapsing("Advanced Stats", |ui| {
+                // Save original values for change detection
+                let orig_coef_upgrade = armor.coef_upgrade;
+                let orig_post_festi = armor.post_festi;
+                let orig_show_next_level = armor.show_next_level;
+                let orig_armor_type = armor.armor_type;
+                let orig_weap_hiden = armor.weap_hiden;
+                let orig_towerslots = armor.towerslots;
+                let orig_deco_item_id = armor.deco_item_id;
+                let orig_g_rank = armor.g_rank;
+                let orig_app_price = armor.app_price;
+                let orig_equip_id = armor.equip_id;
+                let orig_zenny_cost = armor.zenny_cost;
+                let orig_base_slots = armor.base_slots;
+                let orig_max_slots = armor.max_slots;
+                
+                let mut coef_upgrade = armor.coef_upgrade;
+                let mut post_festi = armor.post_festi;
+                let mut show_next_level = armor.show_next_level;
+                let mut armor_type = armor.armor_type;
+                let mut weap_hiden = armor.weap_hiden;
+                let mut towerslots = armor.towerslots;
+                let mut deco_item_id = armor.deco_item_id;
+                let mut g_rank = armor.g_rank;
+                let mut app_price = armor.app_price;
+                let mut equip_id = armor.equip_id;
+                let mut zenny_cost = armor.zenny_cost;
+                let mut base_slots = armor.base_slots;
+                let mut max_slots = armor.max_slots;
+
+                Self::render_editable_field(ui, "Coef Upgrade", &mut coef_upgrade);
+                Self::render_editable_field(ui, "Post Festi", &mut post_festi);
+                Self::render_editable_field(ui, "Show Next Level", &mut show_next_level);
+                Self::render_editable_field(ui, "Armor Type", &mut armor_type);
+                Self::render_editable_field(ui, "Weap Hiden", &mut weap_hiden);
+                Self::render_editable_field(ui, "Tower Slots", &mut towerslots);
+                
+                // Deco Item ID with searchable combo box
+                ui.horizontal(|ui| {
+                    ui.label("Deco Item ID:");
+                    ui.add(egui::TextEdit::singleline(armor_deco_item_search)
+                        .hint_text("Search...").desired_width(100.0));
+                    
+                    let q = armor_deco_item_search.to_lowercase();
+                    let current_name = if deco_item_id == 0 {
+                        "None".to_string()
+                    } else {
+                        item_names.get(deco_item_id as usize).cloned().unwrap_or_else(|| format!("Unknown Item {}", deco_item_id))
+                    };
+                    
+                    egui::ComboBox::from_id_source("deco_item_combo")
+                        .selected_text(if deco_item_id == 0 { "None".to_string() } else { format!("{} - {}", deco_item_id, current_name) })
+                        .show_ui(ui, |ui| {
+                            // Option "None"
+                            ui.selectable_value(&mut deco_item_id, 0, "None");
+                            
+                            egui::ScrollArea::vertical()
+                                .max_height(300.0)
+                                .show(ui, |ui| {
+                                    for (item_id, item_name) in item_names.iter().enumerate() {
+                                        // Filter: only show items with deco_id > 0
+                                        if let Some(item) = items.get(item_id) {
+                                            if item.deco_id == 0 {
+                                                continue;
+                                            }
+                                        } else {
+                                            continue;
+                                        }
+                                        
+                                        let item_id_u16 = item_id as u16;
+                                        let item_name_lower = item_name.to_lowercase();
+                                        if q.is_empty() || item_name_lower.contains(&q) || item_id.to_string().contains(&q) {
+                                            let display_text = if item_name.is_empty() {
+                                                format!("{} - (Unnamed)", item_id)
+                                            } else {
+                                                format!("{} - {}", item_id, item_name)
+                                            };
+                                            ui.selectable_value(&mut deco_item_id, item_id_u16, display_text);
+                                        }
+                                    }
+                                });
+                        });
+                });
+                
+                Self::render_editable_field(ui, "G Rank", &mut g_rank);
+                Self::render_editable_field(ui, "App Price", &mut app_price);
+                Self::render_editable_field(ui, "Equip ID", &mut equip_id);
+                Self::render_editable_field(ui, "Zenny Cost", &mut zenny_cost);
+                Self::render_editable_field(ui, "Base Slots", &mut base_slots);
+                Self::render_editable_field(ui, "Max Slots", &mut max_slots);
+
+                armor.coef_upgrade = coef_upgrade;
+                armor.post_festi = post_festi;
+                armor.show_next_level = show_next_level;
+                armor.armor_type = armor_type;
+                armor.weap_hiden = weap_hiden;
+                armor.towerslots = towerslots;
+                armor.deco_item_id = deco_item_id;
+                armor.g_rank = g_rank;
+                armor.app_price = app_price;
+                armor.equip_id = equip_id;
+                armor.zenny_cost = zenny_cost;
+                armor.base_slots = base_slots;
+                armor.max_slots = max_slots;
+                
+                if coef_upgrade != orig_coef_upgrade || post_festi != orig_post_festi
+                    || show_next_level != orig_show_next_level || armor_type != orig_armor_type
+                    || weap_hiden != orig_weap_hiden || towerslots != orig_towerslots
+                    || deco_item_id != orig_deco_item_id || g_rank != orig_g_rank
+                    || app_price != orig_app_price || equip_id != orig_equip_id
+                    || zenny_cost != orig_zenny_cost || base_slots != orig_base_slots
+                    || max_slots != orig_max_slots {
+                    changed = true;
+                }
+            });
         
         // Return true only if something actually changed
         changed
@@ -955,4 +1160,5 @@ impl MhfdatApp {
         
         MhfdatApp::pagination_controls(ui, &mut self.armor_upgrade_page, total_pages);
     }
+    
 }

@@ -233,6 +233,7 @@ pub struct MhfdatApp {
     pub armor_skill4_search: String,
     pub armor_skill5_search: String,
     pub armor_zenith_skill_search: String,
+    pub armor_deco_item_search: String,
     pub melee_weapon_names: Vec<String>,
     pub show_dummy_weapons: bool,
     pub show_dummy_ranged_weapons: bool,
@@ -310,7 +311,9 @@ pub struct MhfdatApp {
     pub debug_logs: Vec<String>,
     pub equip_descs: Vec<MhfdatEquipment>,
     pub equip_desc_names: Vec<String>,
-    pub armor_descriptions: Vec<[String; 3]>,
+    pub armor_descriptions: Vec<[String; 4]>,
+    pub armor_descriptions_modified: bool,
+    pub original_armor_descriptions_offset: Option<u32>,
     pub view_mode: HashMap<String, ViewMode>,
     pub shop_page: u32,
     pub armor_page: u32,
@@ -524,6 +527,7 @@ impl Default for MhfdatApp {
             armor_skill4_search: String::new(),
             armor_skill5_search: String::new(),
             armor_zenith_skill_search: String::new(),
+            armor_deco_item_search: String::new(),
             melee_weapon_names: Vec::new(),
             show_dummy_weapons: false,
             show_dummy_ranged_weapons: false,
@@ -601,6 +605,8 @@ impl Default for MhfdatApp {
             equip_descs: Vec::new(),
             equip_desc_names: Vec::new(),
             armor_descriptions: Vec::new(),
+            armor_descriptions_modified: false,
+            original_armor_descriptions_offset: None,
             view_mode: HashMap::new(),
             shop_page: 0,
             armor_page: 0,
@@ -1070,6 +1076,7 @@ impl MhfdatApp {
         self.armor_skill4_search.clear();
         self.armor_skill5_search.clear();
         self.armor_zenith_skill_search.clear();
+        self.armor_deco_item_search.clear();
         self.class_id_filter = None;
         self.element_filter = None;
         self.ailment_filter = None;
