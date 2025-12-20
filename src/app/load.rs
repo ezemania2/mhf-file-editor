@@ -1,7 +1,7 @@
 use super::*;
 use std::io::{Read, Seek, SeekFrom, Cursor};
 use crate::model::mhfdat_pointers::*;
-use crate::core::mhfdat::{*, parse_items, parse_item_names, parse_item_descriptions};
+use crate::core::mhfdat::{*, parse_items, parse_item_names, parse_item_descriptions, parse_monster_descriptions};
 use std::mem::size_of;
 
 impl MhfdatApp {
@@ -591,5 +591,64 @@ impl MhfdatApp {
             self.carve_parts_modified = false;
             self.carve_parts = read_carve_parts(&self.buffer, CARVE_PARTS_PTR, count as usize);
         }
+    }
+    
+    pub fn load_part_break_parts(&mut self) {
+        use crate::model::mhfdat_pointers::{PART_BREAK_DROP_PTR, PART_BREAK_DROP_COUNT_PTR};
+        use crate::core::mhfdat::read_part_break_parts;
+        
+        // Read count from PART_BREAK_DROP_COUNT_PTR first
+        let count = if self.buffer.len() >= PART_BREAK_DROP_COUNT_PTR as usize + 2 {
+            u16::from_le_bytes(
+                self.buffer[PART_BREAK_DROP_COUNT_PTR as usize..PART_BREAK_DROP_COUNT_PTR as usize + 2]
+                    .try_into().unwrap()
+            )
+        } else {
+            0
+        };
+        self.part_break_parts_count = count;
+        self.part_break_parts_count_modified = false;
+        
+        // Read part break parts data using the count
+        if self.buffer.len() >= PART_BREAK_DROP_PTR as usize + 4 {
+            let offset = u32::from_le_bytes(
+                self.buffer[PART_BREAK_DROP_PTR as usize..PART_BREAK_DROP_PTR as usize + 4]
+                    .try_into().unwrap()
+            );
+            self.original_part_break_parts_offset = Some(offset);
+            self.part_break_parts_modified = false;
+            self.part_break_parts = read_part_break_parts(&self.buffer, PART_BREAK_DROP_PTR, count as usize);
+        }
+    }
+    
+    pub fn load_monster_descriptions(&mut self) {
+        use crate::model::mhfdat_pointers::{MOSNTERS_DESCRIPTION_PTR, MOSNTERS_DESCRIPTION_COUNT_PTR};
+        
+        // Read count from MOSNTERS_DESCRIPTION_COUNT_PTR first
+        let count = if self.buffer.len() >= MOSNTERS_DESCRIPTION_COUNT_PTR as usize + 2 {
+            u16::from_le_bytes(
+                self.buffer[MOSNTERS_DESCRIPTION_COUNT_PTR as usize..MOSNTERS_DESCRIPTION_COUNT_PTR as usize + 2]
+                    .try_into().unwrap()
+            )
+        } else {
+            0
+        };
+        self.monster_descriptions_count = count;
+        self.monster_descriptions_count_modified = false;
+        
+        // Save original offset
+        if self.buffer.len() >= MOSNTERS_DESCRIPTION_PTR as usize + 4 {
+            self.original_monster_descriptions_offset = Some(
+                u32::from_le_bytes(
+                    self.buffer[MOSNTERS_DESCRIPTION_PTR as usize..MOSNTERS_DESCRIPTION_PTR as usize + 4]
+                        .try_into().unwrap()
+                )
+            );
+            self.monster_descriptions_modified = false;
+        }
+        
+        // Load monster descriptions using the count
+        let descriptions = parse_monster_descriptions(&self.buffer, count as usize);
+        self.monster_descriptions = descriptions;
     }
 }

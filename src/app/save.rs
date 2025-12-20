@@ -5,7 +5,7 @@ use crate::core::mhfdat::{
     write_melee_weapons_block, write_ranged_weapons_block, write_armors_block, write_items_block, write_transmog_data,
     write_mw_upgrades_block, write_rw_upgrades_block, write_deco_shop_block, write_automatic_skills_block,
     write_armor_names, write_item_names, write_item_descriptions, write_sharpness_data_block, write_bullet_sets_block,
-    write_deco_ids_block
+    write_deco_ids_block, write_monster_descriptions
 };
 use crate::model::mhfdat_pointers::{
     MELEE_WEAPONS_PTR, RANGED_WEAPONS_PTR,
@@ -18,6 +18,7 @@ use crate::model::mhfdat_pointers::{
     DECO_SHOP_PTR, DECO_G_SHOP_PTR, CUFF_SHOP_PTR, CUFF_GR_SHOP_PTR,
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
     AUTOMATIC_SKILLS_TABLE_PTR, DECO_ID_PTR, ARMOR_UPGRADE_MATS_PTR, ARMOR_STAT_ARRAY_PTR, ARMOR_NAME_ARRAY_PTR, ARMOR_WEAPON_NAMES_ARRAY_PTR,
+    MOSNTERS_DESCRIPTION_PTR, MOSNTERS_DESCRIPTION_COUNT_PTR,
 };
 use crate::model::mhfdat::{ArmorStatPointers, ArmorNamePointers, ArmorWeaponNamePointers};
 use std::ptr;
@@ -128,6 +129,10 @@ impl MhfdatApp {
                 self.buffer[ITEM_DESC_PTR as usize..(ITEM_DESC_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[ITEM_DESC_PTR as usize..(ITEM_DESC_PTR + 4) as usize]);
             }
+            if self.monster_descriptions_modified && saved_file_data.len() >= (MOSNTERS_DESCRIPTION_PTR + 4) as usize {
+                self.buffer[MOSNTERS_DESCRIPTION_PTR as usize..(MOSNTERS_DESCRIPTION_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[MOSNTERS_DESCRIPTION_PTR as usize..(MOSNTERS_DESCRIPTION_PTR + 4) as usize]);
+            }
             if self.transmog_modified && saved_file_data.len() >= (TRANSMOG_FORGING_PTR + 4) as usize {
                 self.buffer[TRANSMOG_FORGING_PTR as usize..(TRANSMOG_FORGING_PTR + 4) as usize]
                     .copy_from_slice(&saved_file_data[TRANSMOG_FORGING_PTR as usize..(TRANSMOG_FORGING_PTR + 4) as usize]);
@@ -193,6 +198,14 @@ impl MhfdatApp {
             if self.carve_parts_count_modified && saved_file_data.len() >= (crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR + 2) as usize {
                 self.buffer[crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR as usize..(crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR + 2) as usize]
                     .copy_from_slice(&saved_file_data[crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR as usize..(crate::model::mhfdat_pointers::CARVE_PARTS_COUNT_PTR + 2) as usize]);
+            }
+            if self.part_break_parts_modified && saved_file_data.len() >= (crate::model::mhfdat_pointers::PART_BREAK_DROP_PTR + 4) as usize {
+                self.buffer[crate::model::mhfdat_pointers::PART_BREAK_DROP_PTR as usize..(crate::model::mhfdat_pointers::PART_BREAK_DROP_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[crate::model::mhfdat_pointers::PART_BREAK_DROP_PTR as usize..(crate::model::mhfdat_pointers::PART_BREAK_DROP_PTR + 4) as usize]);
+            }
+            if self.part_break_parts_count_modified && saved_file_data.len() >= (crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR + 2) as usize {
+                self.buffer[crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR as usize..(crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR + 2) as usize]
+                    .copy_from_slice(&saved_file_data[crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR as usize..(crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR + 2) as usize]);
             }
             
             // Mettre à jour les pointeurs d'upgrades seulement si modifiés
@@ -261,6 +274,36 @@ impl MhfdatApp {
             }
             if self.carve_parts_count_modified {
                 self.carve_parts_count_modified = false;
+            }
+            if self.part_break_parts_modified {
+                use crate::model::mhfdat_pointers::{PART_BREAK_DROP_PTR, PART_BREAK_DROP_COUNT_PTR};
+                let off = u32::from_le_bytes(self.buffer[PART_BREAK_DROP_PTR as usize..(PART_BREAK_DROP_PTR + 4) as usize].try_into().unwrap());
+                self.original_part_break_parts_offset = Some(off);
+                // Update count from the buffer after save (it should match the actual number of tables written)
+                if self.buffer.len() >= PART_BREAK_DROP_COUNT_PTR as usize + 2 {
+                    self.part_break_parts_count = u16::from_le_bytes(
+                        self.buffer[PART_BREAK_DROP_COUNT_PTR as usize..PART_BREAK_DROP_COUNT_PTR as usize + 2]
+                            .try_into().unwrap()
+                    );
+                }
+                self.part_break_parts_modified = false;
+            }
+            if self.part_break_parts_count_modified {
+                self.part_break_parts_count_modified = false;
+            }
+            if self.monster_descriptions_modified {
+                let off = u32::from_le_bytes(self.buffer[MOSNTERS_DESCRIPTION_PTR as usize..(MOSNTERS_DESCRIPTION_PTR + 4) as usize].try_into().unwrap());
+                self.original_monster_descriptions_offset = Some(off);
+                if self.buffer.len() >= MOSNTERS_DESCRIPTION_COUNT_PTR as usize + 2 {
+                    self.monster_descriptions_count = u16::from_le_bytes(
+                        self.buffer[MOSNTERS_DESCRIPTION_COUNT_PTR as usize..MOSNTERS_DESCRIPTION_COUNT_PTR as usize + 2]
+                            .try_into().unwrap()
+                    );
+                }
+                self.monster_descriptions_modified = false;
+            }
+            if self.monster_descriptions_count_modified {
+                self.monster_descriptions_count_modified = false;
             }
         }
         Ok(())
@@ -808,6 +851,15 @@ impl MhfdatApp {
         } else { 
             self.original_item_descriptions_offset.unwrap_or(0)
         };
+        
+        let monster_desc_count = self.monster_descriptions.len();
+        let monster_desc_offset = if self.monster_descriptions_modified && monster_desc_count > 0 {
+            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            write_monster_descriptions(&mut writer, &self.monster_descriptions[..monster_desc_count])?;
+            current_pos
+        } else {
+            self.original_monster_descriptions_offset.unwrap_or(0)
+        };
 
         // Patch header pointers - seulement si modifié
         
@@ -1065,6 +1117,16 @@ impl MhfdatApp {
             writer.seek(SeekFrom::Start(ITEM_DESC_PTR as u64))?;
             writer.write_all(&item_desc_offset.to_le_bytes())?;
         }
+        
+        if self.monster_descriptions_modified {
+            writer.seek(SeekFrom::Start(MOSNTERS_DESCRIPTION_PTR as u64))?;
+            writer.write_all(&monster_desc_offset.to_le_bytes())?;
+            
+            if self.monster_descriptions_count_modified {
+                writer.seek(SeekFrom::Start(MOSNTERS_DESCRIPTION_COUNT_PTR as u64))?;
+                writer.write_all(&self.monster_descriptions_count.to_le_bytes())?;
+            }
+        }
 
         if self.transmog_modified {
             writer.seek(SeekFrom::Start(TRANSMOG_FORGING_PTR as u64))?;
@@ -1270,6 +1332,29 @@ impl MhfdatApp {
             
             // Update count (always update to match actual number of tables)
             writer.seek(SeekFrom::Start(CARVE_PARTS_COUNT_PTR as u64))?;
+            writer.write_all(&count.to_le_bytes())?;
+            
+            writer.seek(SeekFrom::End(0))?;
+        }
+
+        // Part Break Parts - write only if modified
+        if self.part_break_parts_modified {
+            use crate::model::mhfdat_pointers::{PART_BREAK_DROP_PTR, PART_BREAK_DROP_COUNT_PTR};
+            use crate::core::mhfdat::write_part_break_parts_block;
+            
+            // Calculate count from actual number of tables
+            let count = self.part_break_parts.tables.len() as u16;
+            
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let block = write_part_break_parts_block(&self.part_break_parts)?;
+            writer.write_all(&block)?;
+            
+            // Update pointer
+            writer.seek(SeekFrom::Start(PART_BREAK_DROP_PTR as u64))?;
+            writer.write_all(&offset.to_le_bytes())?;
+            
+            // Update count (always update to match actual number of tables)
+            writer.seek(SeekFrom::Start(PART_BREAK_DROP_COUNT_PTR as u64))?;
             writer.write_all(&count.to_le_bytes())?;
             
             writer.seek(SeekFrom::End(0))?;

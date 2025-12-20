@@ -186,6 +186,19 @@ impl Default for ArmorTab {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MonsterTab {
+    CarveParts,
+    PartBreakDrops,
+    MonsterDescriptions,
+}
+
+impl Default for MonsterTab {
+    fn default() -> Self {
+        Self::CarveParts
+    }
+}
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum ViewMode {
     List,
@@ -280,6 +293,7 @@ pub struct MhfdatApp {
     pub ranged_weapon_names: Vec<String>,
     pub ranged_weapon_descriptions: Vec<[String; 4]>,
     pub armor_tab: ArmorTab,
+    pub monster_tab: MonsterTab,
     pub head_armors: Vec<MhfdatEquipment>,
     pub body_armors: Vec<MhfdatEquipment>,
     pub arms_armors: Vec<MhfdatEquipment>,
@@ -458,6 +472,26 @@ pub struct MhfdatApp {
     pub selected_carve_parts_row_index: Option<usize>,
     pub carve_parts_page: u32,
     pub carve_parts_tables_page: u32,
+    
+    // Part Break Parts
+    pub part_break_parts: crate::model::mhfdat::PartBreakParts,
+    pub part_break_parts_modified: bool,
+    pub original_part_break_parts_offset: Option<u32>,
+    pub part_break_parts_count: u16,
+    pub part_break_parts_count_modified: bool,
+    pub selected_part_break_parts_table_index: Option<usize>,
+    pub selected_part_break_parts_row_index: Option<usize>,
+    pub part_break_parts_page: u32,
+    pub part_break_parts_tables_page: u32,
+    
+    // Monster Descriptions
+    pub monster_descriptions: Vec<String>,
+    pub monster_descriptions_modified: bool,
+    pub original_monster_descriptions_offset: Option<u32>,
+    pub monster_descriptions_count: u16,
+    pub monster_descriptions_count_modified: bool,
+    pub selected_monster_description_index: Option<usize>,
+    pub monster_descriptions_page: u32,
 }
 
 impl Default for MhfdatApp {
@@ -549,6 +583,7 @@ impl Default for MhfdatApp {
             ranged_weapon_names: Vec::new(),
             ranged_weapon_descriptions: Vec::new(),
             armor_tab: ArmorTab::Head,
+            monster_tab: MonsterTab::CarveParts,
             head_armors: Vec::new(),
             body_armors: Vec::new(),
             arms_armors: Vec::new(),
@@ -723,6 +758,22 @@ impl Default for MhfdatApp {
             selected_carve_parts_row_index: None,
             carve_parts_page: 0,
             carve_parts_tables_page: 0,
+            part_break_parts: Default::default(),
+            part_break_parts_modified: false,
+            original_part_break_parts_offset: None,
+            part_break_parts_count: 0,
+            part_break_parts_count_modified: false,
+            selected_part_break_parts_table_index: None,
+            selected_part_break_parts_row_index: None,
+            part_break_parts_page: 0,
+            part_break_parts_tables_page: 0,
+            monster_descriptions: Vec::new(),
+            monster_descriptions_modified: false,
+            original_monster_descriptions_offset: None,
+            monster_descriptions_count: 0,
+            monster_descriptions_count_modified: false,
+            selected_monster_description_index: None,
+            monster_descriptions_page: 0,
         }
     }
 }
@@ -788,6 +839,8 @@ impl MhfdatApp {
         self.load_g50_tower_params();
         self.load_armor_upgrade_mats();
         self.load_carve_parts();
+        self.load_part_break_parts();
+        self.load_monster_descriptions();
         
         // Load weapon names and descriptions
         {

@@ -888,6 +888,25 @@ pub struct CarveParts {
     pub tables: Vec<CarveDropTable>,
 }
 
+// Part break drop structure
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct PartBreakDrop {
+    pub percentage: u16,
+    pub item_id: u16,
+    pub number: u16,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PartBreakDropTable {
+    pub break_drops: Vec<PartBreakDrop>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PartBreakParts {
+    pub tables: Vec<PartBreakDropTable>,
+}
+
 #[repr(C, packed)]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SigilTowerTable {

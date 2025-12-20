@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom, Result, Read, Cursor};
-use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill, SharpnessItem, SharpnessData, BulletSet, TowerG50WeaponParams, ArmorUpgradeRow, ArmorUpgradeTable, ArmorUpgradeMats, CarveDrop, CarveDropTable, CarveParts};
+use crate::model::mhfdat::{MhfdatMeleeWeapon, MhfdatRangedWeapon, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade, MWUpgradePath, RWUpgradePath, EvoUpgrade, EvoUpgradeSub, MhfdatEquipment, EquipmentCounts, MhfdatItem, MhfdatDecoId, AutomaticSkill, SharpnessItem, SharpnessData, BulletSet, TowerG50WeaponParams, ArmorUpgradeRow, ArmorUpgradeTable, ArmorUpgradeMats, CarveDrop, CarveDropTable, CarveParts, PartBreakDrop, PartBreakDropTable, PartBreakParts};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use encoding_rs::SHIFT_JIS;
 use std::env;
@@ -846,6 +846,123 @@ pub fn write_carve_parts_block(parts: &CarveParts) -> Result<Vec<u8>> {
         for carve in &table.carves {
             data.extend_from_slice(&carve.percentage.to_le_bytes());
             data.extend_from_slice(&carve.item_id.to_le_bytes());
+        }
+        // Write terminator for this table (-1 as signed u16)
+        data.extend_from_slice(&(-1i16).to_le_bytes());
+    }
+    
+    Ok(data)
+}
+
+/// Read part break parts from buffer
+/// Structure: pointer at PART_BREAK_DROP_PTR points to array of u32 pointers
+/// The number of pointers is given by count parameter (from PART_BREAK_DROP_COUNT_PTR)
+/// Each pointer points to a table of PartBreakDrop entries until a signed u16 == -1
+pub fn read_part_break_parts(buffer: &[u8], ptr_offset: u32, count: usize) -> PartBreakParts {
+    
+    let mut parts = PartBreakParts { tables: Vec::new() };
+    
+    // Read the main offset from the pointer (points to a table of pointers)
+    if ptr_offset as usize + 4 > buffer.len() {
+        return parts;
+    }
+    let ptr_table_offset = u32::from_le_bytes([
+        buffer[ptr_offset as usize],
+        buffer[ptr_offset as usize + 1],
+        buffer[ptr_offset as usize + 2],
+        buffer[ptr_offset as usize + 3],
+    ]) as usize;
+    
+    if ptr_table_offset == 0 || ptr_table_offset >= buffer.len() {
+        return parts;
+    }
+    
+    // Read exactly 'count' pointers
+    let drop_size = size_of::<PartBreakDrop>(); // 6 bytes (3 u16)
+    let mut ptr_cursor = ptr_table_offset;
+    
+    for _ in 0..count {
+        if ptr_cursor + 4 > buffer.len() {
+            break;
+        }
+        
+        let table_offset = u32::from_le_bytes([
+            buffer[ptr_cursor],
+            buffer[ptr_cursor + 1],
+            buffer[ptr_cursor + 2],
+            buffer[ptr_cursor + 3],
+        ]) as usize;
+        
+        ptr_cursor += 4;
+        
+        if table_offset == 0 || table_offset >= buffer.len() {
+            parts.tables.push(PartBreakDropTable { break_drops: Vec::new() });
+            continue;
+        }
+        
+        // Read drops for this table until we hit a signed u16 == -1
+        let mut table = PartBreakDropTable { break_drops: Vec::new() };
+        let mut drop_cursor = table_offset;
+        
+        while drop_cursor + drop_size <= buffer.len() {
+            // Read the next u16 as signed to check for -1 terminator
+            let terminator_check = i16::from_le_bytes([
+                buffer[drop_cursor],
+                buffer[drop_cursor + 1],
+            ]);
+            
+            if terminator_check == -1 {
+                break;
+            }
+            
+            let drop = unsafe {
+                std::ptr::read_unaligned(buffer.as_ptr().add(drop_cursor) as *const PartBreakDrop)
+            };
+            
+            table.break_drops.push(drop);
+            drop_cursor += drop_size;
+        }
+        
+        parts.tables.push(table);
+    }
+    
+    parts
+}
+
+/// Write part break parts to a byte buffer
+/// Structure: pointer table (u32 per table), then data blocks
+pub fn write_part_break_parts_block(parts: &PartBreakParts) -> Result<Vec<u8>> {
+    
+    const DROP_SIZE: usize = size_of::<PartBreakDrop>(); // 6 bytes
+    let table_count = parts.tables.len();
+    
+    // Calculate pointer table size: table_count * 4 bytes
+    let ptr_table_size = table_count * 4;
+    
+    // Calculate data offsets for each table
+    let mut data_offsets = Vec::new();
+    let mut current_offset = ptr_table_size as u32;
+    
+    for table in &parts.tables {
+        data_offsets.push(current_offset);
+        // Each drop is 6 bytes, plus 2 bytes for -1 terminator
+        current_offset += (table.break_drops.len() * DROP_SIZE) as u32;
+        current_offset += 2; // Add 2 bytes for -1 terminator (signed u16)
+    }
+    
+    let mut data = Vec::new();
+    
+    // Write pointer table
+    for offset in &data_offsets {
+        data.extend_from_slice(&offset.to_le_bytes());
+    }
+    
+    // Write data blocks for each table
+    for table in &parts.tables {
+        for drop in &table.break_drops {
+            data.extend_from_slice(&drop.percentage.to_le_bytes());
+            data.extend_from_slice(&drop.item_id.to_le_bytes());
+            data.extend_from_slice(&drop.number.to_le_bytes());
         }
         // Write terminator for this table (-1 as signed u16)
         data.extend_from_slice(&(-1i16).to_le_bytes());
@@ -2697,6 +2814,99 @@ pub fn parse_item_descriptions(buffer: &[u8], count: usize) -> Vec<String> {
     use crate::model::mhfdat_pointers::ITEM_DESC_PTR;
     let mut cursor = Cursor::new(buffer);
     match extract_item_descriptions(&mut cursor, ITEM_DESC_PTR, count) {
+        Ok(descriptions) => descriptions,
+        Err(_) => vec![]
+    }
+}
+
+/// Extract monster descriptions via pointer table, same format as item names
+pub fn extract_monster_descriptions<R: Read + Seek>(
+    reader: &mut R,
+    desc_ptr: u32,
+    count: usize,
+) -> std::io::Result<Vec<String>> {
+    reader.seek(SeekFrom::Start(desc_ptr as u64))?;
+    let mut buf = [0u8; 4];
+    reader.read_exact(&mut buf)?;
+    let table_offset = u32::from_le_bytes(buf);
+    reader.seek(SeekFrom::Start(table_offset as u64))?;
+    let mut descriptions = Vec::with_capacity(count);
+    for _ in 0..count {
+        let mut ptr_buf = [0u8; 4];
+        reader.read_exact(&mut ptr_buf)?;
+        let string_ptr = u32::from_le_bytes(ptr_buf);
+        let current_pos = reader.seek(SeekFrom::Current(0))?;
+        reader.seek(SeekFrom::Start(string_ptr as u64))?;
+        let mut string_bytes = Vec::new();
+        let mut byte = [0u8; 1];
+        loop {
+            reader.read_exact(&mut byte)?;
+            if byte[0] == 0 {
+                break;
+            }
+            string_bytes.push(byte[0]);
+        }
+        
+        // Convert from Shift-JIS to UTF-8
+        let (cow, _, _) = SHIFT_JIS.decode(&string_bytes);
+        let description = cow.into_owned();
+        descriptions.push(description);
+        reader.seek(SeekFrom::Start(current_pos))?;
+    }
+    
+    Ok(descriptions)
+}
+
+/// Write monster descriptions via pointer table, same format as item names
+pub fn write_monster_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[String]) -> Result<u32> {
+    let mut desc_offsets = Vec::new();
+    let mut desc_data = Vec::new();
+    for desc in descriptions {
+        let offset = desc_data.len() as u32;
+        desc_offsets.push(offset);
+        let (sjis_bytes, _, had_errors) = SHIFT_JIS.encode(desc);
+        if had_errors {
+            println!("Warning: Shift-JIS encoding had errors for monster description: {}", desc);
+        }
+        let mut valid_bytes = Vec::new();
+        let mut i = 0;
+        while i < sjis_bytes.len() {
+            let b = sjis_bytes[i];
+            if is_valid_shift_jis_byte(b) {
+                if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xEF) {
+                    if i + 1 < sjis_bytes.len() {
+                        let b2 = sjis_bytes[i + 1];
+                        if (b2 >= 0x40 && b2 <= 0xFC) && b2 != 0x7F {
+                            valid_bytes.push(b);
+                            valid_bytes.push(b2);
+                            i += 2;
+                            continue;
+                        }
+                    }
+                } else {
+                    valid_bytes.push(b);
+                }
+            }
+            i += 1;
+        }
+        
+        desc_data.extend_from_slice(&valid_bytes);
+        desc_data.push(0);
+    }
+    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    for offset in &desc_offsets {
+        writer.write_all(&(offset + table_offset + (descriptions.len() as u32 * 4)).to_le_bytes())?;
+    }
+    writer.write_all(&desc_data)?;
+    
+    Ok(table_offset)
+}
+
+pub fn parse_monster_descriptions(buffer: &[u8], count: usize) -> Vec<String> {
+    use std::io::Cursor;
+    use crate::model::mhfdat_pointers::MOSNTERS_DESCRIPTION_PTR;
+    let mut cursor = Cursor::new(buffer);
+    match extract_monster_descriptions(&mut cursor, MOSNTERS_DESCRIPTION_PTR, count) {
         Ok(descriptions) => descriptions,
         Err(_) => vec![]
     }
