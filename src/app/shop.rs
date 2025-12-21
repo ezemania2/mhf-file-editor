@@ -55,6 +55,10 @@ impl MhfdatApp {
                         self.weapon_shop_tab = super::WeaponShopTab::ForgingZenith;
                         self.view_mode.insert("shop".to_string(), ViewMode::List);
                     }
+                    if ui.selectable_label(matches!(self.weapon_shop_tab, super::WeaponShopTab::ForgingTower), "Tower Weapons Forging").clicked() {
+                        self.weapon_shop_tab = super::WeaponShopTab::ForgingTower;
+                        self.view_mode.insert("shop".to_string(), ViewMode::List);
+                    }
                 });
                 ui.separator();
 
@@ -86,6 +90,15 @@ impl MhfdatApp {
                             ViewMode::Details => self.show_weapon_forging_zenith_details(ui),
                         }
                     }
+                    super::WeaponShopTab::ForgingTower => {
+                        if !self.view_mode.contains_key("shop") {
+                            self.view_mode.insert("shop".to_string(), ViewMode::List);
+                        }
+                        match self.view_mode.get("shop").unwrap() {
+                            ViewMode::List => self.show_tower_weapon_forging_list(ui),
+                            ViewMode::Details => self.show_tower_weapon_forging_details(ui),
+                        }
+                    }
                 }
             }
             super::WorkshopCategory::ArmorShops => {
@@ -105,6 +118,10 @@ impl MhfdatApp {
                     }
                     if ui.selectable_label(matches!(self.armor_shop_tab, super::ArmorShopTab::ForgingZenith), "Zenith Armor Forging").clicked() {
                         self.armor_shop_tab = super::ArmorShopTab::ForgingZenith;
+                        self.view_mode.insert("shop".to_string(), ViewMode::List);
+                    }
+                    if ui.selectable_label(matches!(self.armor_shop_tab, super::ArmorShopTab::ForgingTower), "Tower Armor Forging").clicked() {
+                        self.armor_shop_tab = super::ArmorShopTab::ForgingTower;
                         self.view_mode.insert("shop".to_string(), ViewMode::List);
                     }
                 });
@@ -145,6 +162,15 @@ impl MhfdatApp {
                         match self.view_mode.get("shop").unwrap() {
                             ViewMode::List => self.show_armor_forging_zenith_list(ui),
                             ViewMode::Details => self.show_armor_forging_zenith_details(ui),
+                        }
+                    }
+                    super::ArmorShopTab::ForgingTower => {
+                        if !self.view_mode.contains_key("shop") {
+                            self.view_mode.insert("shop".to_string(), ViewMode::List);
+                        }
+                        match self.view_mode.get("shop").unwrap() {
+                            ViewMode::List => self.show_tower_armor_forging_list(ui),
+                            ViewMode::Details => self.show_tower_armor_forging_details(ui),
                         }
                     }
                 }
@@ -2873,6 +2899,631 @@ impl MhfdatApp {
                 // Marquer comme modifié si des changements ont été faits
                 if forging_changed {
                     self.armor_forging_zenith_modified = true;
+                }
+            }
+        }
+    }
+
+    // ========== TOWER WEAPON FORGING ==========
+
+    fn show_tower_weapon_forging_list(&mut self, ui: &mut egui::Ui) {
+        MhfdatApp::section_header(ui, "Tower Weapon Forging Shop", |ui| {
+            if ui.button("Add New").clicked() {
+                self.tower_weapon_forging_entries.push(ShopEntry {
+                    equip_type: 0x06, // Default to Melee
+                    equip_id: 0,
+                    material_id1: 0,
+                    material_amnt1: 0,
+                    material_id2: 0,
+                    material_amnt2: 0,
+                    material_id3: 0,
+                    material_amnt3: 0,
+                    material_id4: 0,
+                    material_amnt4: 0,
+                    hr_req: 0,
+                    ..Default::default()
+                });
+                self.tower_weapon_forging_modified = true;
+                self.selected_tower_weapon_forging_index = Some(self.tower_weapon_forging_entries.len() - 1);
+                if !self.view_mode.contains_key("shop") {
+                    self.view_mode.insert("shop".to_string(), ViewMode::List);
+                }
+                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+            }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.tower_weapon_forging_entries) {
+                    let _ = std::fs::write("tower_weapon_forging.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("tower_weapon_forging.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.tower_weapon_forging_entries = imported;
+                        self.tower_weapon_forging_modified = true;
+                    }
+                }
+            }
+            if ui.button("Set All Purchaseable").clicked() {
+                for e in &mut self.tower_weapon_forging_entries { e.purchaseable = 1; }
+                self.tower_weapon_forging_modified = true;
+            }
+            if ui.button("Set All Preview-able").clicked() {
+                for e in &mut self.tower_weapon_forging_entries { e.preview_able = true; }
+                self.tower_weapon_forging_modified = true;
+            }
+        });
+
+        // Search and filters
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Type:");
+            egui::ComboBox::from_id_source("shop_weapon_tower_type_filter_combo")
+                .selected_text(match self.shop_equip_type_filter {
+                    Some(0x06) => "Melee",
+                    Some(0x07) => "Ranged",
+                    _ => "All",
+                })
+                .show_ui(ui, |ui| {
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, None, "All").clicked() {}
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, Some(0x06), "Melee").clicked() {}
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, Some(0x07), "Ranged").clicked() {}
+                });
+
+            ui.label("Search:");
+            ui.text_edit_singleline(&mut self.search_query);
+        });
+
+        // Get filtered entries
+        let filtered_entries: Vec<(usize, &ShopEntry)> = self.tower_weapon_forging_entries.iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                if let Some(filter_type) = self.shop_equip_type_filter {
+                    if entry.equip_type != filter_type { return false; }
+                }
+                if !self.search_query.is_empty() {
+                    let weapon_name = self.get_weapon_name(entry.equip_type, entry.equip_id);
+                    if !weapon_name.to_lowercase().contains(&self.search_query.to_lowercase()) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect();
+
+        // Calculate pagination
+        let entries_per_page = 15;
+        let total_entries = filtered_entries.len();
+        let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
+        let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
+        self.shop_page = current_page;
+        let start_idx = (current_page as usize) * entries_per_page;
+        let end_idx = (start_idx + entries_per_page).min(total_entries);
+
+        // Display paginated entries in table format
+        let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
+        
+        // Pre-compute data to avoid packed field and borrow issues
+        let table_data: Vec<(usize, String, String, u16, u16, u16, u16, u16, u16, u16, u16, u16)> = page_entries.iter().map(|(idx, entry)| {
+            let weapon_name = self.get_weapon_name(entry.equip_type, entry.equip_id);
+            let type_name = match entry.equip_type {
+                0x06 => "Melee",
+                0x07 => "Ranged",
+                _ => "Unknown",
+            }.to_string();
+            (*idx, weapon_name, type_name, entry.material_id1, entry.material_amnt1,
+             entry.material_id2, entry.material_amnt2, entry.material_id3, entry.material_amnt3,
+             entry.material_id4, entry.material_amnt4, entry.hr_req)
+        }).collect();
+
+        ui.separator();
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("tower_weapon_forging_table")
+                .striped(true)
+                .num_columns(12)
+                .show(ui, |ui| {
+                    // Header
+                    ui.label("ID");
+                    ui.label("Type");
+                    ui.label("Name");
+                    ui.label("Material 1");
+                    ui.label("Amount 1");
+                    ui.label("Material 2");
+                    ui.label("Amount 2");
+                    ui.label("Material 3");
+                    ui.label("Amount 3");
+                    ui.label("Material 4");
+                    ui.label("Amount 4");
+                    ui.label("HR Req");
+                    ui.end_row();
+
+                    // Data rows
+                    for (idx, weapon_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
+                        if ui.button(idx.to_string()).clicked() {
+                            self.selected_tower_weapon_forging_index = Some(*idx);
+                            *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+                        }
+                        ui.label(type_name);
+                        ui.label(weapon_name);
+                        ui.label(mat1.to_string());
+                        ui.label(amt1.to_string());
+                        ui.label(mat2.to_string());
+                        ui.label(amt2.to_string());
+                        ui.label(mat3.to_string());
+                        ui.label(amt3.to_string());
+                        ui.label(mat4.to_string());
+                        ui.label(amt4.to_string());
+                        ui.label(hr_req.to_string());
+                        ui.end_row();
+                    }
+                });
+        });
+
+        // Pagination controls
+        MhfdatApp::pagination_controls(ui, &mut self.shop_page, total_pages);
+    }
+
+    fn show_tower_weapon_forging_details(&mut self, ui: &mut egui::Ui) {
+        if ui.button("← Back to List").clicked() {
+            if !self.view_mode.contains_key("shop") {
+                self.view_mode.insert("shop".to_string(), ViewMode::List);
+            }
+            *self.view_mode.get_mut("shop").unwrap() = ViewMode::List;
+            return;
+        }
+
+        if let Some(index) = self.selected_tower_weapon_forging_index {
+            let entry = &self.tower_weapon_forging_entries[index];
+            let equip_type = entry.equip_type;
+            let equip_id = entry.equip_id;
+            let weapon_name = self.get_weapon_name(equip_type, equip_id);
+            
+            // Get item names before getting mutable reference
+            let item_name1 = self.get_item_name(entry.material_id1);
+            let item_name2 = self.get_item_name(entry.material_id2);
+            let item_name3 = self.get_item_name(entry.material_id3);
+            let item_name4 = self.get_item_name(entry.material_id4);
+            
+            if let Some(entry) = self.tower_weapon_forging_entries.get_mut(index) {
+                let mut forging_changed = false;
+                
+                ui.heading(format!("Edit Tower Weapon Forging #{}", index));
+                ui.separator();
+
+                // Type selection (only Melee and Ranged)
+                ui.horizontal(|ui| {
+                    ui.label("Type:");
+                    let old_type = entry.equip_type;
+                    egui::ComboBox::from_id_source("edit_weapon_tower_type")
+                        .selected_text(match entry.equip_type {
+                            0x06 => "Melee",
+                            0x07 => "Ranged",
+                            _ => "Unknown",
+                        })
+                        .show_ui(ui, |ui| {
+                            if ui.selectable_value(&mut entry.equip_type, 0x06, "Melee").clicked() {}
+                            if ui.selectable_value(&mut entry.equip_type, 0x07, "Ranged").clicked() {}
+                        });
+                    if entry.equip_type != old_type {
+                        forging_changed = true;
+                    }
+                });
+
+                // Weapon ID
+                ui.horizontal(|ui| {
+                    ui.label("Weapon ID:");
+                    let old_id = entry.equip_id;
+                    let mut weapon_id = entry.equip_id as i32;
+                    if ui.add(egui::DragValue::new(&mut weapon_id).speed(1)).changed() {
+                        entry.equip_id = weapon_id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", weapon_name));
+                });
+
+                // Materials
+                ui.separator();
+                ui.heading("Materials");
+                
+                // Material 1
+                ui.horizontal(|ui| {
+                    ui.label("Material 1:");
+                    let mut id = entry.material_id1 as i32;
+                    let mut amount = entry.material_amnt1 as i32;
+                    if ui.add(egui::DragValue::new(&mut id).speed(1)).changed() {
+                        entry.material_id1 = id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", item_name1));
+                    ui.label("Amount:");
+                    if ui.add(egui::DragValue::new(&mut amount).speed(1)).changed() {
+                        entry.material_amnt1 = amount as u16;
+                        forging_changed = true;
+                    }
+                });
+
+                // Material 2
+                ui.horizontal(|ui| {
+                    ui.label("Material 2:");
+                    let mut id = entry.material_id2 as i32;
+                    let mut amount = entry.material_amnt2 as i32;
+                    if ui.add(egui::DragValue::new(&mut id).speed(1)).changed() {
+                        entry.material_id2 = id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", item_name2));
+                    ui.label("Amount:");
+                    if ui.add(egui::DragValue::new(&mut amount).speed(1)).changed() {
+                        entry.material_amnt2 = amount as u16;
+                        forging_changed = true;
+                    }
+                });
+
+                // Material 3
+                ui.horizontal(|ui| {
+                    ui.label("Material 3:");
+                    let mut id = entry.material_id3 as i32;
+                    let mut amount = entry.material_amnt3 as i32;
+                    if ui.add(egui::DragValue::new(&mut id).speed(1)).changed() {
+                        entry.material_id3 = id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", item_name3));
+                    ui.label("Amount:");
+                    if ui.add(egui::DragValue::new(&mut amount).speed(1)).changed() {
+                        entry.material_amnt3 = amount as u16;
+                        forging_changed = true;
+                    }
+                });
+
+                // Material 4
+                ui.horizontal(|ui| {
+                    ui.label("Material 4:");
+                    let mut id = entry.material_id4 as i32;
+                    let mut amount = entry.material_amnt4 as i32;
+                    if ui.add(egui::DragValue::new(&mut id).speed(1)).changed() {
+                        entry.material_id4 = id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", item_name4));
+                    ui.label("Amount:");
+                    if ui.add(egui::DragValue::new(&mut amount).speed(1)).changed() {
+                        entry.material_amnt4 = amount as u16;
+                        forging_changed = true;
+                    }
+                });
+
+                // HR Requirement
+                ui.horizontal(|ui| {
+                    ui.label("HR Requirement:");
+                    let mut hr_req = entry.hr_req as i32;
+                    if ui.add(egui::DragValue::new(&mut hr_req).speed(1)).changed() {
+                        entry.hr_req = hr_req as u16;
+                        forging_changed = true;
+                    }
+                });
+                
+                // Marquer comme modifié si des changements ont été faits
+                if forging_changed {
+                    self.tower_weapon_forging_modified = true;
+                }
+            }
+        }
+    }
+
+    // ========== TOWER ARMOR FORGING ==========
+
+    fn show_tower_armor_forging_list(&mut self, ui: &mut egui::Ui) {
+        MhfdatApp::section_header(ui, "Tower Armor Forging Shop", |ui| {
+            if ui.button("Add New").clicked() {
+                self.tower_armor_forging_entries.push(ShopEntry {
+                    equip_type: 0x02, // Default to Head
+                    equip_id: 0,
+                    material_id1: 0,
+                    material_amnt1: 0,
+                    material_id2: 0,
+                    material_amnt2: 0,
+                    material_id3: 0,
+                    material_amnt3: 0,
+                    material_id4: 0,
+                    material_amnt4: 0,
+                    hr_req: 0,
+                    ..Default::default()
+                });
+                self.tower_armor_forging_modified = true;
+                self.selected_tower_armor_forging_index = Some(self.tower_armor_forging_entries.len() - 1);
+                if !self.view_mode.contains_key("shop") {
+                    self.view_mode.insert("shop".to_string(), ViewMode::List);
+                }
+                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+            }
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(json) = serde_json::to_string_pretty(&self.tower_armor_forging_entries) {
+                    let _ = std::fs::write("tower_armor_forging.json", json);
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(data) = std::fs::read_to_string("tower_armor_forging.json") {
+                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::ShopEntry>>(&data) {
+                        self.tower_armor_forging_entries = imported;
+                        self.tower_armor_forging_modified = true;
+                    }
+                }
+            }
+            if ui.button("Set All Purchaseable").clicked() {
+                for e in &mut self.tower_armor_forging_entries { e.purchaseable = 1; }
+                self.tower_armor_forging_modified = true;
+            }
+            if ui.button("Set All Preview-able").clicked() {
+                for e in &mut self.tower_armor_forging_entries { e.preview_able = true; }
+                self.tower_armor_forging_modified = true;
+            }
+        });
+
+        // Search and filters
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Type:");
+            egui::ComboBox::from_id_source("shop_armor_tower_type_filter_combo")
+                .selected_text(match self.shop_equip_type_filter {
+                    Some(0x02) => "Head",
+                    Some(0x03) => "Body",
+                    Some(0x04) => "Arms",
+                    Some(0x05) => "Waist",
+                    Some(0x00) => "Legs",
+                    _ => "All",
+                })
+                .show_ui(ui, |ui| {
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, None, "All").clicked() {}
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, Some(0x02), "Head").clicked() {}
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, Some(0x03), "Body").clicked() {}
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, Some(0x04), "Arms").clicked() {}
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, Some(0x05), "Waist").clicked() {}
+                    if ui.selectable_value(&mut self.shop_equip_type_filter, Some(0x00), "Legs").clicked() {}
+                });
+
+            ui.label("Search:");
+            ui.text_edit_singleline(&mut self.search_query);
+        });
+
+        // Get filtered entries
+        let filtered_entries: Vec<(usize, &ShopEntry)> = self.tower_armor_forging_entries.iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                if let Some(filter_type) = self.shop_equip_type_filter {
+                    if entry.equip_type != filter_type { return false; }
+                }
+                if !self.search_query.is_empty() {
+                    let armor_name = self.get_armor_name(entry.equip_type, entry.equip_id);
+                    if !armor_name.to_lowercase().contains(&self.search_query.to_lowercase()) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect();
+
+        // Calculate pagination
+        let entries_per_page = 15;
+        let total_entries = filtered_entries.len();
+        let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
+        let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
+        self.shop_page = current_page;
+        let start_idx = (current_page as usize) * entries_per_page;
+        let end_idx = (start_idx + entries_per_page).min(total_entries);
+
+        // Display paginated entries in table format
+        let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
+        
+        // Pre-compute data to avoid packed field and borrow issues
+        let table_data: Vec<(usize, String, String, u16, u16, u16, u16, u16, u16, u16, u16, u16)> = page_entries.iter().map(|(idx, entry)| {
+            let armor_name = self.get_armor_name(entry.equip_type, entry.equip_id);
+            let type_name = match entry.equip_type {
+                0x02 => "Head",
+                0x03 => "Body",
+                0x04 => "Arms",
+                0x05 => "Waist",
+                0x00 => "Legs",
+                _ => "Unknown",
+            }.to_string();
+            (*idx, armor_name, type_name, entry.material_id1, entry.material_amnt1,
+             entry.material_id2, entry.material_amnt2, entry.material_id3, entry.material_amnt3,
+             entry.material_id4, entry.material_amnt4, entry.hr_req)
+        }).collect();
+
+        ui.separator();
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("tower_armor_forging_table")
+                .striped(true)
+                .num_columns(12)
+                .show(ui, |ui| {
+                    // Header
+                    ui.label("ID");
+                    ui.label("Type");
+                    ui.label("Name");
+                    ui.label("Material 1");
+                    ui.label("Amount 1");
+                    ui.label("Material 2");
+                    ui.label("Amount 2");
+                    ui.label("Material 3");
+                    ui.label("Amount 3");
+                    ui.label("Material 4");
+                    ui.label("Amount 4");
+                    ui.label("HR Req");
+                    ui.end_row();
+
+                    // Data rows
+                    for (idx, armor_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
+                        if ui.button(idx.to_string()).clicked() {
+                            self.selected_tower_armor_forging_index = Some(*idx);
+                            *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
+                        }
+                        ui.label(type_name);
+                        ui.label(armor_name);
+                        ui.label(mat1.to_string());
+                        ui.label(amt1.to_string());
+                        ui.label(mat2.to_string());
+                        ui.label(amt2.to_string());
+                        ui.label(mat3.to_string());
+                        ui.label(amt3.to_string());
+                        ui.label(mat4.to_string());
+                        ui.label(amt4.to_string());
+                        ui.label(hr_req.to_string());
+                        ui.end_row();
+                    }
+                });
+        });
+
+        // Pagination controls
+        MhfdatApp::pagination_controls(ui, &mut self.shop_page, total_pages);
+    }
+
+    fn show_tower_armor_forging_details(&mut self, ui: &mut egui::Ui) {
+        if ui.button("← Back to List").clicked() {
+            if !self.view_mode.contains_key("shop") {
+                self.view_mode.insert("shop".to_string(), ViewMode::List);
+            }
+            *self.view_mode.get_mut("shop").unwrap() = ViewMode::List;
+            return;
+        }
+
+        if let Some(index) = self.selected_tower_armor_forging_index {
+            let entry = &self.tower_armor_forging_entries[index];
+            let equip_type = entry.equip_type;
+            let equip_id = entry.equip_id;
+            let armor_name = self.get_armor_name(equip_type, equip_id);
+            
+            // Get item names before getting mutable reference
+            let item_name1 = self.get_item_name(entry.material_id1);
+            let item_name2 = self.get_item_name(entry.material_id2);
+            let item_name3 = self.get_item_name(entry.material_id3);
+            let item_name4 = self.get_item_name(entry.material_id4);
+            
+            if let Some(entry) = self.tower_armor_forging_entries.get_mut(index) {
+                let mut forging_changed = false;
+                
+                ui.heading(format!("Edit Tower Armor Forging #{}", index));
+                ui.separator();
+
+                // Type selection (only armor types)
+                ui.horizontal(|ui| {
+                    ui.label("Type:");
+                    let old_type = entry.equip_type;
+                    egui::ComboBox::from_id_source("edit_armor_forging_tower_type")
+                        .selected_text(match entry.equip_type {
+                            0x02 => "Head",
+                            0x03 => "Body",
+                            0x04 => "Arms",
+                            0x05 => "Waist",
+                            0x00 => "Legs",
+                            _ => "Unknown",
+                        })
+                        .show_ui(ui, |ui| {
+                            if ui.selectable_value(&mut entry.equip_type, 0x02, "Head").clicked() {}
+                            if ui.selectable_value(&mut entry.equip_type, 0x03, "Body").clicked() {}
+                            if ui.selectable_value(&mut entry.equip_type, 0x04, "Arms").clicked() {}
+                            if ui.selectable_value(&mut entry.equip_type, 0x05, "Waist").clicked() {}
+                            if ui.selectable_value(&mut entry.equip_type, 0x00, "Legs").clicked() {}
+                        });
+                    if entry.equip_type != old_type {
+                        forging_changed = true;
+                    }
+                });
+
+                // Armor ID
+                ui.horizontal(|ui| {
+                    ui.label("Armor ID:");
+                    let old_id = entry.equip_id;
+                    let mut armor_id = entry.equip_id as i32;
+                    if ui.add(egui::DragValue::new(&mut armor_id).speed(1)).changed() {
+                        entry.equip_id = armor_id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", armor_name));
+                });
+
+                // Materials
+                ui.separator();
+                ui.heading("Materials");
+                
+                // Material 1
+                ui.horizontal(|ui| {
+                    ui.label("Material 1:");
+                    let mut id = entry.material_id1 as i32;
+                    let mut amount = entry.material_amnt1 as i32;
+                    if ui.add(egui::DragValue::new(&mut id).speed(1)).changed() {
+                        entry.material_id1 = id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", item_name1));
+                    ui.label("Amount:");
+                    if ui.add(egui::DragValue::new(&mut amount).speed(1)).changed() {
+                        entry.material_amnt1 = amount as u16;
+                        forging_changed = true;
+                    }
+                });
+
+                // Material 2
+                ui.horizontal(|ui| {
+                    ui.label("Material 2:");
+                    let mut id = entry.material_id2 as i32;
+                    let mut amount = entry.material_amnt2 as i32;
+                    if ui.add(egui::DragValue::new(&mut id).speed(1)).changed() {
+                        entry.material_id2 = id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", item_name2));
+                    ui.label("Amount:");
+                    if ui.add(egui::DragValue::new(&mut amount).speed(1)).changed() {
+                        entry.material_amnt2 = amount as u16;
+                        forging_changed = true;
+                    }
+                });
+
+                // Material 3
+                ui.horizontal(|ui| {
+                    ui.label("Material 3:");
+                    let mut id = entry.material_id3 as i32;
+                    let mut amount = entry.material_amnt3 as i32;
+                    if ui.add(egui::DragValue::new(&mut id).speed(1)).changed() {
+                        entry.material_id3 = id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", item_name3));
+                    ui.label("Amount:");
+                    if ui.add(egui::DragValue::new(&mut amount).speed(1)).changed() {
+                        entry.material_amnt3 = amount as u16;
+                        forging_changed = true;
+                    }
+                });
+
+                // Material 4
+                ui.horizontal(|ui| {
+                    ui.label("Material 4:");
+                    let mut id = entry.material_id4 as i32;
+                    let mut amount = entry.material_amnt4 as i32;
+                    if ui.add(egui::DragValue::new(&mut id).speed(1)).changed() {
+                        entry.material_id4 = id as u16;
+                        forging_changed = true;
+                    }
+                    ui.label(format!("({})", item_name4));
+                    ui.label("Amount:");
+                    if ui.add(egui::DragValue::new(&mut amount).speed(1)).changed() {
+                        entry.material_amnt4 = amount as u16;
+                        forging_changed = true;
+                    }
+                });
+
+                // HR Requirement
+                ui.horizontal(|ui| {
+                    ui.label("HR Requirement:");
+                    let mut hr_req = entry.hr_req as i32;
+                    if ui.add(egui::DragValue::new(&mut hr_req).speed(1)).changed() {
+                        entry.hr_req = hr_req as u16;
+                        forging_changed = true;
+                    }
+                });
+                
+                // Marquer comme modifié si des changements ont été faits
+                if forging_changed {
+                    self.tower_armor_forging_modified = true;
                 }
             }
         }

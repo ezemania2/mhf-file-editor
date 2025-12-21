@@ -315,6 +315,66 @@ impl MhfdatApp {
         self.armor_forging_zenith_entries = entries;
     }
 
+    pub fn load_tower_weapon_forging_entries(&mut self) {
+        let valid_types = [0x06, 0x07]; // Melee, Ranged
+        let ptr_offset = TOWER_WEAPON_FORGING_PTR as usize;
+        if self.buffer.len() < ptr_offset + 4 { return; }
+        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_tower_weapon_forging_offset = Some(data_offset as u32);
+        self.tower_weapon_forging_modified = false;
+        
+        if data_offset == 0 || data_offset >= self.buffer.len() { return; }
+        let entry_size = std::mem::size_of::<ShopEntry>();
+        let mut cursor = data_offset;
+        let mut entries = Vec::new();
+        while cursor + entry_size <= self.buffer.len() {
+            let equip_type = self.buffer[cursor];
+            if !valid_types.contains(&equip_type) { break; }
+            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
+            entries.push(entry);
+            cursor += entry_size;
+        }
+        self.tower_weapon_forging_entries = entries;
+    }
+
+    pub fn load_tower_armor_forging_entries(&mut self) {
+        let valid_types = [0x00, 0x02, 0x03, 0x04, 0x05]; // Head, Body, Arms, Waist, Legs
+        let ptr_offset = TOWER_ARMOR_FORGING_PTR as usize;
+        if self.buffer.len() < ptr_offset + 4 { return; }
+        let data_offset = u32::from_le_bytes(self.buffer[ptr_offset..ptr_offset+4].try_into().unwrap()) as usize;
+        
+        // Save original offset
+        self.original_tower_armor_forging_offset = Some(data_offset as u32);
+        self.tower_armor_forging_modified = false;
+        
+        if data_offset == 0 || data_offset >= self.buffer.len() { return; }
+        
+        // Try using sentinel first (like other shop entries)
+        let mut cursor = std::io::Cursor::new(&self.buffer);
+        if let Ok(entries) = crate::core::mhfdat::read_shop_entries_until_sentinel(&mut cursor, data_offset as u64) {
+            // Filter to only include valid armor types
+            self.tower_armor_forging_entries = entries.into_iter()
+                .filter(|e| valid_types.contains(&e.equip_type))
+                .collect();
+            return;
+        }
+        
+        // Fallback: manual reading if sentinel method fails
+        let entry_size = std::mem::size_of::<ShopEntry>();
+        let mut cursor = data_offset;
+        let mut entries = Vec::new();
+        while cursor + entry_size <= self.buffer.len() {
+            let equip_type = self.buffer[cursor];
+            if !valid_types.contains(&equip_type) { break; }
+            let entry = unsafe { std::ptr::read_unaligned(self.buffer.as_ptr().add(cursor) as *const ShopEntry) };
+            entries.push(entry);
+            cursor += entry_size;
+        }
+        self.tower_armor_forging_entries = entries;
+    }
+
     pub fn read_armor_data(&mut self, cursor: &mut Cursor<&[u8]>, offset: u64) -> Result<(), std::io::Error> {
         // Read the actual data offset from the pointer location
         cursor.seek(SeekFrom::Start(offset))?;
