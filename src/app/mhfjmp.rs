@@ -3,6 +3,7 @@ use egui;
 use crate::model::mhfjmp::{MenuEntry, Area, StringEntry};
 use crate::core::mhfjmp::{load_mhfjmp_bin_from_buffer, save_mhfjmp_bin};
 use crate::core::packing::{compress_file, encrypt_file};
+use crate::utils::maps::{get_map_name, MAP_LIST};
 use std::path::PathBuf;
 use serde_json;
 use std::io::{Read, Write, Seek, SeekFrom};
@@ -41,6 +42,12 @@ pub struct MhfjmpApp {
     pub should_return_to_selector: bool,
     pub dll_file: Option<PathBuf>,
     pub dll_loaded: bool,
+    // Map search fields
+    pub map_search_area_id: String,
+    pub map_search_area_id2: String,
+    pub map_search_area_id3: String,
+    pub map_search_area_id4: String,
+    pub map_search_stage_id: String,
 }
 
 impl Default for MhfjmpApp {
@@ -70,6 +77,11 @@ impl Default for MhfjmpApp {
             should_return_to_selector: false,
             dll_file: None,
             dll_loaded: false,
+            map_search_area_id: String::new(),
+            map_search_area_id2: String::new(),
+            map_search_area_id3: String::new(),
+            map_search_area_id4: String::new(),
+            map_search_stage_id: String::new(),
         }
     }
 }
@@ -231,12 +243,70 @@ impl MhfjmpApp {
                     ui.label("Jump ID:");
                     ui.add(egui::DragValue::new(&mut entry.jump_id));
                 });
+                ui.label("Area IDs:");
                 ui.horizontal(|ui| {
-                    ui.label("Area IDs:");
-                    ui.add(egui::DragValue::new(&mut entry.area_id));
-                    ui.add(egui::DragValue::new(&mut entry.area_id2));
-                    ui.add(egui::DragValue::new(&mut entry.area_id3));
-                    ui.add(egui::DragValue::new(&mut entry.area_id4));
+                    ui.label("Area ID 1:");
+                    egui::ComboBox::from_id_source("area_id_1")
+                        .selected_text(format!("{} - {}", entry.area_id, get_map_name(entry.area_id)))
+                        .show_ui(ui, |ui| {
+                            ui.text_edit_singleline(&mut self.map_search_area_id);
+                            let search = self.map_search_area_id.to_lowercase();
+                            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                for (id, name) in MAP_LIST {
+                                    if search.is_empty() || name.to_lowercase().contains(&search) || id.to_string().contains(&search) {
+                                        ui.selectable_value(&mut entry.area_id, *id, format!("{} - {}", id, name));
+                                    }
+                                }
+                            });
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Area ID 2:");
+                    egui::ComboBox::from_id_source("area_id_2")
+                        .selected_text(format!("{} - {}", entry.area_id2, get_map_name(entry.area_id2)))
+                        .show_ui(ui, |ui| {
+                            ui.text_edit_singleline(&mut self.map_search_area_id2);
+                            let search = self.map_search_area_id2.to_lowercase();
+                            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                for (id, name) in MAP_LIST {
+                                    if search.is_empty() || name.to_lowercase().contains(&search) || id.to_string().contains(&search) {
+                                        ui.selectable_value(&mut entry.area_id2, *id, format!("{} - {}", id, name));
+                                    }
+                                }
+                            });
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Area ID 3:");
+                    egui::ComboBox::from_id_source("area_id_3")
+                        .selected_text(format!("{} - {}", entry.area_id3, get_map_name(entry.area_id3)))
+                        .show_ui(ui, |ui| {
+                            ui.text_edit_singleline(&mut self.map_search_area_id3);
+                            let search = self.map_search_area_id3.to_lowercase();
+                            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                for (id, name) in MAP_LIST {
+                                    if search.is_empty() || name.to_lowercase().contains(&search) || id.to_string().contains(&search) {
+                                        ui.selectable_value(&mut entry.area_id3, *id, format!("{} - {}", id, name));
+                                    }
+                                }
+                            });
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Area ID 4:");
+                    egui::ComboBox::from_id_source("area_id_4")
+                        .selected_text(format!("{} - {}", entry.area_id4, get_map_name(entry.area_id4)))
+                        .show_ui(ui, |ui| {
+                            ui.text_edit_singleline(&mut self.map_search_area_id4);
+                            let search = self.map_search_area_id4.to_lowercase();
+                            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                for (id, name) in MAP_LIST {
+                                    if search.is_empty() || name.to_lowercase().contains(&search) || id.to_string().contains(&search) {
+                                        ui.selectable_value(&mut entry.area_id4, *id, format!("{} - {}", id, name));
+                                    }
+                                }
+                            });
+                        });
                 });
                 ui.add_space(8.0);
                 ui.label("Player Position:");
@@ -332,7 +402,19 @@ impl MhfjmpApp {
                             ui.end_row();
                             let mut to_remove = None;
                             for (j, id) in area.stage_ids.iter_mut().enumerate() {
-                                ui.add(egui::DragValue::new(id));
+                                egui::ComboBox::from_id_source(format!("stage_id_{}_{}", i, j))
+                                    .selected_text(format!("{} - {}", id, get_map_name(*id)))
+                                    .show_ui(ui, |ui| {
+                                        ui.text_edit_singleline(&mut self.map_search_stage_id);
+                                        let search = self.map_search_stage_id.to_lowercase();
+                                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                            for (map_id, name) in MAP_LIST {
+                                                if search.is_empty() || name.to_lowercase().contains(&search) || map_id.to_string().contains(&search) {
+                                                    ui.selectable_value(id, *map_id, format!("{} - {}", map_id, name));
+                                                }
+                                            }
+                                        });
+                                    });
                                 if ui.button("❌").clicked() {
                                     to_remove = Some(j);
                                 }

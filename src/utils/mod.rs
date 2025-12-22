@@ -5,3 +5,4 @@ pub mod equip_type;
 pub mod equip_flags;
 pub mod item_patterns;
 pub mod automatic_skills;
+pub mod maps;
