@@ -412,6 +412,48 @@ impl RangedWeaponExport {
             bullet_types_string: bullet_types.to_string(),
         }
     }
+
+    /// Convert RangedWeaponExport back to MhfdatRangedWeapon
+    pub fn to_weapon(&self) -> MhfdatRangedWeapon {
+        MhfdatRangedWeapon {
+            model_id: self.model_id,
+            rarity: self.rarity,
+            max_slots_maybe: 0,
+            class_id: self.class_id,
+            unk05: 0,
+            equip_type: self.equipment_type.to_u8(),
+            unk07: 0,
+            unk08: 0,
+            unk09: 0,
+            unk11: 0,
+            unk12: 0,
+            weapon_type: self.weapon_type.to_u32(),
+            unk10: 0,
+            zenny_cost: self.zenny_cost,
+            raw_damage: self.raw_damage,
+            defense: self.defense,
+            recoil: self.recoil,
+            slots: self.slots,
+            affinity: self.affinity,
+            sort_order_maybe: 0,
+            weapon_attribute: self.weapon_attribute,
+            element_id: self.element_id,
+            ele_damage: self.ele_damage,
+            reload: self.reload,
+            unk24: 0,
+            unk26: 0,
+            bullet: self.bullet_types.to_u32(),
+            tower_g50_param_id: self.tower_g50_param_id,
+            unk2e: 0,
+            g_rank: self.g_rank,
+            unk32: 0,
+            unk34: 0,
+            zero_f: 0,
+            unk38: 0,
+            zenith_skill: self.zenith_skill,
+            unk42: 0,
+        }
+    }
 }
 
 /// Export structure for melee weapons with decomposed bitfields for JSON export
@@ -510,6 +552,43 @@ impl MeleeWeaponExport {
             // Human-readable strings
             equipment_type_string: equipment_type.to_string(),
             weapon_type_string: weapon_type.to_string(),
+        }
+    }
+
+    /// Convert MeleeWeaponExport back to MhfdatMeleeWeapon
+    pub fn to_weapon(&self) -> MhfdatMeleeWeapon {
+        MhfdatMeleeWeapon {
+            model_id: self.model_id,
+            rarity: self.rarity,
+            class_id: self.class_id,
+            zenny_cost: self.zenny_cost,
+            sharpness_id: self.sharpness_id,
+            sharpness_max: self.sharpness_max,
+            raw_damage: self.raw_damage,
+            defense: self.defense,
+            affinity: self.affinity,
+            element_id: self.element_id,
+            ele_damage: self.ele_damage,
+            ailment_id: self.ailment_id,
+            ail_damage: self.ail_damage,
+            slots: self.slots,
+            weapon_attribute: self.weapon_attribute,
+            unk15: 0,
+            upgrade_path: self.upgrade_path,
+            other_model: self.other_model,
+            equip_type: self.equipment_type.to_u8(),
+            unk1b: 0,
+            length: self.length,
+            weapon_type: self.weapon_type.to_u32(),
+            visual_effects: self.visual_effects,
+            tower_g50_param_id: self.tower_g50_param_id,
+            g_rank: self.g_rank,
+            unk29: 0,
+            unk2a: 0,
+            zero_f: 0,
+            unk2c: 0,
+            zenith_skill: self.zenith_skill,
+            _padding: [0; 2],
         }
     }
 }
@@ -693,6 +772,57 @@ impl ArmorExport {
             equipable_by_string: equipable_by.to_string(),
         }
     }
+
+    /// Convert ArmorExport back to MhfdatEquipment
+    pub fn to_armor(&self) -> MhfdatEquipment {
+        MhfdatEquipment {
+            model_id_male: self.model_id_male,
+            model_id_female: self.model_id_female,
+            equipable_by: self.equipable_by.to_u8(),
+            rarity: self.rarity,
+            max_level: self.max_level,
+            unk07: 0,
+            unk08: 0,
+            unk0A: 0,
+            zenny_cost: self.zenny_cost,
+            unk10: 0,
+            base_defense: self.base_defense,
+            fire_res: self.fire_res,
+            water_res: self.water_res,
+            thunder_res: self.thunder_res,
+            dragon_res: self.dragon_res,
+            ice_res: self.ice_res,
+            coef_upgrade: 0,
+            unk1A: 0,
+            base_slots: self.base_slots,
+            max_slots: self.max_slots,
+            post_festi: self.post_festi,
+            show_next_level: self.show_next_level,
+            equip_id: self.equip_id,
+            unk22: 0,
+            unk24: 0,
+            unk28: 0,
+            skill_id1: self.skill_id1,
+            skill_pts1: self.skill_pts1,
+            skill_id2: self.skill_id2,
+            skill_pts2: self.skill_pts2,
+            skill_id3: self.skill_id3,
+            skill_pts3: self.skill_pts3,
+            skill_id4: self.skill_id4,
+            skill_pts4: self.skill_pts4,
+            skill_id5: self.skill_id5,
+            skill_pts5: self.skill_pts5,
+            armor_type: self.armor_type,
+            weap_hiden: self.weap_hiden,
+            deco_item_id: self.deco_item_id,
+            towerslots: self.towerslots,
+            g_rank: self.g_rank,
+            zero_f: 0,
+            app_price: self.app_price,
+            unk44: 0,
+            zenith_skill: self.zenith_skill,
+        }
+    }
 }
 
 /// Structure représentant un objet/item dans mhfdat
@@ -796,6 +926,34 @@ impl ItemExport {
             unk1F: item.unk1F,
             unk20: item.unk20,
             unk22: item.unk22,
+        }
+    }
+
+    /// Convert ItemExport back to MhfdatItem
+    pub fn to_item(&self) -> MhfdatItem {
+        MhfdatItem {
+            unk00: self.unk00,
+            unk01: self.unk01,
+            rarity: self.rarity,
+            max_stack: self.max_stack,
+            unk04: self.unk04,
+            icon: self.icon,
+            icon_color: self.icon_color,
+            unk07: self.unk07,
+            bottle: self.bottle,
+            unk0A: self.unk0A,
+            buy_price: self.buy_price,
+            sell_price: self.sell_price,
+            item_type: self.item_type,
+            deco_id: self.deco_id,
+            unk18: self.unk18,
+            unk1A: self.unk1A,
+            unk1B: self.unk1B,
+            equip_type: self.equip_type,
+            is_gz: self.is_gz,
+            unk1F: self.unk1F,
+            unk20: self.unk20,
+            unk22: self.unk22,
         }
     }
 }

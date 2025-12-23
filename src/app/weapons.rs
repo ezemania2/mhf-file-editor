@@ -171,6 +171,16 @@ impl MhfdatApp {
                 }
             }
             if ui.button("Import from JSON").clicked() {
+                // Try export format first (with decomposed bitfields)
+                if let Ok(data) = std::fs::read_to_string("melee_weapons.json") {
+                    if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::MeleeWeaponExport>>(&data) {
+                        let imported: Vec<crate::model::mhfdat::MhfdatMeleeWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
+                        self.melee_weapons = imported;
+                        self.melee_weapons_modified = true;
+                        return;
+                    }
+                }
+                // Fallback to raw format
                 if let Ok(data) = std::fs::read_to_string("melee_weapons_raw.json") {
                     if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatMeleeWeapon>>(&data) {
                         self.melee_weapons = imported;
@@ -433,6 +443,16 @@ impl MhfdatApp {
                 }
             }
             if ui.button("Import from JSON").clicked() {
+                // Try export format first (with decomposed bitfields)
+                if let Ok(data) = std::fs::read_to_string("ranged_weapons.json") {
+                    if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::RangedWeaponExport>>(&data) {
+                        let imported: Vec<crate::model::mhfdat::MhfdatRangedWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
+                        self.ranged_weapons = imported;
+                        self.ranged_weapons_modified = true;
+                        return;
+                    }
+                }
+                // Fallback to raw format
                 if let Ok(data) = std::fs::read_to_string("ranged_weapons_raw.json") {
                     if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatRangedWeapon>>(&data) {
                         self.ranged_weapons = imported;

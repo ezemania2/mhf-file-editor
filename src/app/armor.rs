@@ -154,11 +154,29 @@ impl MhfdatApp {
 
         if do_import {
             let armor_tab = self.armor_tab;
-            let filename = format!("{}_armor_raw.json", armor_type_str);
-            if let Ok(data) = std::fs::read_to_string(&filename) {
+            // Try export format first (with decomposed bitfields)
+            let filename_export = format!("{}_armor.json", armor_type_str);
+            let filename_raw = format!("{}_armor_raw.json", armor_type_str);
+            
+            // Try export format first
+            if let Ok(data) = std::fs::read_to_string(&filename_export) {
+                if let Ok(imported_export) = serde_json::from_str::<Vec<ArmorExport>>(&data) {
+                    let imported: Vec<MhfdatEquipment> = imported_export.iter().map(|e| e.to_armor()).collect();
+                    match armor_tab {
+                        ArmorTab::Head => { self.head_armors = imported; self.head_armors_modified = true; }
+                        ArmorTab::Body => { self.body_armors = imported; self.body_armors_modified = true; }
+                        ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
+                        ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
+                        ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
+                        ArmorTab::ArmorUpgrade => {},
+                    }
+                    return;
+                }
+            }
+            
+            // Fallback to raw format
+            if let Ok(data) = std::fs::read_to_string(&filename_raw) {
                 if let Ok(imported) = serde_json::from_str::<Vec<MhfdatEquipment>>(&data) {
-                    let _ = armors;
-                    let _ = names;
                     match armor_tab {
                         ArmorTab::Head => { self.head_armors = imported; self.head_armors_modified = true; }
                         ArmorTab::Body => { self.body_armors = imported; self.body_armors_modified = true; }

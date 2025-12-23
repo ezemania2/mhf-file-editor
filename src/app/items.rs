@@ -267,6 +267,16 @@ impl MhfdatApp {
                          if let Ok(json) = serde_json::to_string_pretty(&export_items) { let _ = std::fs::write("items.json", json); }
                      }
                      if ui.button("Import from JSON").clicked() {
+                         // Try export format first (with names and descriptions)
+                         if let Ok(data) = std::fs::read_to_string("items.json") {
+                             if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::ItemExport>>(&data) {
+                                 let imported: Vec<crate::model::mhfdat::MhfdatItem> = imported_export.iter().map(|e| e.to_item()).collect();
+                                 self.items = imported;
+                                 self.items_modified = true;
+                                 return;
+                             }
+                         }
+                         // Fallback to raw format
                          if let Ok(data) = std::fs::read_to_string("items_raw.json") {
                              if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatItem>>(&data) {
                                  self.items = imported;
