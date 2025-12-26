@@ -16,7 +16,7 @@ Steps:
 1) Clone the repository
    ```sh
    git clone <https://github.com/ezemania2/mhf-file-editor>
-   cd MHJMP_Editor_Rust/mhf-file-editor
+   cd mhf-file-editor
    ```
 2) Build a release
    ```sh
