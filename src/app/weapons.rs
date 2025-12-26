@@ -161,7 +161,14 @@ impl MhfdatApp {
                     .map(|(index, weapon)| {
                         let name = self.melee_weapon_names.get(index).cloned().unwrap_or_default();
                         let descriptions = self.melee_weapon_descriptions.get(index).cloned().unwrap_or_default();
-                        MeleeWeaponExport::from_weapon_with_data(weapon, &name, &descriptions, index)
+                        // Get upgrade using upgrade_path as index
+                        let upgrade = weapon.upgrade_path as usize;
+                        let upgrade_data = if upgrade < self.mw_upgrade_entries.len() && weapon.upgrade_path != 0xFFFF {
+                            Some(self.mw_upgrade_entries[upgrade].clone())
+                        } else {
+                            None
+                        };
+                        MeleeWeaponExport::from_weapon_with_data_and_upgrade(weapon, &name, &descriptions, index, upgrade_data)
                     })
                     .collect();
                 if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
@@ -177,6 +184,16 @@ impl MhfdatApp {
                         let imported: Vec<crate::model::mhfdat::MhfdatMeleeWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
                         self.melee_weapons = imported;
                         self.melee_weapons_modified = true;
+                        // Import upgrades if present
+                        for (index, export) in imported_export.iter().enumerate() {
+                            if let Some(upgrade) = &export.upgrade {
+                                let upgrade_index = export.upgrade_path as usize;
+                                if upgrade_index < self.mw_upgrade_entries.len() {
+                                    self.mw_upgrade_entries[upgrade_index] = upgrade.clone();
+                                    self.mw_upgrades_modified = true;
+                                }
+                            }
+                        }
                         return;
                     }
                 }
@@ -433,7 +450,13 @@ impl MhfdatApp {
                     .map(|(index, weapon)| {
                         let name = self.ranged_weapon_names.get(index).cloned().unwrap_or_default();
                         let descriptions = self.ranged_weapon_descriptions.get(index).cloned().unwrap_or_default();
-                        RangedWeaponExport::from_weapon_with_data(weapon, &name, &descriptions, index)
+                        // Get upgrade using index-aligned mapping (weapon i ↔ upgrade i)
+                        let upgrade_data = if index < self.rw_upgrade_entries.len() {
+                            Some(self.rw_upgrade_entries[index].clone())
+                        } else {
+                            None
+                        };
+                        RangedWeaponExport::from_weapon_with_data_and_upgrade(weapon, &name, &descriptions, index, upgrade_data)
                     })
                     .collect();
                 if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
@@ -449,6 +472,15 @@ impl MhfdatApp {
                         let imported: Vec<crate::model::mhfdat::MhfdatRangedWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
                         self.ranged_weapons = imported;
                         self.ranged_weapons_modified = true;
+                        // Import upgrades if present (index-aligned: weapon i ↔ upgrade i)
+                        for (index, export) in imported_export.iter().enumerate() {
+                            if let Some(upgrade) = &export.upgrade {
+                                if index < self.rw_upgrade_entries.len() {
+                                    self.rw_upgrade_entries[index] = upgrade.clone();
+                                    self.rw_upgrades_modified = true;
+                                }
+                            }
+                        }
                         return;
                     }
                 }

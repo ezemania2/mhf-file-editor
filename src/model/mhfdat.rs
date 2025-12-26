@@ -360,6 +360,10 @@ pub struct RangedWeaponExport {
     pub equipment_type_string: String,
     pub weapon_type_string: String,
     pub bullet_types_string: String,
+    
+    // Upgrade path (index-aligned: weapon i ↔ upgrade i)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upgrade: Option<RWUpgradePath>,
 }
 
 impl RangedWeaponExport {
@@ -368,6 +372,16 @@ impl RangedWeaponExport {
         name: &str,
         descriptions: &[String; 4],
         id: usize
+    ) -> Self {
+        Self::from_weapon_with_data_and_upgrade(weapon, name, descriptions, id, None)
+    }
+    
+    pub fn from_weapon_with_data_and_upgrade(
+        weapon: &MhfdatRangedWeapon,
+        name: &str,
+        descriptions: &[String; 4],
+        id: usize,
+        upgrade: Option<RWUpgradePath>
     ) -> Self {
         let equipment_type = weapon.get_equip_type();
         let weapon_type = weapon.get_weapon_type();
@@ -410,6 +424,9 @@ impl RangedWeaponExport {
             equipment_type_string: equipment_type.to_string(),
             weapon_type_string: weapon_type.to_string(),
             bullet_types_string: bullet_types.to_string(),
+            
+            // Upgrade path
+            upgrade,
         }
     }
 
@@ -499,6 +516,10 @@ pub struct MeleeWeaponExport {
     // Human-readable strings
     pub equipment_type_string: String,
     pub weapon_type_string: String,
+    
+    // Upgrade path (linked by upgrade_path index)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upgrade: Option<MWUpgradePath>,
 }
 
 impl MeleeWeaponExport {
@@ -507,6 +528,16 @@ impl MeleeWeaponExport {
         name: &str,
         descriptions: &[String; 4],
         id: usize
+    ) -> Self {
+        Self::from_weapon_with_data_and_upgrade(weapon, name, descriptions, id, None)
+    }
+    
+    pub fn from_weapon_with_data_and_upgrade(
+        weapon: &MhfdatMeleeWeapon,
+        name: &str,
+        descriptions: &[String; 4],
+        id: usize,
+        upgrade: Option<MWUpgradePath>
     ) -> Self {
         let equipment_type = weapon.get_equip_type();
         let weapon_type = weapon.get_weapon_type();
@@ -552,6 +583,9 @@ impl MeleeWeaponExport {
             // Human-readable strings
             equipment_type_string: equipment_type.to_string(),
             weapon_type_string: weapon_type.to_string(),
+            
+            // Upgrade path
+            upgrade,
         }
     }
 
