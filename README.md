@@ -16,7 +16,7 @@ Steps:
 1) Clone the repository
    ```sh
    git clone <https://github.com/ezemania2/mhf-file-editor>
-   cd MHJMP_Editor_Rust/mhf-file-editor
+   cd mhf-file-editor
    ```
 2) Build a release
    ```sh
@@ -50,6 +50,7 @@ Notes:
 
 - Packing/encryption powered by RsFrontier (`rsfrontier-core`) by Pax: [Paxlord/rsfrontier](https://github.com/Paxlord/rsfrontier)
 - Pattern sources by [Ezemania](https://github.com/ezemania2/mhf-patterns), [Wish](https://github.com/Mezeporta/010Templates) and [Variable](https://github.com/var-username/Monster-Hunter-Frontier-Patterns)
+- Icons are taken from [Mael's](https://github.com/theMaelstro/MHFZZDatabase) repo
 
 ## Issues & contributions
 
