@@ -470,6 +470,7 @@ pub struct MhfdatApp {
     pub armor_upgrade_mats: crate::model::mhfdat::ArmorUpgradeMats,
     pub armor_upgrade_mats_modified: bool,
     pub original_armor_upgrade_mats_offset: Option<u32>,
+    pub armor_upgrade_mats_table_count: usize,
     pub selected_armor_upgrade_table_index: Option<usize>,
     pub selected_armor_upgrade_row_index: Option<usize>,
     pub armor_upgrade_page: u32,
@@ -505,6 +506,11 @@ pub struct MhfdatApp {
     pub monster_descriptions_count_modified: bool,
     pub selected_monster_description_index: Option<usize>,
     pub monster_descriptions_page: u32,
+    
+    // Store original entry counts of all blocks to determine if we can overwrite in place
+    // Key is block name (e.g., "melee_weapons", "items", etc.)
+    // Value is the number of entries (weapons, items, etc.), NOT the size in bytes
+    pub original_entry_counts: HashMap<String, usize>,
 }
 
 impl Default for MhfdatApp {
@@ -767,6 +773,7 @@ impl Default for MhfdatApp {
             armor_upgrade_mats: Default::default(),
             armor_upgrade_mats_modified: false,
             original_armor_upgrade_mats_offset: None,
+            armor_upgrade_mats_table_count: 0,
             selected_armor_upgrade_table_index: None,
             selected_armor_upgrade_row_index: None,
             armor_upgrade_page: 0,
@@ -798,11 +805,87 @@ impl Default for MhfdatApp {
             monster_descriptions_count_modified: false,
             selected_monster_description_index: None,
             monster_descriptions_page: 0,
+            
+            original_entry_counts: HashMap::new(),
         }
     }
 }
 
 impl MhfdatApp {
+    // Helper function to store original entry counts for all blocks
+    // This stores the NUMBER OF ENTRIES (count), not the size in bytes
+    fn store_all_entry_counts(&mut self) {
+        // Store the number of entries for each type of data
+        
+        // Weapons
+        self.original_entry_counts.insert("melee_weapons".to_string(), self.melee_weapons.len());
+        self.original_entry_counts.insert("ranged_weapons".to_string(), self.ranged_weapons.len());
+        
+        // Armors
+        self.original_entry_counts.insert("head_armors".to_string(), self.head_armors.len());
+        self.original_entry_counts.insert("body_armors".to_string(), self.body_armors.len());
+        self.original_entry_counts.insert("arms_armors".to_string(), self.arms_armors.len());
+        self.original_entry_counts.insert("waist_armors".to_string(), self.waist_armors.len());
+        self.original_entry_counts.insert("legs_armors".to_string(), self.legs_armors.len());
+        
+        // Items
+        self.original_entry_counts.insert("items".to_string(), self.items.len());
+        
+        // Shop entries
+        self.original_entry_counts.insert("transmog".to_string(), self.transmog_entries.len());
+        self.original_entry_counts.insert("weapon_forging".to_string(), self.weapon_forging_entries.len());
+        self.original_entry_counts.insert("armor_forging".to_string(), self.armor_forging_entries.len());
+        self.original_entry_counts.insert("weapon_forging_gr".to_string(), self.weapon_forging_gr_entries.len());
+        self.original_entry_counts.insert("armor_forging_gr".to_string(), self.armor_forging_gr_entries.len());
+        self.original_entry_counts.insert("weapon_forging_zenith".to_string(), self.weapon_forging_zenith_entries.len());
+        self.original_entry_counts.insert("armor_forging_zenith".to_string(), self.armor_forging_zenith_entries.len());
+        self.original_entry_counts.insert("tower_weapon_forging".to_string(), self.tower_weapon_forging_entries.len());
+        self.original_entry_counts.insert("tower_armor_forging".to_string(), self.tower_armor_forging_entries.len());
+        self.original_entry_counts.insert("deco_shop_hr".to_string(), self.deco_shop_entries.len());
+        
+        // Decorations
+        self.original_entry_counts.insert("deco_ids".to_string(), self.deco_ids.len());
+        
+        // Skills
+        self.original_entry_counts.insert("automatic_skills".to_string(), self.automatic_skills.len());
+        
+        // Upgrades
+        self.original_entry_counts.insert("mw_upgrades".to_string(), self.mw_upgrade_entries.len());
+        self.original_entry_counts.insert("rw_upgrades".to_string(), self.rw_upgrade_entries.len());
+        self.original_entry_counts.insert("g50_melee_weapon_upgrades".to_string(), self.g50_melee_weapon_upgrades.len());
+        self.original_entry_counts.insert("g50_ranged_weapon_upgrades".to_string(), self.g50_ranged_weapon_upgrades.len());
+        
+        // Names and descriptions
+        self.original_entry_counts.insert("melee_weapon_names".to_string(), self.melee_weapon_names.len());
+        self.original_entry_counts.insert("melee_weapon_descriptions".to_string(), self.melee_weapon_descriptions.len());
+        self.original_entry_counts.insert("ranged_weapon_names".to_string(), self.ranged_weapon_names.len());
+        self.original_entry_counts.insert("ranged_weapon_descriptions".to_string(), self.ranged_weapon_descriptions.len());
+        self.original_entry_counts.insert("head_armor_names".to_string(), self.head_armor_names.len());
+        self.original_entry_counts.insert("body_armor_names".to_string(), self.body_armor_names.len());
+        self.original_entry_counts.insert("arms_armor_names".to_string(), self.arms_armor_names.len());
+        self.original_entry_counts.insert("waist_armor_names".to_string(), self.waist_armor_names.len());
+        self.original_entry_counts.insert("legs_armor_names".to_string(), self.legs_armor_names.len());
+        self.original_entry_counts.insert("item_names".to_string(), self.item_names.len());
+        self.original_entry_counts.insert("item_descriptions".to_string(), self.item_descriptions.len());
+        self.original_entry_counts.insert("armor_descriptions".to_string(), self.armor_descriptions.len());
+        
+        // Bullet sets
+        self.original_entry_counts.insert("bullet_sets".to_string(), self.bullet_sets.len());
+        
+        // Monster descriptions
+        self.original_entry_counts.insert("monster_descriptions".to_string(), self.monster_descriptions.len());
+        
+        // Carve and part break
+        self.original_entry_counts.insert("carve_parts".to_string(), self.carve_parts.tables.len());
+        self.original_entry_counts.insert("part_break_parts".to_string(), self.part_break_parts.tables.len());
+        
+        // Armor upgrade mats
+        self.original_entry_counts.insert("armor_upgrade_mats".to_string(), self.armor_upgrade_mats.tables.len());
+        
+        // Sharpness - each weapon type has 128 entries
+        // Tower params - store weapon count for each type
+    }
+    
     pub fn load_file(&mut self, path: PathBuf, data: Vec<u8>) {
         // Load the file data into the app
         self.current_file = Some(path);
@@ -812,6 +895,9 @@ impl MhfdatApp {
         // Armor Upgrade logs (RegAUpgradeRow) – pointer, offset, count, preview
         // Armor Upgrade logs: if the pointer region is a table of pointers, each points to 16 raw rows
         // removed armor-upgrade debug block
+        
+        // Clear original entry counts when loading a new file
+        self.original_entry_counts.clear();
         
         // Load weapons
         if let Some((melee_offset, ranged_offset)) = read_mhfdat_offsets(&self.buffer) {
@@ -1020,6 +1106,10 @@ impl MhfdatApp {
                 self.rw_upgrade_entries = rw;
             }
         }
+        
+        // Store original entry counts for all loaded blocks
+        // This must be done after all data has been loaded into vectors
+        self.store_all_entry_counts();
         
         self.error_message = Some("File loaded successfully.".to_string());
     }

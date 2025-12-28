@@ -628,6 +628,7 @@ impl MhfdatApp {
             self.original_armor_upgrade_mats_offset = Some(offset);
             self.armor_upgrade_mats_modified = false;
             self.armor_upgrade_mats = read_armor_upgrade_mats(&self.buffer, ARMOR_UPGRADE_MATS_PTR);
+            self.armor_upgrade_mats_table_count = self.armor_upgrade_mats.tables.len();
         }
     }
     

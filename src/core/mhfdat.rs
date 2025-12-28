@@ -2907,6 +2907,58 @@ pub fn write_monster_descriptions<W: Write + Seek>(writer: &mut W, descriptions:
     Ok(table_offset)
 }
 
+/// Write monster descriptions as a block (returns Vec<u8> instead of writing to writer)
+pub fn write_monster_descriptions_block(descriptions: &[String]) -> Result<Vec<u8>> {
+    let mut desc_offsets = Vec::new();
+    let mut desc_data = Vec::new();
+    for desc in descriptions {
+        let offset = desc_data.len() as u32;
+        desc_offsets.push(offset);
+        let (sjis_bytes, _, had_errors) = SHIFT_JIS.encode(desc);
+        if had_errors {
+            println!("Warning: Shift-JIS encoding had errors for monster description: {}", desc);
+        }
+        let mut valid_bytes = Vec::new();
+        let mut i = 0;
+        while i < sjis_bytes.len() {
+            let b = sjis_bytes[i];
+            if is_valid_shift_jis_byte(b) {
+                if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xEF) {
+                    if i + 1 < sjis_bytes.len() {
+                        let b2 = sjis_bytes[i + 1];
+                        if (b2 >= 0x40 && b2 <= 0xFC) && b2 != 0x7F {
+                            valid_bytes.push(b);
+                            valid_bytes.push(b2);
+                            i += 2;
+                            continue;
+                        }
+                    }
+                } else {
+                    valid_bytes.push(b);
+                }
+            }
+            i += 1;
+        }
+        
+        desc_data.extend_from_slice(&valid_bytes);
+        desc_data.push(0);
+    }
+    
+    let ptr_table_size = descriptions.len() * 4;
+    let mut data = Vec::new();
+    
+    // Write pointer table (absolute offsets from start of block)
+    for offset in &desc_offsets {
+        let absolute_offset = (ptr_table_size as u32) + offset;
+        data.extend_from_slice(&absolute_offset.to_le_bytes());
+    }
+    
+    // Write description data
+    data.extend_from_slice(&desc_data);
+    
+    Ok(data)
+}
+
 pub fn parse_monster_descriptions(buffer: &[u8], count: usize) -> Vec<String> {
     use std::io::Cursor;
     use crate::model::mhfdat_pointers::MOSNTERS_DESCRIPTION_PTR;

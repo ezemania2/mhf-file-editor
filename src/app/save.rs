@@ -5,7 +5,7 @@ use crate::core::mhfdat::{
     write_melee_weapons_block, write_ranged_weapons_block, write_armors_block, write_items_block, write_transmog_data,
     write_mw_upgrades_block, write_rw_upgrades_block, write_deco_shop_block, write_automatic_skills_block,
     write_armor_names, write_armor_descriptions, write_item_names, write_item_descriptions, write_sharpness_data_block, write_bullet_sets_block,
-    write_deco_ids_block, write_monster_descriptions
+    write_deco_ids_block, write_monster_descriptions_block
 };
 use crate::model::mhfdat_pointers::{
     MELEE_WEAPONS_PTR, RANGED_WEAPONS_PTR,
@@ -25,6 +25,135 @@ use std::ptr;
 
 impl MhfdatApp {
 
+    // Helper function to find the next known offset after a given offset
+    // by checking all original offsets in the structure
+    fn find_next_known_offset(&self, current_offset: u32) -> Option<u32> {
+        let mut all_offsets = Vec::new();
+        
+        // Collect all original offsets
+        all_offsets.push(self.original_melee_weapons_offset);
+        all_offsets.push(self.original_ranged_weapons_offset);
+        all_offsets.push(self.original_head_armors_offset);
+        all_offsets.push(self.original_body_armors_offset);
+        all_offsets.push(self.original_arms_armors_offset);
+        all_offsets.push(self.original_waist_armors_offset);
+        all_offsets.push(self.original_legs_armors_offset);
+        all_offsets.push(self.original_items_offset);
+        all_offsets.push(self.original_transmog_offset);
+        all_offsets.push(self.original_weapon_forging_offset);
+        all_offsets.push(self.original_armor_forging_offset);
+        all_offsets.push(self.original_weapon_forging_gr_offset);
+        all_offsets.push(self.original_armor_forging_gr_offset);
+        all_offsets.push(self.original_weapon_forging_zenith_offset);
+        all_offsets.push(self.original_armor_forging_zenith_offset);
+        all_offsets.push(self.original_tower_weapon_forging_offset);
+        all_offsets.push(self.original_tower_armor_forging_offset);
+        all_offsets.push(self.original_deco_shop_hr_offset);
+        all_offsets.push(self.original_deco_shop_gr_offset);
+        all_offsets.push(self.original_cuff_shop_offset);
+        all_offsets.push(self.original_cuff_gr_shop_offset);
+        all_offsets.push(self.original_automatic_skills_offset);
+        all_offsets.push(self.original_deco_ids_offset);
+        all_offsets.push(self.original_mw_upgrades_offset);
+        all_offsets.push(self.original_rw_upgrades_offset);
+        all_offsets.push(self.original_melee_weapon_names_offset);
+        all_offsets.push(self.original_melee_weapon_descriptions_offset);
+        all_offsets.push(self.original_ranged_weapon_names_offset);
+        all_offsets.push(self.original_ranged_weapon_descriptions_offset);
+        all_offsets.push(self.original_head_armor_names_offset);
+        all_offsets.push(self.original_body_armor_names_offset);
+        all_offsets.push(self.original_arms_armor_names_offset);
+        all_offsets.push(self.original_waist_armor_names_offset);
+        all_offsets.push(self.original_legs_armor_names_offset);
+        all_offsets.push(self.original_item_names_offset);
+        all_offsets.push(self.original_item_descriptions_offset);
+        all_offsets.push(self.original_armor_descriptions_offset);
+        all_offsets.push(self.original_hr_quests_offset);
+        all_offsets.push(self.original_gr_quests_offset);
+        all_offsets.push(self.original_g50_melee_weapon_upgrades_offset);
+        all_offsets.push(self.original_g50_ranged_weapon_upgrades_offset);
+        all_offsets.push(self.original_armor_upgrade_mats_offset);
+        all_offsets.push(self.original_carve_parts_offset);
+        all_offsets.push(self.original_part_break_parts_offset);
+        all_offsets.push(self.original_monster_descriptions_offset);
+        
+        // Add sharpness offsets
+        for offset in &self.original_sharpness_offsets {
+            all_offsets.push(*offset);
+        }
+        
+        // Add tower params offsets
+        for offset in &self.original_g50_tower_params_offsets {
+            all_offsets.push(*offset);
+        }
+        
+        // Find the smallest offset that is greater than current_offset
+        all_offsets
+            .into_iter()
+            .flatten()
+            .filter(|&off| off > current_offset && off > 0)
+            .min()
+    }
+    
+    // Helper function to check if we can overwrite at original offset
+    // by comparing the new entry count with the original entry count
+    // If counts match, we can overwrite even if values changed (number of entries didn't change)
+    fn can_overwrite_at_offset(&self, original_offset: Option<u32>, original_count: Option<usize>, new_count: usize) -> bool {
+        eprintln!("[DEBUG] can_overwrite_at_offset: offset={:?}, orig_count={:?}, new_count={}", original_offset, original_count, new_count);
+        
+        if let Some(off) = original_offset {
+            if off as usize >= self.buffer.len() {
+                eprintln!("[DEBUG] can_overwrite: offset out of bounds");
+                return false; // Offset out of bounds
+            }
+            
+            // Use provided original entry count if available
+            if let Some(orig_count) = original_count {
+                // Can overwrite if new entry count matches original entry count exactly
+                // This means the number of entries hasn't changed
+                // We can overwrite even if the values have changed, as long as the count is the same
+                let can_overwrite = new_count == orig_count && new_count > 0;
+                eprintln!("[DEBUG] can_overwrite: orig_count={}, new_count={}, result={}", orig_count, new_count, can_overwrite);
+                return can_overwrite;
+            }
+            
+            // No original count available, cannot safely overwrite
+            eprintln!("[DEBUG] can_overwrite: no original count available");
+            false
+        } else {
+            eprintln!("[DEBUG] can_overwrite: no original offset");
+            false
+        }
+    }
+    
+    // Helper function to write a block with overwrite optimization
+    // Returns the offset where the block was written and whether pointer needs updating
+    fn write_block_with_overwrite<W: Read + Seek + Write>(
+        &self,
+        writer: &mut W,
+        original_offset: Option<u32>,
+        original_count: Option<usize>,
+        new_count: usize,
+        new_block: &[u8],
+    ) -> std::io::Result<(u32, bool)> {
+        // If entry count matches (number of entries didn't change), overwrite at original offset
+        // Even if values changed, we can overwrite in place
+        if self.can_overwrite_at_offset(original_offset, original_count, new_count) {
+            let original_offset = original_offset.unwrap() as u64;
+            writer.seek(SeekFrom::Start(original_offset))?;
+            writer.write_all(new_block)?;
+            writer.seek(SeekFrom::End(0))?; // Return to end of file
+            // Pointer stays the same, no need to update it
+            Ok((original_offset as u32, false))
+        } else {
+            // Count changed (number of entries changed), write at end and update pointer
+            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            writer.write_all(new_block)?;
+            // Pointer needs to be updated later
+            Ok((offset, true))
+        }
+    }
+
     pub fn save_modified_data(&mut self) -> std::io::Result<()> {
         if let Some(path) = &self.current_file {
             // Ouvrir le fichier en mode read+write pour ajouter à la fin sans copier
@@ -40,6 +169,135 @@ impl MhfdatApp {
             // pour que les données écrites à la fin soient accessibles
             let saved_file_data = std::fs::read(path)?;
             self.buffer = saved_file_data.clone();
+            
+            // 7. IMPORTANT: Mettre à jour les original_entry_counts après la sauvegarde
+            // pour que les prochains saves puissent détecter si le nombre d'entries a changé
+            if self.melee_weapons_modified {
+                self.original_entry_counts.insert("melee_weapons".to_string(), self.melee_weapons.len());
+            }
+            if self.ranged_weapons_modified {
+                self.original_entry_counts.insert("ranged_weapons".to_string(), self.ranged_weapons.len());
+            }
+            if self.head_armors_modified {
+                self.original_entry_counts.insert("head_armors".to_string(), self.head_armors.len());
+            }
+            if self.body_armors_modified {
+                self.original_entry_counts.insert("body_armors".to_string(), self.body_armors.len());
+            }
+            if self.arms_armors_modified {
+                self.original_entry_counts.insert("arms_armors".to_string(), self.arms_armors.len());
+            }
+            if self.waist_armors_modified {
+                self.original_entry_counts.insert("waist_armors".to_string(), self.waist_armors.len());
+            }
+            if self.legs_armors_modified {
+                self.original_entry_counts.insert("legs_armors".to_string(), self.legs_armors.len());
+            }
+            if self.items_modified {
+                self.original_entry_counts.insert("items".to_string(), self.items.len());
+            }
+            if self.transmog_modified {
+                self.original_entry_counts.insert("transmog".to_string(), self.transmog_entries.len());
+            }
+            if self.weapon_forging_modified {
+                self.original_entry_counts.insert("weapon_forging".to_string(), self.weapon_forging_entries.len());
+            }
+            if self.armor_forging_modified {
+                self.original_entry_counts.insert("armor_forging".to_string(), self.armor_forging_entries.len());
+            }
+            if self.weapon_forging_gr_modified {
+                self.original_entry_counts.insert("weapon_forging_gr".to_string(), self.weapon_forging_gr_entries.len());
+            }
+            if self.armor_forging_gr_modified {
+                self.original_entry_counts.insert("armor_forging_gr".to_string(), self.armor_forging_gr_entries.len());
+            }
+            if self.weapon_forging_zenith_modified {
+                self.original_entry_counts.insert("weapon_forging_zenith".to_string(), self.weapon_forging_zenith_entries.len());
+            }
+            if self.armor_forging_zenith_modified {
+                self.original_entry_counts.insert("armor_forging_zenith".to_string(), self.armor_forging_zenith_entries.len());
+            }
+            if self.tower_weapon_forging_modified {
+                self.original_entry_counts.insert("tower_weapon_forging".to_string(), self.tower_weapon_forging_entries.len());
+            }
+            if self.tower_armor_forging_modified {
+                self.original_entry_counts.insert("tower_armor_forging".to_string(), self.tower_armor_forging_entries.len());
+            }
+            if self.deco_shop_hr_modified {
+                self.original_entry_counts.insert("deco_shop_hr".to_string(), self.deco_shop_hr_entries.len());
+            }
+            if self.deco_shop_gr_modified {
+                self.original_entry_counts.insert("deco_shop_gr".to_string(), self.deco_shop_gr_entries.len());
+            }
+            if self.deco_ids_modified {
+                self.original_entry_counts.insert("deco_ids".to_string(), self.deco_ids.len());
+            }
+            if self.automatic_skills_modified {
+                self.original_entry_counts.insert("automatic_skills".to_string(), self.automatic_skills.len());
+            }
+            if self.mw_upgrades_modified {
+                self.original_entry_counts.insert("mw_upgrades".to_string(), self.mw_upgrade_entries.len());
+            }
+            if self.rw_upgrades_modified {
+                self.original_entry_counts.insert("rw_upgrades".to_string(), self.rw_upgrade_entries.len());
+            }
+            if self.g50_melee_weapon_upgrades_modified {
+                self.original_entry_counts.insert("g50_melee_weapon_upgrades".to_string(), self.g50_melee_weapon_upgrades.len());
+            }
+            if self.g50_ranged_weapon_upgrades_modified {
+                self.original_entry_counts.insert("g50_ranged_weapon_upgrades".to_string(), self.g50_ranged_weapon_upgrades.len());
+            }
+            if self.melee_weapon_names_modified {
+                self.original_entry_counts.insert("melee_weapon_names".to_string(), self.melee_weapon_names.len());
+            }
+            if self.melee_weapon_descriptions_modified {
+                self.original_entry_counts.insert("melee_weapon_descriptions".to_string(), self.melee_weapon_descriptions.len());
+            }
+            if self.ranged_weapon_names_modified {
+                self.original_entry_counts.insert("ranged_weapon_names".to_string(), self.ranged_weapon_names.len());
+            }
+            if self.ranged_weapon_descriptions_modified {
+                self.original_entry_counts.insert("ranged_weapon_descriptions".to_string(), self.ranged_weapon_descriptions.len());
+            }
+            if self.head_armor_names_modified {
+                self.original_entry_counts.insert("head_armor_names".to_string(), self.head_armor_names.len());
+            }
+            if self.body_armor_names_modified {
+                self.original_entry_counts.insert("body_armor_names".to_string(), self.body_armor_names.len());
+            }
+            if self.arms_armor_names_modified {
+                self.original_entry_counts.insert("arms_armor_names".to_string(), self.arms_armor_names.len());
+            }
+            if self.waist_armor_names_modified {
+                self.original_entry_counts.insert("waist_armor_names".to_string(), self.waist_armor_names.len());
+            }
+            if self.legs_armor_names_modified {
+                self.original_entry_counts.insert("legs_armor_names".to_string(), self.legs_armor_names.len());
+            }
+            if self.item_names_modified {
+                self.original_entry_counts.insert("item_names".to_string(), self.item_names.len());
+            }
+            if self.item_descriptions_modified {
+                self.original_entry_counts.insert("item_descriptions".to_string(), self.item_descriptions.len());
+            }
+            if self.armor_descriptions_modified {
+                self.original_entry_counts.insert("armor_descriptions".to_string(), self.armor_descriptions.len());
+            }
+            if self.bullet_sets_modified {
+                self.original_entry_counts.insert("bullet_sets".to_string(), self.bullet_sets.len());
+            }
+            if self.monster_descriptions_modified {
+                self.original_entry_counts.insert("monster_descriptions".to_string(), self.monster_descriptions.len());
+            }
+            if self.carve_parts_modified {
+                self.original_entry_counts.insert("carve_parts".to_string(), self.carve_parts.tables.len());
+            }
+            if self.part_break_parts_modified {
+                self.original_entry_counts.insert("part_break_parts".to_string(), self.part_break_parts.tables.len());
+            }
+            if self.armor_upgrade_mats_modified {
+                self.original_entry_counts.insert("armor_upgrade_mats".to_string(), self.armor_upgrade_mats.tables.len());
+            }
             
             // Mettre à jour les original offsets pour les données modifiées
             use crate::model::mhfdat_pointers::*;
@@ -275,6 +533,8 @@ impl MhfdatApp {
             if self.armor_upgrade_mats_modified {
                 let off = u32::from_le_bytes(self.buffer[ARMOR_UPGRADE_MATS_PTR as usize..(ARMOR_UPGRADE_MATS_PTR + 4) as usize].try_into().unwrap());
                 self.original_armor_upgrade_mats_offset = Some(off);
+                // Update table count from actual number of tables written
+                self.armor_upgrade_mats_table_count = self.armor_upgrade_mats.tables.len();
                 self.armor_upgrade_mats_modified = false;
             }
             if self.carve_parts_modified {
@@ -343,113 +603,179 @@ impl MhfdatApp {
         // On ajoute SEULEMENT les nouvelles tables de noms/descriptions
         
         // 1) Melee weapons data block - écrire seulement si modifié
-        let melee_data_offset = if self.melee_weapons_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (melee_data_offset, melee_ptr_needs_update) = if self.melee_weapons_modified {
             let melee_block = write_melee_weapons_block(&self.melee_weapons)?;
-            writer.write_all(&melee_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("melee_weapons").copied();
+            let new_count = self.melee_weapons.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_melee_weapons_offset,
+                original_count,
+                new_count,
+                &melee_block,
+            )?
         } else {
-            self.original_melee_weapons_offset.unwrap_or(0)
+            (self.original_melee_weapons_offset.unwrap_or(0), false)
         };
 
         // 2) Ranged weapons data block - écrire seulement si modifié
-        let ranged_data_offset = if self.ranged_weapons_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (ranged_data_offset, ranged_ptr_needs_update) = if self.ranged_weapons_modified {
             let ranged_block = write_ranged_weapons_block(&self.ranged_weapons)?;
-            writer.write_all(&ranged_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("ranged_weapons").copied();
+            let new_count = self.ranged_weapons.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_ranged_weapons_offset,
+                original_count,
+                new_count,
+                &ranged_block,
+            )?
         } else {
-            self.original_ranged_weapons_offset.unwrap_or(0)
+            (self.original_ranged_weapons_offset.unwrap_or(0), false)
         };
 
         // 3) Head armor block - écrire seulement si modifié
-        let head_armor_offset = if self.head_armors_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (head_armor_offset, head_ptr_needs_update) = if self.head_armors_modified {
             let head_block = write_armors_block(&self.head_armors)?;
-            writer.write_all(&head_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("head_armors").copied();
+            let new_count = self.head_armors.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_head_armors_offset,
+                original_count,
+                new_count,
+                &head_block,
+            )?
         } else {
-            self.original_head_armors_offset.unwrap_or(0)
+            (self.original_head_armors_offset.unwrap_or(0), false)
         };
 
         // 4) Body armor block - écrire seulement si modifié
-        let body_armor_offset = if self.body_armors_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (body_armor_offset, body_ptr_needs_update) = if self.body_armors_modified {
             let body_block = write_armors_block(&self.body_armors)?;
-            writer.write_all(&body_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("body_armors").copied();
+            let new_count = self.body_armors.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_body_armors_offset,
+                original_count,
+                new_count,
+                &body_block,
+            )?
         } else {
-            self.original_body_armors_offset.unwrap_or(0)
+            (self.original_body_armors_offset.unwrap_or(0), false)
         };
 
         // 5) Arms armor block - écrire seulement si modifié
-        let arms_armor_offset = if self.arms_armors_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (arms_armor_offset, arms_ptr_needs_update) = if self.arms_armors_modified {
             let arms_block = write_armors_block(&self.arms_armors)?;
-            writer.write_all(&arms_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("arms_armors").copied();
+            let new_count = self.arms_armors.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_arms_armors_offset,
+                original_count,
+                new_count,
+                &arms_block,
+            )?
         } else {
-            self.original_arms_armors_offset.unwrap_or(0)
+            (self.original_arms_armors_offset.unwrap_or(0), false)
         };
 
         // 6) Waist armor block - écrire seulement si modifié
-        let waist_armor_offset = if self.waist_armors_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (waist_armor_offset, waist_ptr_needs_update) = if self.waist_armors_modified {
             let waist_block = write_armors_block(&self.waist_armors)?;
-            writer.write_all(&waist_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("waist_armors").copied();
+            let new_count = self.waist_armors.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_waist_armors_offset,
+                original_count,
+                new_count,
+                &waist_block,
+            )?
         } else {
-            self.original_waist_armors_offset.unwrap_or(0)
+            (self.original_waist_armors_offset.unwrap_or(0), false)
         };
 
         // 7) Legs armor block - écrire seulement si modifié
-        let legs_armor_offset = if self.legs_armors_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (legs_armor_offset, legs_ptr_needs_update) = if self.legs_armors_modified {
             let legs_block = write_armors_block(&self.legs_armors)?;
-            writer.write_all(&legs_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("legs_armors").copied();
+            let new_count = self.legs_armors.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_legs_armors_offset,
+                original_count,
+                new_count,
+                &legs_block,
+            )?
         } else {
-            self.original_legs_armors_offset.unwrap_or(0)
+            (self.original_legs_armors_offset.unwrap_or(0), false)
         };
 
         // 8) Items data block - écrire seulement si modifié
-        let item_data_offset = if self.items_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (item_data_offset, items_ptr_needs_update) = if self.items_modified {
             let items_block = write_items_block(&self.items)?;
-            writer.write_all(&items_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("items").copied();
+            let new_count = self.items.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_items_offset,
+                original_count,
+                new_count,
+                &items_block,
+            )?
         } else {
-            self.original_items_offset.unwrap_or(0)
+            (self.original_items_offset.unwrap_or(0), false)
         };
 
         // 9) Transmog shop data block - écrire seulement si modifié
-        let transmog_data_offset = if self.transmog_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (transmog_data_offset, transmog_ptr_needs_update) = if self.transmog_modified {
             let transmog_block = write_transmog_data(&self.transmog_entries)?;
-            writer.write_all(&transmog_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("transmog").copied();
+            let new_count = self.transmog_entries.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_transmog_offset,
+                original_count,
+                new_count,
+                &transmog_block,
+            )?
         } else {
-            self.original_transmog_offset.unwrap_or(0)
+            (self.original_transmog_offset.unwrap_or(0), false)
         };
 
         // 9a) Weapon forging shop data block - écrire seulement si modifié
-        let weapon_forging_data_offset = if self.weapon_forging_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (weapon_forging_data_offset, weapon_forging_ptr_needs_update) = if self.weapon_forging_modified {
             let weapon_forging_block = write_transmog_data(&self.weapon_forging_entries)?;
-            writer.write_all(&weapon_forging_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("weapon_forging").copied();
+            let new_count = self.weapon_forging_entries.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_weapon_forging_offset,
+                original_count,
+                new_count,
+                &weapon_forging_block,
+            )?
         } else {
-            self.original_weapon_forging_offset.unwrap_or(0)
+            (self.original_weapon_forging_offset.unwrap_or(0), false)
         };
 
         // 9a2) Armor forging shop data block - écrire seulement si modifié
-        let armor_forging_data_offset = if self.armor_forging_modified {
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+        let (armor_forging_data_offset, armor_forging_ptr_needs_update) = if self.armor_forging_modified {
             let armor_forging_block = write_transmog_data(&self.armor_forging_entries)?;
-            writer.write_all(&armor_forging_block)?;
-            offset
+            let original_count = self.original_entry_counts.get("armor_forging").copied();
+            let new_count = self.armor_forging_entries.len();
+            self.write_block_with_overwrite(
+                &mut writer,
+                self.original_armor_forging_offset,
+                original_count,
+                new_count,
+                &armor_forging_block,
+            )?
         } else {
-            self.original_armor_forging_offset.unwrap_or(0)
+            (self.original_armor_forging_offset.unwrap_or(0), false)
         };
 
         // 9a3) G-Rank Weapon forging shop data block - écrire seulement si modifié
@@ -895,14 +1221,6 @@ impl MhfdatApp {
             self.original_item_descriptions_offset.unwrap_or(0)
         };
         
-        let monster_desc_count = self.monster_descriptions.len();
-        let monster_desc_offset = if self.monster_descriptions_modified && monster_desc_count > 0 {
-            let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
-            write_monster_descriptions(&mut writer, &self.monster_descriptions[..monster_desc_count])?;
-            current_pos
-        } else {
-            self.original_monster_descriptions_offset.unwrap_or(0)
-        };
         
         let armor_desc_count = self.armor_descriptions.len();
         let armor_desc_offset = if self.armor_descriptions_modified && armor_desc_count > 0 {
@@ -915,12 +1233,12 @@ impl MhfdatApp {
 
         // Patch header pointers - seulement si modifié
         
-        if self.melee_weapons_modified {
+        if self.melee_weapons_modified && melee_ptr_needs_update {
             writer.seek(SeekFrom::Start(MELEE_WEAPONS_PTR as u64))?;
             writer.write_all(&melee_data_offset.to_le_bytes())?;
         }
 
-        if self.ranged_weapons_modified {
+        if self.ranged_weapons_modified && ranged_ptr_needs_update {
             writer.seek(SeekFrom::Start(RANGED_WEAPONS_PTR as u64))?;
             writer.write_all(&ranged_data_offset.to_le_bytes())?;
         }
@@ -943,27 +1261,27 @@ impl MhfdatApp {
             writer.write_all(&ranged_desc_table_offset.to_le_bytes())?;
         }
 
-        if self.head_armors_modified {
+        if self.head_armors_modified && head_ptr_needs_update {
             writer.seek(SeekFrom::Start(HEAD_ARMOR_PTR as u64))?;
             writer.write_all(&head_armor_offset.to_le_bytes())?;
         }
 
-        if self.body_armors_modified {
+        if self.body_armors_modified && body_ptr_needs_update {
             writer.seek(SeekFrom::Start(BODY_ARMOR_PTR as u64))?;
             writer.write_all(&body_armor_offset.to_le_bytes())?;
         }
 
-        if self.arms_armors_modified {
+        if self.arms_armors_modified && arms_ptr_needs_update {
             writer.seek(SeekFrom::Start(ARM_ARMOR_PTR as u64))?;
             writer.write_all(&arms_armor_offset.to_le_bytes())?;
         }
 
-        if self.waist_armors_modified {
+        if self.waist_armors_modified && waist_ptr_needs_update {
             writer.seek(SeekFrom::Start(WAIST_ARMOR_PTR as u64))?;
             writer.write_all(&waist_armor_offset.to_le_bytes())?;
         }
 
-        if self.legs_armors_modified {
+        if self.legs_armors_modified && legs_ptr_needs_update {
             writer.seek(SeekFrom::Start(LEG_ARMOR_PTR as u64))?;
             writer.write_all(&legs_armor_offset.to_le_bytes())?;
         }
@@ -1155,7 +1473,7 @@ impl MhfdatApp {
             }
         }
 
-        if self.items_modified {
+        if self.items_modified && items_ptr_needs_update {
             writer.seek(SeekFrom::Start(ITEM_DATA_PTR as u64))?;
             writer.write_all(&item_data_offset.to_le_bytes())?;
         }
@@ -1170,13 +1488,35 @@ impl MhfdatApp {
             writer.write_all(&item_desc_offset.to_le_bytes())?;
         }
         
+        // Monster Descriptions - write only if modified
         if self.monster_descriptions_modified {
-            writer.seek(SeekFrom::Start(MOSNTERS_DESCRIPTION_PTR as u64))?;
-            writer.write_all(&monster_desc_offset.to_le_bytes())?;
+            use crate::model::mhfdat_pointers::{MOSNTERS_DESCRIPTION_PTR, MOSNTERS_DESCRIPTION_COUNT_PTR};
             
-            if self.monster_descriptions_count_modified {
+            // Calculate count from actual number of descriptions
+            let count = self.monster_descriptions.len() as u16;
+            let block = write_monster_descriptions_block(&self.monster_descriptions)?;
+            
+            // If table count hasn't changed, overwrite at original offset
+            if count == self.monster_descriptions_count && self.original_monster_descriptions_offset.is_some() {
+                let original_offset = self.original_monster_descriptions_offset.unwrap() as u64;
+                writer.seek(SeekFrom::Start(original_offset))?;
+                writer.write_all(&block)?;
+                // Pointer stays the same, no need to update it
+                // Count stays the same, no need to update it
+            } else {
+                // Table count changed, write at end and update pointer
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                writer.write_all(&block)?;
+                
+                // Update pointer
+                writer.seek(SeekFrom::Start(MOSNTERS_DESCRIPTION_PTR as u64))?;
+                writer.write_all(&offset.to_le_bytes())?;
+                
+                // Update count to match actual number of descriptions
                 writer.seek(SeekFrom::Start(MOSNTERS_DESCRIPTION_COUNT_PTR as u64))?;
-                writer.write_all(&self.monster_descriptions_count.to_le_bytes())?;
+                writer.write_all(&count.to_le_bytes())?;
+                
+                writer.seek(SeekFrom::End(0))?;
             }
         }
         
@@ -1185,17 +1525,17 @@ impl MhfdatApp {
             writer.write_all(&armor_desc_offset.to_le_bytes())?;
         }
 
-        if self.transmog_modified {
+        if self.transmog_modified && transmog_ptr_needs_update {
             writer.seek(SeekFrom::Start(TRANSMOG_FORGING_PTR as u64))?;
             writer.write_all(&transmog_data_offset.to_le_bytes())?;
         }
 
-        if self.weapon_forging_modified {
+        if self.weapon_forging_modified && weapon_forging_ptr_needs_update {
             writer.seek(SeekFrom::Start(WEAPON_FORGING_PTR as u64))?;
             writer.write_all(&weapon_forging_data_offset.to_le_bytes())?;
         }
 
-        if self.armor_forging_modified {
+        if self.armor_forging_modified && armor_forging_ptr_needs_update {
             writer.seek(SeekFrom::Start(ARMOR_FORGING_PTR as u64))?;
             writer.write_all(&armor_forging_data_offset.to_le_bytes())?;
         }
@@ -1371,14 +1711,26 @@ impl MhfdatApp {
         if self.armor_upgrade_mats_modified {
             use crate::core::mhfdat::write_armor_upgrade_mats_block;
             
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let current_table_count = self.armor_upgrade_mats.tables.len();
             let block = write_armor_upgrade_mats_block(&self.armor_upgrade_mats)?;
-            writer.write_all(&block)?;
             
-            // Update pointer
-            writer.seek(SeekFrom::Start(ARMOR_UPGRADE_MATS_PTR as u64))?;
-            writer.write_all(&offset.to_le_bytes())?;
-            writer.seek(SeekFrom::End(0))?;
+            // If table count hasn't changed, overwrite at original offset
+            if current_table_count == self.armor_upgrade_mats_table_count 
+                && self.original_armor_upgrade_mats_offset.is_some() {
+                let original_offset = self.original_armor_upgrade_mats_offset.unwrap() as u64;
+                writer.seek(SeekFrom::Start(original_offset))?;
+                writer.write_all(&block)?;
+                // Pointer stays the same, no need to update it
+            } else {
+                // Table count changed, write at end and update pointer
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                writer.write_all(&block)?;
+                
+                // Update pointer
+                writer.seek(SeekFrom::Start(ARMOR_UPGRADE_MATS_PTR as u64))?;
+                writer.write_all(&offset.to_le_bytes())?;
+                writer.seek(SeekFrom::End(0))?;
+            }
         }
 
         // Carve Parts - write only if modified
@@ -1388,20 +1740,30 @@ impl MhfdatApp {
             
             // Calculate count from actual number of tables
             let count = self.carve_parts.tables.len() as u16;
-            
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
             let block = write_carve_parts_block(&self.carve_parts)?;
-            writer.write_all(&block)?;
             
-            // Update pointer
-            writer.seek(SeekFrom::Start(CARVE_PARTS_PTR as u64))?;
-            writer.write_all(&offset.to_le_bytes())?;
-            
-            // Update count (always update to match actual number of tables)
-            writer.seek(SeekFrom::Start(CARVE_PARTS_COUNT_PTR as u64))?;
-            writer.write_all(&count.to_le_bytes())?;
-            
-            writer.seek(SeekFrom::End(0))?;
+            // If table count hasn't changed, overwrite at original offset
+            if count == self.carve_parts_count && self.original_carve_parts_offset.is_some() {
+                let original_offset = self.original_carve_parts_offset.unwrap() as u64;
+                writer.seek(SeekFrom::Start(original_offset))?;
+                writer.write_all(&block)?;
+                // Pointer stays the same, no need to update it
+                // Count stays the same, no need to update it
+            } else {
+                // Table count changed, write at end and update pointer
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                writer.write_all(&block)?;
+                
+                // Update pointer
+                writer.seek(SeekFrom::Start(CARVE_PARTS_PTR as u64))?;
+                writer.write_all(&offset.to_le_bytes())?;
+                
+                // Update count to match actual number of tables
+                writer.seek(SeekFrom::Start(CARVE_PARTS_COUNT_PTR as u64))?;
+                writer.write_all(&count.to_le_bytes())?;
+                
+                writer.seek(SeekFrom::End(0))?;
+            }
         }
 
         // Part Break Parts - write only if modified
@@ -1411,20 +1773,30 @@ impl MhfdatApp {
             
             // Calculate count from actual number of tables
             let count = self.part_break_parts.tables.len() as u16;
-            
-            let offset = writer.seek(SeekFrom::Current(0))? as u32;
             let block = write_part_break_parts_block(&self.part_break_parts)?;
-            writer.write_all(&block)?;
             
-            // Update pointer
-            writer.seek(SeekFrom::Start(PART_BREAK_DROP_PTR as u64))?;
-            writer.write_all(&offset.to_le_bytes())?;
-            
-            // Update count (always update to match actual number of tables)
-            writer.seek(SeekFrom::Start(PART_BREAK_DROP_COUNT_PTR as u64))?;
-            writer.write_all(&count.to_le_bytes())?;
-            
-            writer.seek(SeekFrom::End(0))?;
+            // If table count hasn't changed, overwrite at original offset
+            if count == self.part_break_parts_count && self.original_part_break_parts_offset.is_some() {
+                let original_offset = self.original_part_break_parts_offset.unwrap() as u64;
+                writer.seek(SeekFrom::Start(original_offset))?;
+                writer.write_all(&block)?;
+                // Pointer stays the same, no need to update it
+                // Count stays the same, no need to update it
+            } else {
+                // Table count changed, write at end and update pointer
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                writer.write_all(&block)?;
+                
+                // Update pointer
+                writer.seek(SeekFrom::Start(PART_BREAK_DROP_PTR as u64))?;
+                writer.write_all(&offset.to_le_bytes())?;
+                
+                // Update count to match actual number of tables
+                writer.seek(SeekFrom::Start(PART_BREAK_DROP_COUNT_PTR as u64))?;
+                writer.write_all(&count.to_le_bytes())?;
+                
+                writer.seek(SeekFrom::End(0))?;
+            }
         }
 
         Ok(())
