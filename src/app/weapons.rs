@@ -480,15 +480,18 @@ impl MhfdatApp {
                     real_count += 1;
                 }
                 
-                // Utiliser insert() comme pour les armures
+
                 self.ranged_weapons.insert(real_count, new_weapon);
                 self.ranged_weapon_names.insert(real_count, format!("New Ranged Weapon {}", next_model_id));
                 self.ranged_weapon_descriptions.insert(real_count, ["".to_string(), "".to_string(), "".to_string(), "MhfY".to_string()]);
                 
-                // Marquer comme modifié
+
                 self.ranged_weapons_modified = true;
                 self.ranged_weapon_names_modified = true;
                 self.ranged_weapon_descriptions_modified = true;
+                
+                // Mettre à jour le compteur d'armes (nombre réel en mémoire)
+                self.refresh_weapon_counts_from_entries();
                 
                 self.selected_ranged_index = Some(real_count);
                 self.ranged_weapons_page = (real_count / 15) as u32;
@@ -2185,6 +2188,7 @@ impl MhfdatApp {
                     }
                 }
                 self.melee_weapons_modified = true;
+                self.refresh_weapon_counts_from_entries();
                 eprintln!("[DEBUG] Melee weapons import completed");
                 return;
             }
@@ -2203,6 +2207,7 @@ impl MhfdatApp {
                     }
                 }
                 self.melee_weapons_modified = true;
+                self.refresh_weapon_counts_from_entries();
                 eprintln!("[DEBUG] Melee weapons import completed");
             }
         }
@@ -2268,6 +2273,7 @@ impl MhfdatApp {
                     }
                 }
                 self.ranged_weapons_modified = true;
+                self.refresh_weapon_counts_from_entries();
                 eprintln!("[DEBUG] Ranged weapons import completed");
                 return;
             }
@@ -2286,6 +2292,7 @@ impl MhfdatApp {
                     }
                 }
                 self.ranged_weapons_modified = true;
+                self.refresh_weapon_counts_from_entries();
                 eprintln!("[DEBUG] Ranged weapons import completed");
             }
         }

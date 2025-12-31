@@ -170,6 +170,15 @@ impl MhfdatApp {
             let saved_file_data = std::fs::read(path)?;
             self.buffer = saved_file_data.clone();
             
+            // 6b. Update armor descriptions offset after buffer reload
+            if self.armor_descriptions_modified {
+                if self.buffer.len() >= ARMOR_DESC_PTR as usize + 4 {
+                    let off = u32::from_le_bytes(self.buffer[ARMOR_DESC_PTR as usize..(ARMOR_DESC_PTR + 4) as usize].try_into().unwrap());
+                    self.original_armor_descriptions_offset = Some(off);
+                }
+                self.armor_descriptions_modified = false;
+            }
+            
             // 7. IMPORTANT: Mettre à jour les original_entry_counts après la sauvegarde
             // pour que les prochains saves puissent détecter si le nombre d'entries a changé
             if self.melee_weapons_modified {
@@ -582,11 +591,6 @@ impl MhfdatApp {
             }
             if self.monster_descriptions_count_modified {
                 self.monster_descriptions_count_modified = false;
-            }
-            if self.armor_descriptions_modified {
-                let off = u32::from_le_bytes(self.buffer[ARMOR_DESC_PTR as usize..(ARMOR_DESC_PTR + 4) as usize].try_into().unwrap());
-                self.original_armor_descriptions_offset = Some(off);
-                self.armor_descriptions_modified = false;
             }
         }
         Ok(())
@@ -1799,6 +1803,28 @@ impl MhfdatApp {
             }
         }
 
+        // Update Equipment Counts at the end
+        // This updates the counters for melee weapons, ranged weapons, and all armor types
+        use crate::core::mhfdat::read_equipment_counts;
+        if let Some(counts) = read_equipment_counts(&self.buffer) {
+            // The counts have already been updated in the buffer by refresh_weapon_counts_from_entries
+            // and refresh_equipment_counts_from_entries, so we just need to write them to the file
+            use crate::model::mhfdat_pointers::EQUIPEMENT_COUNT_PTR;
+            writer.seek(SeekFrom::Start(EQUIPEMENT_COUNT_PTR as u64))?;
+            
+            // Write the equipment counts structure
+            writer.write_all(&counts.numLegA.to_le_bytes())?;
+            writer.write_all(&counts.numUnk.to_le_bytes())?;
+            writer.write_all(&counts.numHeadA.to_le_bytes())?;
+            writer.write_all(&counts.numBodyA.to_le_bytes())?;
+            writer.write_all(&counts.numArmA.to_le_bytes())?;
+            writer.write_all(&counts.numWaistA.to_le_bytes())?;
+            writer.write_all(&counts.numMeleeW.to_le_bytes())?;
+            writer.write_all(&counts.numRangedW.to_le_bytes())?;
+            
+            writer.seek(SeekFrom::End(0))?;
+        }
+
         Ok(())
     }
 
@@ -1815,6 +1841,15 @@ impl MhfdatApp {
             
             // 6. Recharger le buffer depuis le fichier compressé
             self.buffer = std::fs::read(&path)?;
+            
+            // 7. Update armor descriptions offset after reload
+            if self.armor_descriptions_modified {
+                if self.buffer.len() >= ARMOR_DESC_PTR as usize + 4 {
+                    let off = u32::from_le_bytes(self.buffer[ARMOR_DESC_PTR as usize..(ARMOR_DESC_PTR + 4) as usize].try_into().unwrap());
+                    self.original_armor_descriptions_offset = Some(off);
+                }
+                self.armor_descriptions_modified = false;
+            }
             
             Ok(())
         } else {
@@ -1835,6 +1870,15 @@ impl MhfdatApp {
             
             // 5. Recharger le buffer depuis le fichier chiffré
             self.buffer = std::fs::read(&path)?;
+            
+            // 6. Update armor descriptions offset after reload
+            if self.armor_descriptions_modified {
+                if self.buffer.len() >= ARMOR_DESC_PTR as usize + 4 {
+                    let off = u32::from_le_bytes(self.buffer[ARMOR_DESC_PTR as usize..(ARMOR_DESC_PTR + 4) as usize].try_into().unwrap());
+                    self.original_armor_descriptions_offset = Some(off);
+                }
+                self.armor_descriptions_modified = false;
+            }
             
             Ok(())
         } else {

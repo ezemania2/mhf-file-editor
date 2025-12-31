@@ -230,6 +230,9 @@ impl MhfdatApp {
                 },
                 ArmorTab::ArmorUpgrade => {}
             }
+            
+            // Mettre à jour les compteurs d'équipement (nombre réel en mémoire)
+            self.refresh_equipment_counts_from_entries();
         }
 
         // Recreate references if they were dropped in do_add block
@@ -307,6 +310,12 @@ impl MhfdatApp {
             let total_pages = if filtered_armors.is_empty() { 1 } else { 
                 ((filtered_armors.len() + entries_per_page - 1) / entries_per_page).max(1)
             };
+            
+            // Reset page if out of bounds
+            if self.armor_page >= total_pages as u32 {
+                self.armor_page = 0;
+            }
+            
             let current_page = self.armor_page as usize;
             let start_idx = current_page * entries_per_page;
             let end_idx = (start_idx + entries_per_page).min(filtered_armors.len());
@@ -564,6 +573,48 @@ impl MhfdatApp {
                                             Self::set_equipment_flags(armor, male, female, blade, gunner);
                                         }
                                     });
+                                    
+                                    ui.separator();
+                                    
+                                    // Armor Type flags (bitfield)
+                                    use crate::utils::armor_type::ArmorTypeFlags;
+                                    let mut armor_flags = ArmorTypeFlags::from_u32(armor.armor_type);
+                                    ui.horizontal(|ui| {
+                                        ui.label("Armor Type:");
+                                        ui.label(armor_flags.short_description());
+                                    });
+                                    
+                                    egui::CollapsingHeader::new("Armor Type Flags")
+                                        .default_open(false)
+                                        .show(ui, |ui| {
+                                            let mut type_changed = false;
+                                            
+                                            ui.horizontal(|ui| {
+                                                type_changed |= ui.checkbox(&mut armor_flags.gou, "Gou").changed();
+                                                type_changed |= ui.checkbox(&mut armor_flags.grank, "G-Rank").changed();
+                                                type_changed |= ui.checkbox(&mut armor_flags.supremacy, "Supremacy").changed();
+                                            });
+                                            
+                                            ui.horizontal(|ui| {
+                                                type_changed |= ui.checkbox(&mut armor_flags.premium_hr, "Premium HR").changed();
+                                                type_changed |= ui.checkbox(&mut armor_flags.premium_gr, "Premium GR").changed();
+                                            });
+                                            
+                                            ui.horizontal(|ui| {
+                                                type_changed |= ui.checkbox(&mut armor_flags.g_supremacy, "G Supremacy").changed();
+                                                type_changed |= ui.checkbox(&mut armor_flags.gf_supremacy, "GF Supremacy").changed();
+                                                type_changed |= ui.checkbox(&mut armor_flags.gx_supremacy, "GX Supremacy").changed();
+                                            });
+                                            
+                                            ui.horizontal(|ui| {
+                                                type_changed |= ui.checkbox(&mut armor_flags.exotic, "Exotic").changed();
+                                                type_changed |= ui.checkbox(&mut armor_flags.zenith, "Zenith").changed();
+                                            });
+                                            
+                                            if type_changed {
+                                                armor.armor_type = armor_flags.to_u32();
+                                            }
+                                        });
             });
 
             // Resistances
@@ -822,7 +873,6 @@ impl MhfdatApp {
                 let orig_coef_upgrade = armor.coef_upgrade;
                 let orig_post_festi = armor.post_festi;
                 let orig_show_next_level = armor.show_next_level;
-                let orig_armor_type = armor.armor_type;
                 let orig_weap_hiden = armor.weap_hiden;
                 let orig_towerslots = armor.towerslots;
                 let orig_deco_item_id = armor.deco_item_id;
@@ -836,7 +886,6 @@ impl MhfdatApp {
                 let mut coef_upgrade = armor.coef_upgrade;
                 let mut post_festi = armor.post_festi;
                 let mut show_next_level = armor.show_next_level;
-                let mut armor_type = armor.armor_type;
                 let mut weap_hiden = armor.weap_hiden;
                 let mut towerslots = armor.towerslots;
                 let mut deco_item_id = armor.deco_item_id;
@@ -850,7 +899,6 @@ impl MhfdatApp {
                 Self::render_editable_field(ui, "Coef Upgrade", &mut coef_upgrade);
                 Self::render_editable_field(ui, "Post Festi", &mut post_festi);
                 Self::render_editable_field(ui, "Show Next Level", &mut show_next_level);
-                Self::render_editable_field(ui, "Armor Type", &mut armor_type);
                 Self::render_editable_field(ui, "Weap Hiden", &mut weap_hiden);
                 Self::render_editable_field(ui, "Tower Slots", &mut towerslots);
                 
@@ -911,7 +959,6 @@ impl MhfdatApp {
                 armor.coef_upgrade = coef_upgrade;
                 armor.post_festi = post_festi;
                 armor.show_next_level = show_next_level;
-                armor.armor_type = armor_type;
                 armor.weap_hiden = weap_hiden;
                 armor.towerslots = towerslots;
                 armor.deco_item_id = deco_item_id;
@@ -923,7 +970,7 @@ impl MhfdatApp {
                 armor.max_slots = max_slots;
                 
                 if coef_upgrade != orig_coef_upgrade || post_festi != orig_post_festi
-                    || show_next_level != orig_show_next_level || armor_type != orig_armor_type
+                    || show_next_level != orig_show_next_level
                     || weap_hiden != orig_weap_hiden || towerslots != orig_towerslots
                     || deco_item_id != orig_deco_item_id || g_rank != orig_g_rank
                     || app_price != orig_app_price || equip_id != orig_equip_id
@@ -1250,6 +1297,7 @@ impl MhfdatApp {
                     ArmorTab::Legs => self.legs_armors_modified = true,
                     ArmorTab::ArmorUpgrade => {},
                 }
+                self.refresh_equipment_counts_from_entries();
                 eprintln!("[DEBUG] Armor import completed");
                 return;
             }
@@ -1286,6 +1334,7 @@ impl MhfdatApp {
                     ArmorTab::Legs => self.legs_armors_modified = true,
                     ArmorTab::ArmorUpgrade => {},
                 }
+                self.refresh_equipment_counts_from_entries();
                 eprintln!("[DEBUG] Armor import completed");
             }
         }
