@@ -68,56 +68,67 @@ impl MhfdatApp {
                 self.selected_deco_index = Some(self.deco_ids.len() - 1);
             }
             if ui.button("Export JSON").clicked() {
-                #[derive(Serialize)]
-                struct DecoExport {
-                    idx: usize,
-                    name: String,
-                    slot_nb: u8,
-                    flags: u16,
-                    price: u32,
-                    skill_id1: u8,
-                    skill_pts1: i8,
-                    skill_id2: u8,
-                    skill_pts2: i8,
-                    skill_id3: u8,
-                    skill_pts3: i8,
-                    skill_id4: u8,
-                    skill_pts4: i8,
-                    special_flags: u16,
-                    zenith_skill: u16,
-                }
-                let export_rows: Vec<DecoExport> = self.deco_ids.iter().enumerate().map(|(i, d)| {
-                    let name = self.items.iter().position(|it| it.deco_id as usize == i)
-                        .and_then(|idx| self.item_names.get(idx)).cloned().unwrap_or_default();
-                    DecoExport {
-                        idx: i,
-                        name,
-                        slot_nb: d.slot_nb,
-                        flags: d.flags,
-                        price: d.price,
-                        skill_id1: d.skill_id1,
-                        skill_pts1: d.skill_pts1,
-                        skill_id2: d.skill_id2,
-                        skill_pts2: d.skill_pts2,
-                        skill_id3: d.skill_id3,
-                        skill_pts3: d.skill_pts3,
-                        skill_id4: d.skill_id4,
-                        skill_pts4: d.skill_pts4,
-                        special_flags: d.special_flags,
-                        zenith_skill: d.zenith_skill,
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("decorations.json")
+                    .show_save_single_file() 
+                {
+                    #[derive(Serialize)]
+                    struct DecoExport {
+                        idx: usize,
+                        name: String,
+                        slot_nb: u8,
+                        flags: u16,
+                        price: u32,
+                        skill_id1: u8,
+                        skill_pts1: i8,
+                        skill_id2: u8,
+                        skill_pts2: i8,
+                        skill_id3: u8,
+                        skill_pts3: i8,
+                        skill_id4: u8,
+                        skill_pts4: i8,
+                        special_flags: u16,
+                        zenith_skill: u16,
                     }
-                }).collect();
-                if let Ok(json) = serde_json::to_string_pretty(&export_rows) {
-                    let _ = std::fs::write("decorations.json", json);
+                    let export_rows: Vec<DecoExport> = self.deco_ids.iter().enumerate().map(|(i, d)| {
+                        let name = self.items.iter().position(|it| it.deco_id as usize == i)
+                            .and_then(|idx| self.item_names.get(idx)).cloned().unwrap_or_default();
+                        DecoExport {
+                            idx: i,
+                            name,
+                            slot_nb: d.slot_nb,
+                            flags: d.flags,
+                            price: d.price,
+                            skill_id1: d.skill_id1,
+                            skill_pts1: d.skill_pts1,
+                            skill_id2: d.skill_id2,
+                            skill_pts2: d.skill_pts2,
+                            skill_id3: d.skill_id3,
+                            skill_pts3: d.skill_pts3,
+                            skill_id4: d.skill_id4,
+                            skill_pts4: d.skill_pts4,
+                            special_flags: d.special_flags,
+                            zenith_skill: d.zenith_skill,
+                        }
+                    }).collect();
+                    if let Ok(json) = serde_json::to_string_pretty(&export_rows) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("decorations.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(data) = std::fs::read_to_string("deco_ids.json") {
-                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatDecoId>>(&data) {
-                        self.deco_ids = imported;
-                        self.deco_id_count_limiter = self.deco_ids.len() as u16;
-                        self.deco_id_count_limiter_modified = true;
-                        self.deco_ids_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatDecoId>>(&data) {
+                            self.deco_ids = imported;
+                            self.deco_id_count_limiter = self.deco_ids.len() as u16;
+                            self.deco_id_count_limiter_modified = true;
+                            self.deco_ids_modified = true;
+                        }
                     }
                 }
             }
@@ -254,36 +265,45 @@ impl MhfdatApp {
     pub fn show_items_list(&mut self, ui: &mut egui::Ui) {
                  MhfdatApp::section_header(ui, &format!("Items (found: {})", self.items.len()), |ui| {
                      if ui.button("Export JSON").clicked() {
-                         // Convert items to export format
-                         let export_items: Vec<ItemExport> = self.items
-                             .iter()
-                             .enumerate()
-                             .map(|(index, item)| {
-                                 let name = if index < self.item_names.len() { self.item_names[index].clone() } else { String::new() };
-                                 let description = if index < self.item_descriptions.len() { self.item_descriptions[index].clone() } else { String::new() };
-                                 ItemExport::from_item_with_data(item, &name, &description, index)
-                             })
-                             .collect();
-                         if let Ok(json) = serde_json::to_string_pretty(&export_items) { let _ = std::fs::write("items.json", json); }
-                     }
-                     if ui.button("Import from JSON").clicked() {
-                         // Try export format first (with names and descriptions)
-                         if let Ok(data) = std::fs::read_to_string("items.json") {
-                             if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::ItemExport>>(&data) {
-                                 let imported: Vec<crate::model::mhfdat::MhfdatItem> = imported_export.iter().map(|e| e.to_item()).collect();
-                                 self.items = imported;
-                                 self.items_modified = true;
-                                 return;
-                             }
-                         }
-                         // Fallback to raw format
-                         if let Ok(data) = std::fs::read_to_string("items_raw.json") {
-                             if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatItem>>(&data) {
-                                 self.items = imported;
-                                 self.items_modified = true;
-                             }
+                         if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                             .add_filter("JSON", &["json"])
+                             .set_filename("items.json")
+                             .show_save_single_file() 
+                         {
+                             // Convert items to export format
+                             let export_items: Vec<ItemExport> = self.items
+                                 .iter()
+                                 .enumerate()
+                                 .map(|(index, item)| {
+                                     let name = if index < self.item_names.len() { self.item_names[index].clone() } else { String::new() };
+                                     let description = if index < self.item_descriptions.len() { self.item_descriptions[index].clone() } else { String::new() };
+                                     ItemExport::from_item_with_data(item, &name, &description, index)
+                                 })
+                                 .collect();
+                             if let Ok(json) = serde_json::to_string_pretty(&export_items) { let _ = std::fs::write(path.to_str().unwrap_or("items.json"), json); }
                          }
                      }
+                    if ui.button("Import from JSON").clicked() {
+                        if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                            .add_filter("JSON", &["json"])
+                            .show_open_single_file() 
+                        {
+                            // Try export format first (with names and descriptions)
+                            if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                                if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::ItemExport>>(&data) {
+                                    let imported: Vec<crate::model::mhfdat::MhfdatItem> = imported_export.iter().map(|e| e.to_item()).collect();
+                                    self.items = imported;
+                                    self.items_modified = true;
+                                    return;
+                                }
+                                // Fallback to raw format
+                                if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatItem>>(&data) {
+                                    self.items = imported;
+                                    self.items_modified = true;
+                                }
+                            }
+                        }
+                    }
                  });
 
         // Search and filters
@@ -295,28 +315,34 @@ impl MhfdatApp {
         // Export buttons
         ui.horizontal(|ui| {
             if ui.button("Export Items to JSON").clicked() {
-                // Convert items to export format
-                let export_items: Vec<ItemExport> = self.items
-                    .iter()
-                    .enumerate()
-                    .map(|(index, item)| {
-                        let name = if index < self.item_names.len() {
-                            self.item_names[index].clone()
-                        } else {
-                            String::new()
-                        };
-                        let description = if index < self.item_descriptions.len() {
-                            self.item_descriptions[index].clone()
-                        } else {
-                            String::new()
-                        };
-                        ItemExport::from_item_with_data(item, &name, &description, index)
-                    })
-                    .collect();
-                
-                if let Ok(json) = serde_json::to_string_pretty(&export_items) {
-                    if let Ok(mut file) = File::create("items.json") {
-                        let _ = file.write_all(json.as_bytes());
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("items.json")
+                    .show_save_single_file() 
+                {
+                    // Convert items to export format
+                    let export_items: Vec<ItemExport> = self.items
+                        .iter()
+                        .enumerate()
+                        .map(|(index, item)| {
+                            let name = if index < self.item_names.len() {
+                                self.item_names[index].clone()
+                            } else {
+                                String::new()
+                            };
+                            let description = if index < self.item_descriptions.len() {
+                                self.item_descriptions[index].clone()
+                            } else {
+                                String::new()
+                            };
+                            ItemExport::from_item_with_data(item, &name, &description, index)
+                        })
+                        .collect();
+                    
+                    if let Ok(json) = serde_json::to_string_pretty(&export_items) {
+                        if let Ok(mut file) = File::create(path.to_str().unwrap_or("items.json")) {
+                            let _ = file.write_all(json.as_bytes());
+                        }
                     }
                 }
             }

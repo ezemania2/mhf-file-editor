@@ -1047,7 +1047,7 @@ pub struct DecoShop {
 #[repr(C, packed)]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct AutomaticSkill {
-    pub unk00: u8,              // Unknown byte
+    pub is_armor: bool,              // True if the skill is for an armor, false if it is for a weapon
     pub eq_type: u8,            // Equipment type: 0=Legs, 2=Head, 3=Chest, 4=Arms, 5=Waist, 6=Melee, 7=Ranged
     pub equip_id: u16,          // ID of the equipment (weapon or armor)
     pub skill_id: u16,          // Automatic skill ID

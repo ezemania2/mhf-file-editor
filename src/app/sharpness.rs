@@ -30,15 +30,26 @@ impl MhfdatApp {
         ui.horizontal(|ui| {
             ui.heading("Sharpness Editor");
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.sharpness) {
-                    let _ = std::fs::write("sharpness.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("sharpness.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.sharpness) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("sharpness.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(data) = std::fs::read_to_string("sharpness.json") {
-                    if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::SharpnessCollection>(&data) {
-                        self.sharpness = imported;
-                        self.sharpness_modified = [true; 12];
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::SharpnessCollection>(&data) {
+                            self.sharpness = imported;
+                            self.sharpness_modified = [true; 12];
+                        }
                     }
                 }
             }

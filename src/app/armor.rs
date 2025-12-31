@@ -96,6 +96,43 @@ impl MhfdatApp {
         let arms_len = self.arms_armors.len();
         let waist_len = self.waist_armors.len();
         
+        let armor_type_str_early = match self.armor_tab { 
+            ArmorTab::Head=>"head", 
+            ArmorTab::Body=>"body", 
+            ArmorTab::Arms=>"arms", 
+            ArmorTab::Waist=>"waist", 
+            ArmorTab::Legs=>"legs",
+            ArmorTab::ArmorUpgrade => unreachable!(),
+        };
+        
+        let armor_type_str = match self.armor_tab { 
+            ArmorTab::Head=>"head", 
+            ArmorTab::Body=>"body", 
+            ArmorTab::Arms=>"arms", 
+            ArmorTab::Waist=>"waist", 
+            ArmorTab::Legs=>"legs",
+            ArmorTab::ArmorUpgrade => unreachable!(),
+        };
+        
+        // Buttons row
+        let mut do_export = false;
+        let mut do_import = false;
+        let mut do_add = false;
+        ui.horizontal(|ui| {
+            if ui.button("Export JSON").clicked() { do_export = true; }
+            if ui.button("Import from JSON").clicked() { do_import = true; }
+            if ui.button("Add New").clicked() { do_add = true; }
+        });
+
+        if do_import {
+            if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                .add_filter("JSON", &["json"])
+                .show_open_single_file() 
+            {
+                self.import_armor_merge_by_model_id(armor_type_str, path.to_str().unwrap_or(""));
+            }
+        }
+
         let (armors, names) = match self.armor_tab {
             ArmorTab::Head => (&mut self.head_armors, &mut self.head_armor_names),
             ArmorTab::Body => (&mut self.body_armors, &mut self.body_armor_names),
@@ -113,79 +150,27 @@ impl MhfdatApp {
             }
             real_count += 1;
         }
-
-        let armor_type_str = match self.armor_tab { 
-            ArmorTab::Head=>"head", 
-            ArmorTab::Body=>"body", 
-            ArmorTab::Arms=>"arms", 
-            ArmorTab::Waist=>"waist", 
-            ArmorTab::Legs=>"legs",
-            ArmorTab::ArmorUpgrade => unreachable!(),
-        };
         
         ui.horizontal(|ui| {
             ui.heading(format!("{} Armor (found: {})", armor_type, real_count.min(armors.len())));
         });
 
-        // Buttons row
-        let mut do_export = false;
-        let mut do_import = false;
-        let mut do_add = false;
-        ui.horizontal(|ui| {
-            if ui.button("Export JSON").clicked() { do_export = true; }
-            if ui.button("Import from JSON").clicked() { do_import = true; }
-            if ui.button("Add New").clicked() { do_add = true; }
-        });
-
         if do_export {
-            let export_armors: Vec<ArmorExport> = armors
-                .iter()
-                .enumerate()
-                .map(|(index, armor)| {
-                    let name = names.get(index).cloned().unwrap_or_default();
-                    ArmorExport::from_armor_with_data(armor, &name, index)
-                })
-                .collect();
-            let filename = format!("{}_armor.json", armor_type_str);
-            if let Ok(json) = serde_json::to_string_pretty(&export_armors) {
-                let _ = std::fs::write(&filename, json);
-            }
-        }
-
-        if do_import {
-            let armor_tab = self.armor_tab;
-            // Try export format first (with decomposed bitfields)
-            let filename_export = format!("{}_armor.json", armor_type_str);
-            let filename_raw = format!("{}_armor_raw.json", armor_type_str);
-            
-            // Try export format first
-            if let Ok(data) = std::fs::read_to_string(&filename_export) {
-                if let Ok(imported_export) = serde_json::from_str::<Vec<ArmorExport>>(&data) {
-                    let imported: Vec<MhfdatEquipment> = imported_export.iter().map(|e| e.to_armor()).collect();
-                    match armor_tab {
-                        ArmorTab::Head => { self.head_armors = imported; self.head_armors_modified = true; }
-                        ArmorTab::Body => { self.body_armors = imported; self.body_armors_modified = true; }
-                        ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
-                        ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
-                        ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
-                        ArmorTab::ArmorUpgrade => {},
-                    }
-                    return;
-                }
-            }
-            
-            // Fallback to raw format
-            if let Ok(data) = std::fs::read_to_string(&filename_raw) {
-                if let Ok(imported) = serde_json::from_str::<Vec<MhfdatEquipment>>(&data) {
-                    match armor_tab {
-                        ArmorTab::Head => { self.head_armors = imported; self.head_armors_modified = true; }
-                        ArmorTab::Body => { self.body_armors = imported; self.body_armors_modified = true; }
-                        ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
-                        ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
-                        ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
-                        ArmorTab::ArmorUpgrade => {},
-                    }
-                    return;
+            if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                .add_filter("JSON", &["json"])
+                .set_filename(&format!("{}_armor.json", armor_type_str))
+                .show_save_single_file() 
+            {
+                let export_armors: Vec<ArmorExport> = armors
+                    .iter()
+                    .enumerate()
+                    .map(|(index, armor)| {
+                        let name = names.get(index).cloned().unwrap_or_default();
+                        ArmorExport::from_armor_with_data(armor, &name, index)
+                    })
+                    .collect();
+                if let Ok(json) = serde_json::to_string_pretty(&export_armors) {
+                    let _ = std::fs::write(path.to_str().unwrap_or("armor.json"), json);
                 }
             }
         }
@@ -1008,15 +993,26 @@ impl MhfdatApp {
                 self.armor_upgrade_mats_modified = true;
             }
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.armor_upgrade_mats) {
-                    let _ = std::fs::write("armor_upgrade_mats.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("armor_upgrade_mats.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.armor_upgrade_mats) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("armor_upgrade_mats.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(json) = std::fs::read_to_string("armor_upgrade_mats.json") {
-                    if let Ok(data) = serde_json::from_str(&json) {
-                        self.armor_upgrade_mats = data;
-                        self.armor_upgrade_mats_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    if let Ok(json) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(data) = serde_json::from_str(&json) {
+                            self.armor_upgrade_mats = data;
+                            self.armor_upgrade_mats_modified = true;
+                        }
                     }
                 }
             }
@@ -1177,6 +1173,122 @@ impl MhfdatApp {
         });
         
         MhfdatApp::pagination_controls(ui, &mut self.armor_upgrade_page, total_pages);
+    }
+    
+    // Import functions for armor
+    fn import_armor_replace_all(&mut self, _armor_type_str: &str, file_path: &str) {
+        let armor_tab = self.armor_tab;
+        
+        // Try export format first
+        if let Ok(data) = std::fs::read_to_string(file_path) {
+            if let Ok(imported_export) = serde_json::from_str::<Vec<ArmorExport>>(&data) {
+                let imported: Vec<MhfdatEquipment> = imported_export.iter().map(|e| e.to_armor()).collect();
+                match armor_tab {
+                    ArmorTab::Head => { self.head_armors = imported; self.head_armors_modified = true; }
+                    ArmorTab::Body => { self.body_armors = imported; self.body_armors_modified = true; }
+                    ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
+                    ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
+                    ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
+                    ArmorTab::ArmorUpgrade => {},
+                }
+                return;
+            }
+            // Fallback to raw format
+            if let Ok(imported) = serde_json::from_str::<Vec<MhfdatEquipment>>(&data) {
+                match armor_tab {
+                    ArmorTab::Head => { self.head_armors = imported; self.head_armors_modified = true; }
+                    ArmorTab::Body => { self.body_armors = imported; self.body_armors_modified = true; }
+                    ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
+                    ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
+                    ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
+                    ArmorTab::ArmorUpgrade => {},
+                }
+            }
+        }
+    }
+    
+    fn import_armor_merge_by_model_id(&mut self, _armor_type_str: &str, file_path: &str) {
+        let armor_tab = self.armor_tab;
+        
+        // Try export format first
+        if let Ok(data) = std::fs::read_to_string(file_path) {
+            if let Ok(imported_export) = serde_json::from_str::<Vec<ArmorExport>>(&data) {
+                eprintln!("[DEBUG] Importing {} armors from export format", imported_export.len());
+                for export in imported_export.iter() {
+                    let armor = export.to_armor();
+                    let model_id_male = armor.model_id_male;
+                    eprintln!("[DEBUG] Processing armor with model_id_male: {}", model_id_male);
+                    
+                    // Get the appropriate armor vector based on tab
+                    let armor_vec = match armor_tab {
+                        ArmorTab::Head => &mut self.head_armors,
+                        ArmorTab::Body => &mut self.body_armors,
+                        ArmorTab::Arms => &mut self.arms_armors,
+                        ArmorTab::Waist => &mut self.waist_armors,
+                        ArmorTab::Legs => &mut self.legs_armors,
+                        ArmorTab::ArmorUpgrade => continue,
+                    };
+                    
+                    // Find existing armor with same model_id_male
+                    if let Some(existing) = armor_vec.iter_mut().find(|a| a.model_id_male == model_id_male) {
+                        // Update existing armor
+                        eprintln!("[DEBUG] Updating existing armor with model_id_male: {}", model_id_male);
+                        *existing = armor;
+                    } else {
+                        // Add new armor
+                        eprintln!("[DEBUG] Adding new armor with model_id_male: {}", model_id_male);
+                        armor_vec.push(armor);
+                    }
+                }
+                
+                // Mark as modified based on tab
+                match armor_tab {
+                    ArmorTab::Head => self.head_armors_modified = true,
+                    ArmorTab::Body => self.body_armors_modified = true,
+                    ArmorTab::Arms => self.arms_armors_modified = true,
+                    ArmorTab::Waist => self.waist_armors_modified = true,
+                    ArmorTab::Legs => self.legs_armors_modified = true,
+                    ArmorTab::ArmorUpgrade => {},
+                }
+                eprintln!("[DEBUG] Armor import completed");
+                return;
+            }
+            // Fallback to raw format
+            if let Ok(imported) = serde_json::from_str::<Vec<MhfdatEquipment>>(&data) {
+                eprintln!("[DEBUG] Importing {} armors from raw format", imported.len());
+                for armor in imported {
+                    let model_id_male = armor.model_id_male;
+                    eprintln!("[DEBUG] Processing armor with model_id_male: {}", model_id_male);
+                    
+                    let armor_vec = match armor_tab {
+                        ArmorTab::Head => &mut self.head_armors,
+                        ArmorTab::Body => &mut self.body_armors,
+                        ArmorTab::Arms => &mut self.arms_armors,
+                        ArmorTab::Waist => &mut self.waist_armors,
+                        ArmorTab::Legs => &mut self.legs_armors,
+                        ArmorTab::ArmorUpgrade => continue,
+                    };
+                    
+                    if let Some(existing) = armor_vec.iter_mut().find(|a| a.model_id_male == model_id_male) {
+                        eprintln!("[DEBUG] Updating existing armor with model_id_male: {}", model_id_male);
+                        *existing = armor;
+                    } else {
+                        eprintln!("[DEBUG] Adding new armor with model_id_male: {}", model_id_male);
+                        armor_vec.push(armor);
+                    }
+                }
+                
+                match armor_tab {
+                    ArmorTab::Head => self.head_armors_modified = true,
+                    ArmorTab::Body => self.body_armors_modified = true,
+                    ArmorTab::Arms => self.arms_armors_modified = true,
+                    ArmorTab::Waist => self.waist_armors_modified = true,
+                    ArmorTab::Legs => self.legs_armors_modified = true,
+                    ArmorTab::ArmorUpgrade => {},
+                }
+                eprintln!("[DEBUG] Armor import completed");
+            }
+        }
     }
     
 }

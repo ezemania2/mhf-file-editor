@@ -62,7 +62,7 @@ pub fn randomize_auto_skills_buffer(
     let mut cursor = offset;
     for skill in &skills {
         if cursor + 8 <= buffer.len() {
-            buffer[cursor] = skill.unk00;
+            buffer[cursor] = skill.is_armor as u8;
             buffer[cursor + 1] = skill.eq_type;
             buffer[cursor + 2..cursor + 4].copy_from_slice(&skill.equip_id.to_le_bytes());
             buffer[cursor + 4..cursor + 6].copy_from_slice(&skill.skill_id.to_le_bytes());

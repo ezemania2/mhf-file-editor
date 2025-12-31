@@ -154,55 +154,41 @@ impl MhfdatApp {
 
         MhfdatApp::section_header(ui, &format!("Melee Weapons (found: {})", count), |ui| {
             if ui.button("Export to JSON").clicked() {
-                // Convert weapons to export format with decomposed bitfields
-                let export_weapons: Vec<MeleeWeaponExport> = self.melee_weapons
-                    .iter()
-                    .enumerate()
-                    .map(|(index, weapon)| {
-                        let name = self.melee_weapon_names.get(index).cloned().unwrap_or_default();
-                        let descriptions = self.melee_weapon_descriptions.get(index).cloned().unwrap_or_default();
-                        // Get upgrade using upgrade_path as index
-                        let upgrade = weapon.upgrade_path as usize;
-                        let upgrade_data = if upgrade < self.mw_upgrade_entries.len() && weapon.upgrade_path != 0xFFFF {
-                            Some(self.mw_upgrade_entries[upgrade].clone())
-                        } else {
-                            None
-                        };
-                        MeleeWeaponExport::from_weapon_with_data_and_upgrade(weapon, &name, &descriptions, index, upgrade_data)
-                    })
-                    .collect();
-                if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
-                    if let Ok(mut file) = File::create("melee_weapons.json") {
-                        let _ = file.write_all(json.as_bytes());
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("melee_weapons.json")
+                    .show_save_single_file() 
+                {
+                    // Convert weapons to export format with decomposed bitfields
+                    let export_weapons: Vec<MeleeWeaponExport> = self.melee_weapons
+                        .iter()
+                        .enumerate()
+                        .map(|(index, weapon)| {
+                            let name = self.melee_weapon_names.get(index).cloned().unwrap_or_default();
+                            let descriptions = self.melee_weapon_descriptions.get(index).cloned().unwrap_or_default();
+                            // Get upgrade using upgrade_path as index
+                            let upgrade = weapon.upgrade_path as usize;
+                            let upgrade_data = if upgrade < self.mw_upgrade_entries.len() && weapon.upgrade_path != 0xFFFF {
+                                Some(self.mw_upgrade_entries[upgrade].clone())
+                            } else {
+                                None
+                            };
+                            MeleeWeaponExport::from_weapon_with_data_and_upgrade(weapon, &name, &descriptions, index, upgrade_data)
+                        })
+                        .collect();
+                    if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
+                        if let Ok(mut file) = File::create(path.to_str().unwrap_or("melee_weapons.json")) {
+                            let _ = file.write_all(json.as_bytes());
+                        }
                     }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                // Try export format first (with decomposed bitfields)
-                if let Ok(data) = std::fs::read_to_string("melee_weapons.json") {
-                    if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::MeleeWeaponExport>>(&data) {
-                        let imported: Vec<crate::model::mhfdat::MhfdatMeleeWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
-                        self.melee_weapons = imported;
-                        self.melee_weapons_modified = true;
-                        // Import upgrades if present
-                        for (index, export) in imported_export.iter().enumerate() {
-                            if let Some(upgrade) = &export.upgrade {
-                                let upgrade_index = export.upgrade_path as usize;
-                                if upgrade_index < self.mw_upgrade_entries.len() {
-                                    self.mw_upgrade_entries[upgrade_index] = upgrade.clone();
-                                    self.mw_upgrades_modified = true;
-                                }
-                            }
-                        }
-                        return;
-                    }
-                }
-                // Fallback to raw format
-                if let Ok(data) = std::fs::read_to_string("melee_weapons_raw.json") {
-                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatMeleeWeapon>>(&data) {
-                        self.melee_weapons = imported;
-                        self.melee_weapons_modified = true;
-                    }
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    self.import_melee_weapons_merge_by_model_id(path.to_str().unwrap_or(""));
                 }
             }
             if ui.button("Add New").clicked() { self.add_single_melee_weapon(); }
@@ -443,53 +429,40 @@ impl MhfdatApp {
 
         MhfdatApp::section_header(ui, &format!("Ranged Weapons (found: {})", count), |ui| {
             if ui.button("Export to JSON").clicked() {
-                // Convert weapons to export format with decomposed bitfields
-                let export_weapons: Vec<RangedWeaponExport> = self.ranged_weapons
-                    .iter()
-                    .enumerate()
-                    .map(|(index, weapon)| {
-                        let name = self.ranged_weapon_names.get(index).cloned().unwrap_or_default();
-                        let descriptions = self.ranged_weapon_descriptions.get(index).cloned().unwrap_or_default();
-                        // Get upgrade using index-aligned mapping (weapon i ↔ upgrade i)
-                        let upgrade_data = if index < self.rw_upgrade_entries.len() {
-                            Some(self.rw_upgrade_entries[index].clone())
-                        } else {
-                            None
-                        };
-                        RangedWeaponExport::from_weapon_with_data_and_upgrade(weapon, &name, &descriptions, index, upgrade_data)
-                    })
-                    .collect();
-                if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
-                    if let Ok(mut file) = File::create("ranged_weapons.json") {
-                        let _ = file.write_all(json.as_bytes());
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("ranged_weapons.json")
+                    .show_save_single_file() 
+                {
+                    // Convert weapons to export format with decomposed bitfields
+                    let export_weapons: Vec<RangedWeaponExport> = self.ranged_weapons
+                        .iter()
+                        .enumerate()
+                        .map(|(index, weapon)| {
+                            let name = self.ranged_weapon_names.get(index).cloned().unwrap_or_default();
+                            let descriptions = self.ranged_weapon_descriptions.get(index).cloned().unwrap_or_default();
+                            // Get upgrade using index-aligned mapping (weapon i ↔ upgrade i)
+                            let upgrade_data = if index < self.rw_upgrade_entries.len() {
+                                Some(self.rw_upgrade_entries[index].clone())
+                            } else {
+                                None
+                            };
+                            RangedWeaponExport::from_weapon_with_data_and_upgrade(weapon, &name, &descriptions, index, upgrade_data)
+                        })
+                        .collect();
+                    if let Ok(json) = serde_json::to_string_pretty(&export_weapons) {
+                        if let Ok(mut file) = File::create(path.to_str().unwrap_or("ranged_weapons.json")) {
+                            let _ = file.write_all(json.as_bytes());
+                        }
                     }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                // Try export format first (with decomposed bitfields)
-                if let Ok(data) = std::fs::read_to_string("ranged_weapons.json") {
-                    if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::RangedWeaponExport>>(&data) {
-                        let imported: Vec<crate::model::mhfdat::MhfdatRangedWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
-                        self.ranged_weapons = imported;
-                        self.ranged_weapons_modified = true;
-                        // Import upgrades if present (index-aligned: weapon i ↔ upgrade i)
-                        for (index, export) in imported_export.iter().enumerate() {
-                            if let Some(upgrade) = &export.upgrade {
-                                if index < self.rw_upgrade_entries.len() {
-                                    self.rw_upgrade_entries[index] = upgrade.clone();
-                                    self.rw_upgrades_modified = true;
-                                }
-                            }
-                        }
-                        return;
-                    }
-                }
-                // Fallback to raw format
-                if let Ok(data) = std::fs::read_to_string("ranged_weapons_raw.json") {
-                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatRangedWeapon>>(&data) {
-                        self.ranged_weapons = imported;
-                        self.ranged_weapons_modified = true;
-                    }
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    self.import_ranged_weapons_merge_by_model_id(path.to_str().unwrap_or(""));
                 }
             }
         
@@ -1574,8 +1547,14 @@ impl MhfdatApp {
                 self.g50_melee_count_limiter_modified = true;
             }
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.g50_melee_weapon_upgrades) {
-                    let _ = std::fs::write("g50_melee_upgrades.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("g50_melee_upgrades.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.g50_melee_weapon_upgrades) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("g50_melee_upgrades.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
@@ -1724,8 +1703,14 @@ impl MhfdatApp {
                 self.g50_ranged_count_limiter_modified = true;
             }
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.g50_ranged_weapon_upgrades) {
-                    let _ = std::fs::write("g50_ranged_upgrades.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("g50_ranged_upgrades.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.g50_ranged_weapon_upgrades) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("g50_ranged_upgrades.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
@@ -1955,8 +1940,14 @@ impl MhfdatApp {
             ui.checkbox(&mut self.g50_tower_filter_unnamed, "Show only unnamed");
             ui.separator();
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.g50_tower_params) {
-                    let _ = std::fs::write("g50_tower_params.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("g50_tower_params.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.g50_tower_params) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("g50_tower_params.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
@@ -2132,6 +2123,171 @@ impl MhfdatApp {
             }
         } else {
             ui.label("No weapon selected");
+        }
+    }
+    
+    // Import functions for melee weapons
+    fn import_melee_weapons_replace_all(&mut self, file_path: &str) {
+        // Try export format first (with decomposed bitfields)
+        if let Ok(data) = std::fs::read_to_string(file_path) {
+            if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::MeleeWeaponExport>>(&data) {
+                let imported: Vec<crate::model::mhfdat::MhfdatMeleeWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
+                self.melee_weapons = imported;
+                self.melee_weapons_modified = true;
+                // Import upgrades if present
+                for export in imported_export.iter() {
+                    if let Some(upgrade) = &export.upgrade {
+                        let upgrade_index = export.upgrade_path as usize;
+                        if upgrade_index < self.mw_upgrade_entries.len() {
+                            self.mw_upgrade_entries[upgrade_index] = upgrade.clone();
+                            self.mw_upgrades_modified = true;
+                        }
+                    }
+                }
+                return;
+            }
+            // Fallback to raw format
+            if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatMeleeWeapon>>(&data) {
+                self.melee_weapons = imported;
+                self.melee_weapons_modified = true;
+            }
+        }
+    }
+    
+    fn import_melee_weapons_merge_by_model_id(&mut self, file_path: &str) {
+        // Try export format first
+        if let Ok(data) = std::fs::read_to_string(file_path) {
+            if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::MeleeWeaponExport>>(&data) {
+                eprintln!("[DEBUG] Importing {} melee weapons from export format", imported_export.len());
+                for export in imported_export.iter() {
+                    let weapon = export.to_weapon();
+                    let model_id = weapon.model_id;
+                    eprintln!("[DEBUG] Processing weapon with model_id: {}", model_id);
+                    
+                    // Find existing weapon with same model_id
+                    if let Some(existing) = self.melee_weapons.iter_mut().find(|w| w.model_id == model_id) {
+                        // Update existing weapon
+                        eprintln!("[DEBUG] Updating existing weapon with model_id: {}", model_id);
+                        *existing = weapon;
+                    } else {
+                        // Add new weapon
+                        eprintln!("[DEBUG] Adding new weapon with model_id: {}", model_id);
+                        self.melee_weapons.push(weapon);
+                    }
+                    
+                    // Import upgrades if present
+                    if let Some(upgrade) = &export.upgrade {
+                        let upgrade_index = export.upgrade_path as usize;
+                        if upgrade_index < self.mw_upgrade_entries.len() {
+                            self.mw_upgrade_entries[upgrade_index] = upgrade.clone();
+                            self.mw_upgrades_modified = true;
+                        }
+                    }
+                }
+                self.melee_weapons_modified = true;
+                eprintln!("[DEBUG] Melee weapons import completed");
+                return;
+            }
+            // Fallback to raw format
+            if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatMeleeWeapon>>(&data) {
+                eprintln!("[DEBUG] Importing {} melee weapons from raw format", imported.len());
+                for weapon in imported {
+                    let model_id = weapon.model_id;
+                    eprintln!("[DEBUG] Processing weapon with model_id: {}", model_id);
+                    if let Some(existing) = self.melee_weapons.iter_mut().find(|w| w.model_id == model_id) {
+                        eprintln!("[DEBUG] Updating existing weapon with model_id: {}", model_id);
+                        *existing = weapon;
+                    } else {
+                        eprintln!("[DEBUG] Adding new weapon with model_id: {}", model_id);
+                        self.melee_weapons.push(weapon);
+                    }
+                }
+                self.melee_weapons_modified = true;
+                eprintln!("[DEBUG] Melee weapons import completed");
+            }
+        }
+    }
+    
+    // Import functions for ranged weapons
+    fn import_ranged_weapons_replace_all(&mut self, file_path: &str) {
+        // Try export format first (with decomposed bitfields)
+        if let Ok(data) = std::fs::read_to_string(file_path) {
+            if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::RangedWeaponExport>>(&data) {
+                let imported: Vec<crate::model::mhfdat::MhfdatRangedWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
+                self.ranged_weapons = imported;
+                self.ranged_weapons_modified = true;
+                // Import upgrades if present (index-aligned: weapon i ↔ upgrade i)
+                for (index, export) in imported_export.iter().enumerate() {
+                    if let Some(upgrade) = &export.upgrade {
+                        if index < self.rw_upgrade_entries.len() {
+                            self.rw_upgrade_entries[index] = upgrade.clone();
+                            self.rw_upgrades_modified = true;
+                        }
+                    }
+                }
+                return;
+            }
+            // Fallback to raw format
+            if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatRangedWeapon>>(&data) {
+                self.ranged_weapons = imported;
+                self.ranged_weapons_modified = true;
+            }
+        }
+    }
+    
+    fn import_ranged_weapons_merge_by_model_id(&mut self, file_path: &str) {
+        // Try export format first
+        if let Ok(data) = std::fs::read_to_string(file_path) {
+            if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::RangedWeaponExport>>(&data) {
+                eprintln!("[DEBUG] Importing {} ranged weapons from export format", imported_export.len());
+                for export in imported_export.iter() {
+                    let weapon = export.to_weapon();
+                    let model_id = weapon.model_id;
+                    eprintln!("[DEBUG] Processing weapon with model_id: {}", model_id);
+                    
+                    // Find existing weapon with same model_id
+                    if let Some(existing) = self.ranged_weapons.iter_mut().find(|w| w.model_id == model_id) {
+                        // Update existing weapon
+                        eprintln!("[DEBUG] Updating existing weapon with model_id: {}", model_id);
+                        *existing = weapon;
+                    } else {
+                        // Add new weapon
+                        eprintln!("[DEBUG] Adding new weapon with model_id: {}", model_id);
+                        self.ranged_weapons.push(weapon);
+                    }
+                    
+                    // Import upgrades if present
+                    if let Some(upgrade) = &export.upgrade {
+                        // For ranged, we need to find the weapon index first
+                        if let Some(idx) = self.ranged_weapons.iter().position(|w| w.model_id == model_id) {
+                            if idx < self.rw_upgrade_entries.len() {
+                                self.rw_upgrade_entries[idx] = upgrade.clone();
+                                self.rw_upgrades_modified = true;
+                            }
+                        }
+                    }
+                }
+                self.ranged_weapons_modified = true;
+                eprintln!("[DEBUG] Ranged weapons import completed");
+                return;
+            }
+            // Fallback to raw format
+            if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatRangedWeapon>>(&data) {
+                eprintln!("[DEBUG] Importing {} ranged weapons from raw format", imported.len());
+                for weapon in imported {
+                    let model_id = weapon.model_id;
+                    eprintln!("[DEBUG] Processing weapon with model_id: {}", model_id);
+                    if let Some(existing) = self.ranged_weapons.iter_mut().find(|w| w.model_id == model_id) {
+                        eprintln!("[DEBUG] Updating existing weapon with model_id: {}", model_id);
+                        *existing = weapon;
+                    } else {
+                        eprintln!("[DEBUG] Adding new weapon with model_id: {}", model_id);
+                        self.ranged_weapons.push(weapon);
+                    }
+                }
+                self.ranged_weapons_modified = true;
+                eprintln!("[DEBUG] Ranged weapons import completed");
+            }
         }
     }
 }

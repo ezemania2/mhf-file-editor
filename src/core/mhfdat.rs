@@ -554,7 +554,7 @@ pub fn read_automatic_skills(buffer: &[u8], offset: usize) -> Vec<AutomaticSkill
         
         // Stop conditions:
         // - All zeros
-        if entry.unk00 == 0 && entry.eq_type == 0 && entry.equip_id == 0 && entry.skill_id == 0 {
+        if !entry.is_armor && entry.eq_type == 0 && entry.equip_id == 0 && entry.skill_id == 0 {
             break;
         }
         // - equipID == 0xFFFF
@@ -578,7 +578,7 @@ pub fn read_automatic_skills(buffer: &[u8], offset: usize) -> Vec<AutomaticSkill
 
 /// Write a single automatic skill entry
 pub fn write_automatic_skill(writer: &mut impl Write, entry: &AutomaticSkill) -> Result<()> {
-    writer.write_all(&[entry.unk00])?;
+    writer.write_all(&[entry.is_armor as u8])?;
     writer.write_all(&[entry.eq_type])?;
     writer.write_all(&entry.equip_id.to_le_bytes())?;
     writer.write_all(&entry.skill_id.to_le_bytes())?;

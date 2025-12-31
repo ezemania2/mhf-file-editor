@@ -46,15 +46,26 @@ impl MhfdatApp {
     fn show_automatic_skills_list(&mut self, ui: &mut egui::Ui) {
         MhfdatApp::section_header(ui, "Automatic Skills Table", |ui| {
             if ui.button("Export to JSON").clicked() {
-                if let Ok(text) = serde_json::to_string_pretty(&self.automatic_skills) {
-                    let _ = std::fs::write("automatic_skills.json", text);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("automatic_skills.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(text) = serde_json::to_string_pretty(&self.automatic_skills) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("automatic_skills.json"), text);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(data) = std::fs::read_to_string("automatic_skills.json") {
-                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::AutomaticSkill>>(&data) {
-                        self.automatic_skills = imported;
-                        self.automatic_skills_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::AutomaticSkill>>(&data) {
+                            self.automatic_skills = imported;
+                            self.automatic_skills_modified = true;
+                        }
                     }
                 }
             }
@@ -80,7 +91,7 @@ impl MhfdatApp {
 
             if ui.button("Add New").clicked() {
                 self.automatic_skills.push(AutomaticSkill {
-                    unk00: 0,
+                    is_armor: false,
                     eq_type: 0x02,
                     equip_id: 0,
                     skill_id: 0,
@@ -112,7 +123,7 @@ impl MhfdatApp {
                 }
                 true
             })
-            .map(|(i, e)| (i, e.unk00, e.eq_type, e.equip_id, e.skill_id))
+            .map(|(i, e)| (i, e.is_armor, e.eq_type, e.equip_id, e.skill_id))
             .collect();
 
         // Pagination
@@ -129,9 +140,9 @@ impl MhfdatApp {
 
         // Pre-compute names
         let display_data: Vec<_> = filtered[start..end].iter()
-            .map(|(idx, unk00, eq_type, equip_id, skill_id)| {
+            .map(|(idx, is_armor, eq_type, equip_id, skill_id)| {
                 let name = self.get_equip_name_from_autoskill(*eq_type, *equip_id);
-                (*idx, *unk00, *eq_type, *equip_id, name, *skill_id)
+                (*idx, *is_armor, *eq_type, *equip_id, name, *skill_id)
             })
             .collect();
 
@@ -146,13 +157,13 @@ impl MhfdatApp {
                 ui.label("Skill Name");
                 ui.end_row();
 
-                for (idx, unk00, eq_type, equip_id, name, skill_id) in &display_data {
+                for (idx, is_armor, eq_type, equip_id, name, skill_id) in &display_data {
                     let selected = self.selected_automatic_skill_index == Some(*idx);
                     if ui.selectable_label(selected, format!("{}", idx)).clicked() {
                         self.selected_automatic_skill_index = Some(*idx);
                         self.view_mode.insert("automatic_skills".to_string(), ViewMode::Details);
                     }
-                    ui.label(format!("{}", unk00));
+                    ui.label(format!("{}", is_armor));
                     ui.label(Self::get_eq_type_name(*eq_type));
                     ui.label(format!("{}", equip_id));
                     ui.label(name);
@@ -179,10 +190,10 @@ impl MhfdatApp {
         let equip_name = self.get_equip_name_from_autoskill(entry.eq_type, entry.equip_id);
 
         egui::Grid::new("auto_skill_edit_grid").show(ui, |ui| {
-            ui.label("Unk00:");
-            let mut val = entry.unk00 as i32;
-            if ui.add(egui::DragValue::new(&mut val).speed(1)).changed() {
-                entry.unk00 = val as u8;
+            ui.label("Is Armor:");
+            let mut val = entry.is_armor;
+            if ui.checkbox(&mut val, "").changed() {
+                entry.is_armor = val;
             }
             ui.end_row();
 

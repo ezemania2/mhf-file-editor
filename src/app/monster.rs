@@ -86,17 +86,28 @@ impl MhfdatApp {
                 self.carve_parts_count_modified = true;
             }
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.carve_parts) {
-                    let _ = std::fs::write("carve_parts.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("carve_parts.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.carve_parts) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("carve_parts.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(json) = std::fs::read_to_string("carve_parts.json") {
-                    if let Ok(data) = serde_json::from_str(&json) {
-                        self.carve_parts = data;
-                        self.carve_parts_modified = true;
-                        self.carve_parts_count = self.carve_parts.tables.len() as u16;
-                        self.carve_parts_count_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    if let Ok(json) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(data) = serde_json::from_str(&json) {
+                            self.carve_parts = data;
+                            self.carve_parts_modified = true;
+                            self.carve_parts_count = self.carve_parts.tables.len() as u16;
+                            self.carve_parts_count_modified = true;
+                        }
                     }
                 }
             }
@@ -236,17 +247,28 @@ impl MhfdatApp {
                 self.part_break_parts_count_modified = true;
             }
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.part_break_parts) {
-                    let _ = std::fs::write("part_break_parts.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("part_break_parts.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.part_break_parts) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("part_break_parts.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(json) = std::fs::read_to_string("part_break_parts.json") {
-                    if let Ok(data) = serde_json::from_str(&json) {
-                        self.part_break_parts = data;
-                        self.part_break_parts_modified = true;
-                        self.part_break_parts_count = self.part_break_parts.tables.len() as u16;
-                        self.part_break_parts_count_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    if let Ok(json) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(data) = serde_json::from_str(&json) {
+                            self.part_break_parts = data;
+                            self.part_break_parts_modified = true;
+                            self.part_break_parts_count = self.part_break_parts.tables.len() as u16;
+                            self.part_break_parts_count_modified = true;
+                        }
                     }
                 }
             }
@@ -395,17 +417,28 @@ impl MhfdatApp {
                 self.monster_descriptions_count_modified = true;
             }
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.monster_descriptions) {
-                    let _ = std::fs::write("monster_descriptions.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("monster_descriptions.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.monster_descriptions) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("monster_descriptions.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(json) = std::fs::read_to_string("monster_descriptions.json") {
-                    if let Ok(data) = serde_json::from_str::<Vec<String>>(&json) {
-                        self.monster_descriptions = data;
-                        self.monster_descriptions_modified = true;
-                        self.monster_descriptions_count = self.monster_descriptions.len() as u16;
-                        self.monster_descriptions_count_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    if let Ok(json) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(data) = serde_json::from_str::<Vec<String>>(&json) {
+                            self.monster_descriptions = data;
+                            self.monster_descriptions_modified = true;
+                            self.monster_descriptions_count = self.monster_descriptions.len() as u16;
+                            self.monster_descriptions_count_modified = true;
+                        }
                     }
                 }
             }

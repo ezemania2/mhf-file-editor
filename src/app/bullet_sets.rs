@@ -12,15 +12,26 @@ impl MhfdatApp {
         ui.horizontal(|ui| {
             ui.heading("Bullet Sets Editor");
             if ui.button("Export to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.bullet_sets) {
-                    let _ = fs::write("bullet_sets.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("bullet_sets.json")
+                    .show_save_single_file() 
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.bullet_sets) {
+                        let _ = fs::write(path.to_str().unwrap_or("bullet_sets.json"), json);
+                    }
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(data) = fs::read_to_string("bullet_sets.json") {
-                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::BulletSet>>(&data) {
-                        self.bullet_sets = imported;
-                        self.bullet_sets_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file() 
+                {
+                    if let Ok(data) = fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::BulletSet>>(&data) {
+                            self.bullet_sets = imported;
+                            self.bullet_sets_modified = true;
+                        }
                     }
                 }
             }
