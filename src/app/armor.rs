@@ -1,11 +1,8 @@
 use super::*;
 use egui;
-use std::io::{Cursor, Read, Seek, SeekFrom};
-use crate::utils::skills::{skill_name, SKILL_LIST};
-use crate::utils::weapon_patterns::{zenith_skill_name, ZENITH_SKILL_LIST};
+use crate::utils::skills::SKILL_LIST;
+use crate::utils::weapon_patterns::ZENITH_SKILL_LIST;
 use crate::utils::equip_flags::EquipableBy;
-use std::fs::File;
-use std::io::Write;
 use serde_json;
 use crate::core::mhfdat::{read_equipment_counts, write_equipment_counts};
 
@@ -161,12 +158,26 @@ impl MhfdatApp {
                 .set_filename(&format!("{}_armor.json", armor_type_str))
                 .show_save_single_file() 
             {
+                // Calculate the armor part offset to access the correct descriptions
+                let armor_part_offset = match self.armor_tab {
+                    ArmorTab::Head => 0,
+                    ArmorTab::Body => head_len,
+                    ArmorTab::Arms => head_len + body_len,
+                    ArmorTab::Waist => head_len + body_len + arms_len,
+                    ArmorTab::Legs => head_len + body_len + arms_len + waist_len,
+                    ArmorTab::ArmorUpgrade => unreachable!(),
+                };
+                
                 let export_armors: Vec<ArmorExport> = armors
                     .iter()
                     .enumerate()
                     .map(|(index, armor)| {
                         let name = names.get(index).cloned().unwrap_or_default();
-                        ArmorExport::from_armor_with_data(armor, &name, index)
+                        let desc_index = armor_part_offset + index;
+                        let descriptions = self.armor_descriptions.get(desc_index)
+                            .cloned()
+                            .unwrap_or([String::new(), String::new(), String::new(), String::new()]);
+                        ArmorExport::from_armor_with_data(armor, &name, &descriptions, index)
                     })
                     .collect();
                 if let Ok(json) = serde_json::to_string_pretty(&export_armors) {
@@ -1226,18 +1237,74 @@ impl MhfdatApp {
     fn import_armor_replace_all(&mut self, _armor_type_str: &str, file_path: &str) {
         let armor_tab = self.armor_tab;
         
+        // Calculate the armor part offset to access the correct descriptions
+        let armor_part_offset = match armor_tab {
+            ArmorTab::Head => 0,
+            ArmorTab::Body => self.head_armors.len(),
+            ArmorTab::Arms => self.head_armors.len() + self.body_armors.len(),
+            ArmorTab::Waist => self.head_armors.len() + self.body_armors.len() + self.arms_armors.len(),
+            ArmorTab::Legs => self.head_armors.len() + self.body_armors.len() + self.arms_armors.len() + self.waist_armors.len(),
+            ArmorTab::ArmorUpgrade => 0,
+        };
+        
         // Try export format first
         if let Ok(data) = std::fs::read_to_string(file_path) {
             if let Ok(imported_export) = serde_json::from_str::<Vec<ArmorExport>>(&data) {
                 let imported: Vec<MhfdatEquipment> = imported_export.iter().map(|e| e.to_armor()).collect();
+                let imported_names: Vec<String> = imported_export.iter().map(|e| e.name.clone()).collect();
+                let imported_descriptions: Vec<[String; 4]> = imported_export.iter().map(|e| {
+                    [
+                        e.description_1.clone(),
+                        e.description_2.clone(),
+                        e.description_3.clone(),
+                        e.description_4.clone(),
+                    ]
+                }).collect();
+                
                 match armor_tab {
-                    ArmorTab::Head => { self.head_armors = imported; self.head_armors_modified = true; }
-                    ArmorTab::Body => { self.body_armors = imported; self.body_armors_modified = true; }
-                    ArmorTab::Arms => { self.arms_armors = imported; self.arms_armors_modified = true; }
-                    ArmorTab::Waist => { self.waist_armors = imported; self.waist_armors_modified = true; }
-                    ArmorTab::Legs => { self.legs_armors = imported; self.legs_armors_modified = true; }
+                    ArmorTab::Head => {
+                        self.head_armors = imported;
+                        self.head_armors_modified = true;
+                        self.head_armor_names = imported_names;
+                        self.head_armor_names_modified = true;
+                    }
+                    ArmorTab::Body => {
+                        self.body_armors = imported;
+                        self.body_armors_modified = true;
+                        self.body_armor_names = imported_names;
+                        self.body_armor_names_modified = true;
+                    }
+                    ArmorTab::Arms => {
+                        self.arms_armors = imported;
+                        self.arms_armors_modified = true;
+                        self.arms_armor_names = imported_names;
+                        self.arms_armor_names_modified = true;
+                    }
+                    ArmorTab::Waist => {
+                        self.waist_armors = imported;
+                        self.waist_armors_modified = true;
+                        self.waist_armor_names = imported_names;
+                        self.waist_armor_names_modified = true;
+                    }
+                    ArmorTab::Legs => {
+                        self.legs_armors = imported;
+                        self.legs_armors_modified = true;
+                        self.legs_armor_names = imported_names;
+                        self.legs_armor_names_modified = true;
+                    }
                     ArmorTab::ArmorUpgrade => {},
                 }
+                
+                // Update descriptions
+                for (i, desc) in imported_descriptions.iter().enumerate() {
+                    let desc_index = armor_part_offset + i;
+                    while self.armor_descriptions.len() <= desc_index {
+                        self.armor_descriptions.push([String::new(), String::new(), String::new(), String::new()]);
+                    }
+                    self.armor_descriptions[desc_index] = desc.clone();
+                }
+                self.armor_descriptions_modified = true;
+                
                 return;
             }
             // Fallback to raw format
@@ -1257,14 +1324,23 @@ impl MhfdatApp {
     fn import_armor_merge_by_model_id(&mut self, _armor_type_str: &str, file_path: &str) {
         let armor_tab = self.armor_tab;
         
+        // Calculate the armor part offset ONCE before starting import
+        // This offset is fixed for the current armor category and should not change during import
+        let armor_part_offset = match armor_tab {
+            ArmorTab::Head => 0,
+            ArmorTab::Body => self.head_armors.len(),
+            ArmorTab::Arms => self.head_armors.len() + self.body_armors.len(),
+            ArmorTab::Waist => self.head_armors.len() + self.body_armors.len() + self.arms_armors.len(),
+            ArmorTab::Legs => self.head_armors.len() + self.body_armors.len() + self.arms_armors.len() + self.waist_armors.len(),
+            ArmorTab::ArmorUpgrade => 0,
+        };
+        
         // Try export format first
         if let Ok(data) = std::fs::read_to_string(file_path) {
             if let Ok(imported_export) = serde_json::from_str::<Vec<ArmorExport>>(&data) {
-                eprintln!("[DEBUG] Importing {} armors from export format", imported_export.len());
                 for export in imported_export.iter() {
                     let armor = export.to_armor();
-                    let model_id_male = armor.model_id_male;
-                    eprintln!("[DEBUG] Processing armor with model_id_male: {}", model_id_male);
+                    let target_index = export.id; // Use the index from the export!
                     
                     // Get the appropriate armor vector based on tab
                     let armor_vec = match armor_tab {
@@ -1276,15 +1352,78 @@ impl MhfdatApp {
                         ArmorTab::ArmorUpgrade => continue,
                     };
                     
-                    // Find existing armor with same model_id_male
-                    if let Some(existing) = armor_vec.iter_mut().find(|a| a.model_id_male == model_id_male) {
-                        // Update existing armor
-                        eprintln!("[DEBUG] Updating existing armor with model_id_male: {}", model_id_male);
-                        *existing = armor;
+                    // Extract descriptions from export
+                    let imported_descriptions = [
+                        export.description_1.clone(),
+                        export.description_2.clone(),
+                        export.description_3.clone(),
+                        export.description_4.clone(),
+                    ];
+                    let imported_name = export.name.clone();
+                    
+                    // Get the appropriate name vector based on tab
+                    let name_vec = match armor_tab {
+                        ArmorTab::Head => &mut self.head_armor_names,
+                        ArmorTab::Body => &mut self.body_armor_names,
+                        ArmorTab::Arms => &mut self.arms_armor_names,
+                        ArmorTab::Waist => &mut self.waist_armor_names,
+                        ArmorTab::Legs => &mut self.legs_armor_names,
+                        ArmorTab::ArmorUpgrade => continue,
+                    };
+                    
+                    // Use the target_index from the export to place the armor at the correct position
+                    if target_index < armor_vec.len() {
+                        // Update existing armor at the exact index from the export
+                        armor_vec[target_index] = armor;
+                        
+                        // Update name
+                        if target_index < name_vec.len() {
+                            name_vec[target_index] = imported_name.clone();
+                        }
+                        
+                        // Update descriptions
+                        let desc_index = armor_part_offset + target_index;
+                        if desc_index < self.armor_descriptions.len() {
+                            self.armor_descriptions[desc_index] = imported_descriptions;
+                        } else {
+                            // Extend descriptions vector if needed
+                            while self.armor_descriptions.len() <= desc_index {
+                                self.armor_descriptions.push([String::new(), String::new(), String::new(), String::new()]);
+                            }
+                            self.armor_descriptions[desc_index] = imported_descriptions;
+                        }
+                        self.armor_descriptions_modified = true;
                     } else {
-                        // Add new armor
-                        eprintln!("[DEBUG] Adding new armor with model_id_male: {}", model_id_male);
-                        armor_vec.push(armor);
+                        // Index is out of bounds - need to extend vectors
+                        // Extend armor_vec to target_index
+                        while armor_vec.len() <= target_index {
+                            armor_vec.push(MhfdatEquipment::default());
+                        }
+                        armor_vec[target_index] = armor;
+                        
+                        // Extend name_vec
+                        while name_vec.len() <= target_index {
+                            name_vec.push(String::new());
+                        }
+                        name_vec[target_index] = imported_name.clone();
+                        
+                        // Add descriptions
+                        let desc_index = armor_part_offset + target_index;
+                        while self.armor_descriptions.len() <= desc_index {
+                            self.armor_descriptions.push([String::new(), String::new(), String::new(), String::new()]);
+                        }
+                        self.armor_descriptions[desc_index] = imported_descriptions;
+                        self.armor_descriptions_modified = true;
+                    }
+                    
+                    // Mark names as modified
+                    match armor_tab {
+                        ArmorTab::Head => self.head_armor_names_modified = true,
+                        ArmorTab::Body => self.body_armor_names_modified = true,
+                        ArmorTab::Arms => self.arms_armor_names_modified = true,
+                        ArmorTab::Waist => self.waist_armor_names_modified = true,
+                        ArmorTab::Legs => self.legs_armor_names_modified = true,
+                        ArmorTab::ArmorUpgrade => {},
                     }
                 }
                 
@@ -1298,15 +1437,12 @@ impl MhfdatApp {
                     ArmorTab::ArmorUpgrade => {},
                 }
                 self.refresh_equipment_counts_from_entries();
-                eprintln!("[DEBUG] Armor import completed");
                 return;
             }
             // Fallback to raw format
             if let Ok(imported) = serde_json::from_str::<Vec<MhfdatEquipment>>(&data) {
-                eprintln!("[DEBUG] Importing {} armors from raw format", imported.len());
                 for armor in imported {
                     let model_id_male = armor.model_id_male;
-                    eprintln!("[DEBUG] Processing armor with model_id_male: {}", model_id_male);
                     
                     let armor_vec = match armor_tab {
                         ArmorTab::Head => &mut self.head_armors,
@@ -1318,10 +1454,8 @@ impl MhfdatApp {
                     };
                     
                     if let Some(existing) = armor_vec.iter_mut().find(|a| a.model_id_male == model_id_male) {
-                        eprintln!("[DEBUG] Updating existing armor with model_id_male: {}", model_id_male);
                         *existing = armor;
                     } else {
-                        eprintln!("[DEBUG] Adding new armor with model_id_male: {}", model_id_male);
                         armor_vec.push(armor);
                     }
                 }
@@ -1335,7 +1469,6 @@ impl MhfdatApp {
                     ArmorTab::ArmorUpgrade => {},
                 }
                 self.refresh_equipment_counts_from_entries();
-                eprintln!("[DEBUG] Armor import completed");
             }
         }
     }
