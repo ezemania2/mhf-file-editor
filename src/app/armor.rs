@@ -412,16 +412,6 @@ impl MhfdatApp {
             };
             let desc_index = armor_part_offset + index;
             
-            // Marquer comme modifié selon le type d'armure
-            match self.armor_tab {
-                ArmorTab::Head => self.head_armors_modified = true,
-                ArmorTab::Body => self.body_armors_modified = true,
-                ArmorTab::Arms => self.arms_armors_modified = true,
-                ArmorTab::Waist => self.waist_armors_modified = true,
-                ArmorTab::Legs => self.legs_armors_modified = true,
-                ArmorTab::ArmorUpgrade => {}
-            }
-            
             let (armors, names) = match self.armor_tab {
                 ArmorTab::Head => (&mut self.head_armors, &mut self.head_armor_names),
                 ArmorTab::Body => (&mut self.body_armors, &mut self.body_armor_names),
@@ -886,7 +876,7 @@ impl MhfdatApp {
                 let orig_show_next_level = armor.show_next_level;
                 let orig_weap_hiden = armor.weap_hiden;
                 let orig_towerslots = armor.towerslots;
-                let orig_deco_item_id = armor.deco_item_id;
+                let orig_deco_item_id = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(armor.deco_item_id)) };
                 let orig_g_rank = armor.g_rank;
                 let orig_app_price = armor.app_price;
                 let orig_equip_id = armor.equip_id;
@@ -899,7 +889,7 @@ impl MhfdatApp {
                 let mut show_next_level = armor.show_next_level;
                 let mut weap_hiden = armor.weap_hiden;
                 let mut towerslots = armor.towerslots;
-                let mut deco_item_id = armor.deco_item_id;
+                let mut deco_item_id = orig_deco_item_id;
                 let mut g_rank = armor.g_rank;
                 let mut app_price = armor.app_price;
                 let mut equip_id = armor.equip_id;
@@ -972,7 +962,8 @@ impl MhfdatApp {
                 armor.show_next_level = show_next_level;
                 armor.weap_hiden = weap_hiden;
                 armor.towerslots = towerslots;
-                armor.deco_item_id = deco_item_id;
+                // Use write_unaligned for deco_item_id (u16 in packed struct)
+                unsafe { std::ptr::write_unaligned(std::ptr::addr_of_mut!(armor.deco_item_id), deco_item_id); }
                 armor.g_rank = g_rank;
                 armor.app_price = app_price;
                 armor.equip_id = equip_id;

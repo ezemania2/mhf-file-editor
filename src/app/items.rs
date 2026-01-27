@@ -3,7 +3,7 @@ use egui;
 use std::fs::File;
 use std::io::Write;
 use serde_json;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use crate::utils::item_patterns::{ITEM_ICON_LIST, icon_name};
 use crate::utils::skills::skill_name;
 use crate::utils::weapon_patterns::zenith_skill_name;
@@ -123,8 +123,45 @@ impl MhfdatApp {
                     .show_open_single_file() 
                 {
                     if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
-                        if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::MhfdatDecoId>>(&data) {
-                            self.deco_ids = imported;
+                        #[derive(Deserialize)]
+                        struct DecoImport {
+                            idx: usize,
+                            name: String,
+                            slot_nb: u8,
+                            flags: u16,
+                            price: u32,
+                            skill_id1: u8,
+                            skill_pts1: i8,
+                            skill_id2: u8,
+                            skill_pts2: i8,
+                            skill_id3: u8,
+                            skill_pts3: i8,
+                            skill_id4: u8,
+                            skill_pts4: i8,
+                            special_flags: u16,
+                            zenith_skill: u16,
+                        }
+                        
+                        if let Ok(imported) = serde_json::from_str::<Vec<DecoImport>>(&data) {
+                            // Convert DecoImport to MhfdatDecoId
+                            self.deco_ids = imported.iter().map(|imp| {
+                                crate::model::mhfdat::MhfdatDecoId {
+                                    slot_nb: imp.slot_nb,
+                                    flags: imp.flags,
+                                    price: imp.price,
+                                    _pad0: 0,
+                                    skill_id1: imp.skill_id1,
+                                    skill_pts1: imp.skill_pts1,
+                                    skill_id2: imp.skill_id2,
+                                    skill_pts2: imp.skill_pts2,
+                                    skill_id3: imp.skill_id3,
+                                    skill_pts3: imp.skill_pts3,
+                                    skill_id4: imp.skill_id4,
+                                    skill_pts4: imp.skill_pts4,
+                                    special_flags: imp.special_flags,
+                                    zenith_skill: imp.zenith_skill,
+                                }
+                            }).collect();
                             self.deco_id_count_limiter = self.deco_ids.len() as u16;
                             self.deco_id_count_limiter_modified = true;
                             self.deco_ids_modified = true;
@@ -291,9 +328,21 @@ impl MhfdatApp {
                             // Try export format first (with names and descriptions)
                             if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
                                 if let Ok(imported_export) = serde_json::from_str::<Vec<crate::model::mhfdat::ItemExport>>(&data) {
+                                    // Extract items
                                     let imported: Vec<crate::model::mhfdat::MhfdatItem> = imported_export.iter().map(|e| e.to_item()).collect();
+                                    
+                                    // Extract names and descriptions
+                                    let imported_names: Vec<String> = imported_export.iter().map(|e| e.name.clone()).collect();
+                                    let imported_descriptions: Vec<String> = imported_export.iter().map(|e| e.description.clone()).collect();
+                                    
+                                    // Update all data
                                     self.items = imported;
+                                    self.item_names = imported_names;
+                                    self.item_descriptions = imported_descriptions;
+                                    
                                     self.items_modified = true;
+                                    self.item_names_modified = true;
+                                    self.item_descriptions_modified = true;
                                     return;
                                 }
                                 // Fallback to raw format
@@ -844,7 +893,7 @@ impl MhfdatApp {
                 });
 
                 ui.horizontal(|ui| {
-                    ui.label("Zenith:");
+                    ui.label("Zenith Skill:");
                     ui.add(egui::TextEdit::singleline(&mut self.deco_detail_skill_search[4]).hint_text("Search...").desired_width(100.0));
                     let qz = self.deco_detail_skill_search[4].to_lowercase();
                     egui::ComboBox::from_id_source("deco_zen_2").selected_text(crate::utils::weapon_patterns::zenith_skill_name(zen)).show_ui(ui, |ui| {

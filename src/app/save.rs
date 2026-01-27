@@ -1,5 +1,6 @@
 use super::*;
 use std::io::{Read, Seek, Write, SeekFrom};
+use byteorder::{LittleEndian, ReadBytesExt};
 use crate::core::packing::{compress_file, encrypt_file};
 use crate::core::mhfdat::{
     write_melee_weapons_block, write_ranged_weapons_block, write_armors_block, write_items_block, write_transmog_data,
@@ -1810,7 +1811,14 @@ impl MhfdatApp {
             // The counts have already been updated in the buffer by refresh_weapon_counts_from_entries
             // and refresh_equipment_counts_from_entries, so we just need to write them to the file
             use crate::model::mhfdat_pointers::EQUIPEMENT_COUNT_PTR;
+            
+            // 0xE8 contient le POINTEUR vers les EquipmentCounts, pas les données directement
+            // D'abord lire le pointeur
             writer.seek(SeekFrom::Start(EQUIPEMENT_COUNT_PTR as u64))?;
+            let ptr = writer.read_u32::<LittleEndian>()?;
+            
+            // Maintenant écrire les données à l'adresse indiquée par le pointeur
+            writer.seek(SeekFrom::Start(ptr as u64))?;
             
             // Write the equipment counts structure
             writer.write_all(&counts.numLegA.to_le_bytes())?;
