@@ -2049,38 +2049,17 @@ pub fn read_equipment<R: Read>(r: &mut R) -> Result<MhfdatEquipment> {
 pub fn write_equipment<W: Write>(w: &mut W, eq: &MhfdatEquipment) -> Result<()> {
     use byteorder::WriteBytesExt;
     
-    // CRITICAL: Read all multi-byte fields from packed struct using ptr::read_unaligned to avoid UB
-    let model_id_male = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.model_id_male)) };
-    let model_id_female = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.model_id_female)) };
-    let unk08 = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.unk08)) };
-    let unk0A = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.unk0A)) };
-    let zenny_cost = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.zenny_cost)) };
-    let unk10 = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.unk10)) };
-    let base_defense = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.base_defense)) };
-    let show_next_level = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.show_next_level)) };
-    let equip_id = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.equip_id)) };
-    let unk22 = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.unk22)) };
-    let unk24 = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.unk24)) };
-    let unk28 = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.unk28)) };
-    let armor_type = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.armor_type)) };
-    let weap_hiden = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.weap_hiden)) };
-    let deco_item_id = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.deco_item_id)) };
-    let towerslots = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.towerslots)) };
-    let app_price = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.app_price)) };
-    let unk44 = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.unk44)) };
-    let zenith_skill = unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(eq.zenith_skill)) };
-    
-    w.write_u16::<LittleEndian>(model_id_male)?;
-    w.write_u16::<LittleEndian>(model_id_female)?;
+    w.write_u16::<LittleEndian>(eq.model_id_male)?;
+    w.write_u16::<LittleEndian>(eq.model_id_female)?;
     w.write_u8(eq.equipable_by)?;
     w.write_u8(eq.rarity)?;
     w.write_u8(eq.max_level)?;
     w.write_u8(eq.unk07)?;
-    w.write_u16::<LittleEndian>(unk08)?;
-    w.write_u16::<LittleEndian>(unk0A)?;
-    w.write_u32::<LittleEndian>(zenny_cost)?;
-    w.write_u16::<LittleEndian>(unk10)?;
-    w.write_u16::<LittleEndian>(base_defense)?;
+    w.write_u16::<LittleEndian>(eq.unk08)?;
+    w.write_u16::<LittleEndian>(eq.unk0A)?;
+    w.write_u32::<LittleEndian>(eq.zenny_cost)?;
+    w.write_u16::<LittleEndian>(eq.unk10)?;
+    w.write_u16::<LittleEndian>(eq.base_defense)?;
     w.write_i8(eq.fire_res)?;
     w.write_i8(eq.water_res)?;
     w.write_i8(eq.thunder_res)?;
@@ -2091,11 +2070,11 @@ pub fn write_equipment<W: Write>(w: &mut W, eq: &MhfdatEquipment) -> Result<()> 
     w.write_u8(eq.base_slots)?;
     w.write_u8(eq.max_slots)?;
     w.write_u8(eq.post_festi)?;
-    w.write_u16::<LittleEndian>(show_next_level)?;
-    w.write_u16::<LittleEndian>(equip_id)?;
-    w.write_u16::<LittleEndian>(unk22)?;
-    w.write_u32::<LittleEndian>(unk24)?;
-    w.write_u16::<LittleEndian>(unk28)?;
+    w.write_u16::<LittleEndian>(eq.show_next_level)?;
+    w.write_u16::<LittleEndian>(eq.equip_id)?;
+    w.write_u16::<LittleEndian>(eq.unk22)?;
+    w.write_u32::<LittleEndian>(eq.unk24)?;
+    w.write_u16::<LittleEndian>(eq.unk28)?;
     w.write_u8(eq.skill_id1)?;
     w.write_i8(eq.skill_pts1)?;
     w.write_u8(eq.skill_id2)?;
@@ -2106,15 +2085,15 @@ pub fn write_equipment<W: Write>(w: &mut W, eq: &MhfdatEquipment) -> Result<()> 
     w.write_i8(eq.skill_pts4)?;
     w.write_u8(eq.skill_id5)?;
     w.write_i8(eq.skill_pts5)?;
-    w.write_u32::<LittleEndian>(armor_type)?;
-    w.write_u16::<LittleEndian>(weap_hiden)?;
-    w.write_u16::<LittleEndian>(deco_item_id)?;
-    w.write_u16::<LittleEndian>(towerslots)?;
+    w.write_u32::<LittleEndian>(eq.armor_type)?;
+    w.write_u16::<LittleEndian>(eq.weap_hiden)?;
+    w.write_u16::<LittleEndian>(eq.deco_item_id)?;
+    w.write_u16::<LittleEndian>(eq.towerslots)?;
     w.write_u8(eq.g_rank)?;
     w.write_u8(eq.zero_f)?;
-    w.write_u32::<LittleEndian>(app_price)?;
-    w.write_u16::<LittleEndian>(unk44)?;
-    w.write_u16::<LittleEndian>(zenith_skill)?;
+    w.write_u32::<LittleEndian>(eq.app_price)?;
+    w.write_u16::<LittleEndian>(eq.unk44)?;
+    w.write_u16::<LittleEndian>(eq.zenith_skill)?;
     Ok(())
 }
 
@@ -2387,12 +2366,26 @@ pub fn write_armor_data(head_armors: &[MhfdatEquipment], body_armors: &[MhfdatEq
 /// Serialize a single armor section followed by a sentinel (model_id_male and model_id_female = 0xFFFF)
 pub fn write_armors_block(armors: &[MhfdatEquipment]) -> Result<Vec<u8>> {
     let mut data = Vec::new();
-    // Only write armors that are not sentinels (filter out any 0xFFFF entries)
+    // Only write armors that are not sentinels or dummy entries
     for armor in armors {
-        // Skip sentinel entries that might be in the Vec
+        // Skip sentinel entries (0xFFFF)
         if armor.model_id_male == 0xFFFF && armor.model_id_female == 0xFFFF {
             continue;
         }
+        
+        // Skip dummy entries (all zeros) - these cause ID 0 in game
+        let is_dummy = armor.model_id_male == 0x0000
+            && armor.model_id_female == 0x0000
+            && armor.rarity == 0x00
+            && armor.equipable_by == 0x00
+            && armor.zenny_cost == 0x00000000
+            && armor.base_defense == 0x0000
+            && armor.zenith_skill == 0x0000;
+        
+        if is_dummy {
+            continue;
+        }
+        
         write_equipment(&mut data, armor)?;
     }
     // Add the sentinel at the end

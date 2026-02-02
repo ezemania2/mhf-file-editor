@@ -102,29 +102,13 @@ impl MhfdatApp {
     fn can_overwrite_at_offset(&self, original_offset: Option<u32>, original_count: Option<usize>, new_count: usize) -> bool {
         eprintln!("[DEBUG] can_overwrite_at_offset: offset={:?}, orig_count={:?}, new_count={}", original_offset, original_count, new_count);
         
-        if let Some(off) = original_offset {
-            if off as usize >= self.buffer.len() {
-                eprintln!("[DEBUG] can_overwrite: offset out of bounds");
-                return false; // Offset out of bounds
-            }
-            
-            // Use provided original entry count if available
-            if let Some(orig_count) = original_count {
-                // Can overwrite if new entry count matches original entry count exactly
-                // This means the number of entries hasn't changed
-                // We can overwrite even if the values have changed, as long as the count is the same
-                let can_overwrite = new_count == orig_count && new_count > 0;
-                eprintln!("[DEBUG] can_overwrite: orig_count={}, new_count={}, result={}", orig_count, new_count, can_overwrite);
-                return can_overwrite;
-            }
-            
-            // No original count available, cannot safely overwrite
-            eprintln!("[DEBUG] can_overwrite: no original count available");
-            false
-        } else {
-            eprintln!("[DEBUG] can_overwrite: no original offset");
-            false
-        }
+        // NEVER overwrite in place! Always write at the end and update pointers.
+        // Overwriting in place was causing data corruption because we only checked
+        // the entry count, not the actual byte size of the data.
+        // If data size changed (even with same entry count), it would overwrite
+        // following data in the file, corrupting armor IDs and other fields.
+        eprintln!("[DEBUG] can_overwrite: DISABLED - always write at end to prevent corruption");
+        false
     }
     
     // Helper function to write a block with overwrite optimization
@@ -157,18 +141,25 @@ impl MhfdatApp {
 
     pub fn save_modified_data(&mut self) -> std::io::Result<()> {
         if let Some(path) = &self.current_file {
+            let path = path.clone(); // Clone to avoid borrow conflicts
+            
+            // CRITICAL: Refresh all counts from actual data before writing
+            // This ensures the counts match the real number of items being written
+            self.refresh_weapon_counts_from_entries();
+            self.refresh_equipment_counts_from_entries();
+            
             // Ouvrir le fichier en mode read+write pour ajouter à la fin sans copier
             let file = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
-                .open(path)?;
-
+                .open(&path)?;
+            
             // Écrire les modifications directement à la fin du fichier
             self.save_modified_data_to_writer(file)?;
 
             // 6. IMPORTANT: Remplacer complètement le buffer avec le fichier sauvegardé
             // pour que les données écrites à la fin soient accessibles
-            let saved_file_data = std::fs::read(path)?;
+            let saved_file_data = std::fs::read(&path)?;
             self.buffer = saved_file_data.clone();
             
             // 6b. Update armor descriptions offset after buffer reload
@@ -1228,7 +1219,25 @@ impl MhfdatApp {
         
         
         let armor_desc_count = self.armor_descriptions.len();
-        let armor_desc_offset = if self.armor_descriptions_modified && armor_desc_count > 0 {
+        // Vérifier si au moins une description n'est pas vide
+        let has_non_empty_descriptions = self.armor_descriptions.iter().any(|desc_array| {
+            desc_array.iter().any(|s| !s.trim().is_empty())
+        });
+        
+        // Calculer le nombre réel d'armures pour s'assurer qu'on n'écrit pas plus de descriptions que nécessaire
+        let actual_armor_count = self.head_armors.len() + self.body_armors.len() + 
+                                  self.arms_armors.len() + self.waist_armors.len() + self.legs_armors.len();
+        
+        // Seulement écrire les descriptions si:
+        // 1. Elles ont été explicitement modifiées ET
+        // 2. Il y a au moins une description non vide ET
+        // 3. Le nombre de descriptions ne dépasse pas le nombre réel d'armures
+        let should_write_descriptions = self.armor_descriptions_modified && 
+                                         armor_desc_count > 0 && 
+                                         has_non_empty_descriptions &&
+                                         armor_desc_count <= actual_armor_count;
+        
+        let armor_desc_offset = if should_write_descriptions {
             let current_pos = writer.seek(SeekFrom::Current(0))? as u32;
             write_armor_descriptions(&mut writer, &self.armor_descriptions[..armor_desc_count])?;
             current_pos
@@ -1525,7 +1534,7 @@ impl MhfdatApp {
             }
         }
         
-        if self.armor_descriptions_modified {
+        if should_write_descriptions {
             writer.seek(SeekFrom::Start(ARMOR_DESC_PTR as u64))?;
             writer.write_all(&armor_desc_offset.to_le_bytes())?;
         }
@@ -1811,13 +1820,10 @@ impl MhfdatApp {
             // The counts have already been updated in the buffer by refresh_weapon_counts_from_entries
             // and refresh_equipment_counts_from_entries, so we just need to write them to the file
             use crate::model::mhfdat_pointers::EQUIPEMENT_COUNT_PTR;
-            
-            // 0xE8 contient le POINTEUR vers les EquipmentCounts, pas les données directement
-            // D'abord lire le pointeur
+
             writer.seek(SeekFrom::Start(EQUIPEMENT_COUNT_PTR as u64))?;
             let ptr = writer.read_u32::<LittleEndian>()?;
-            
-            // Maintenant écrire les données à l'adresse indiquée par le pointeur
+
             writer.seek(SeekFrom::Start(ptr as u64))?;
             
             // Write the equipment counts structure
