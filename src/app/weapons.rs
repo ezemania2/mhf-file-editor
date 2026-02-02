@@ -2137,6 +2137,12 @@ impl MhfdatApp {
                 let imported: Vec<crate::model::mhfdat::MhfdatMeleeWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
                 self.melee_weapons = imported;
                 self.melee_weapons_modified = true;
+                
+                // IMPORTANT: Import weapon names as well!
+                let imported_names: Vec<String> = imported_export.iter().map(|e| e.name.clone()).collect();
+                self.melee_weapon_names = imported_names;
+                self.melee_weapon_names_modified = true;
+                
                 // Import upgrades if present
                 for export in imported_export.iter() {
                     if let Some(upgrade) = &export.upgrade {
@@ -2165,17 +2171,23 @@ impl MhfdatApp {
                 for export in imported_export.iter() {
                     let weapon = export.to_weapon();
                     let model_id = weapon.model_id;
+                    let weapon_name = export.name.clone();
                     eprintln!("[DEBUG] Processing weapon with model_id: {}", model_id);
                     
                     // Find existing weapon with same model_id
-                    if let Some(existing) = self.melee_weapons.iter_mut().find(|w| w.model_id == model_id) {
+                    if let Some((index, existing)) = self.melee_weapons.iter_mut().enumerate().find(|(_, w)| w.model_id == model_id) {
                         // Update existing weapon
                         eprintln!("[DEBUG] Updating existing weapon with model_id: {}", model_id);
                         *existing = weapon;
+                        // Update name at same index
+                        if index < self.melee_weapon_names.len() {
+                            self.melee_weapon_names[index] = weapon_name;
+                        }
                     } else {
-                        // Add new weapon
+                        // Add new weapon and name
                         eprintln!("[DEBUG] Adding new weapon with model_id: {}", model_id);
                         self.melee_weapons.push(weapon);
+                        self.melee_weapon_names.push(weapon_name);
                     }
                     
                     // Import upgrades if present
@@ -2188,6 +2200,7 @@ impl MhfdatApp {
                     }
                 }
                 self.melee_weapons_modified = true;
+                self.melee_weapon_names_modified = true;
                 self.refresh_weapon_counts_from_entries();
                 eprintln!("[DEBUG] Melee weapons import completed");
                 return;
@@ -2221,6 +2234,12 @@ impl MhfdatApp {
                 let imported: Vec<crate::model::mhfdat::MhfdatRangedWeapon> = imported_export.iter().map(|e| e.to_weapon()).collect();
                 self.ranged_weapons = imported;
                 self.ranged_weapons_modified = true;
+                
+                // IMPORTANT: Import weapon names as well!
+                let imported_names: Vec<String> = imported_export.iter().map(|e| e.name.clone()).collect();
+                self.ranged_weapon_names = imported_names;
+                self.ranged_weapon_names_modified = true;
+                
                 // Import upgrades if present (index-aligned: weapon i ↔ upgrade i)
                 for (index, export) in imported_export.iter().enumerate() {
                     if let Some(upgrade) = &export.upgrade {
@@ -2248,17 +2267,23 @@ impl MhfdatApp {
                 for export in imported_export.iter() {
                     let weapon = export.to_weapon();
                     let model_id = weapon.model_id;
+                    let weapon_name = export.name.clone();
                     eprintln!("[DEBUG] Processing weapon with model_id: {}", model_id);
                     
                     // Find existing weapon with same model_id
-                    if let Some(existing) = self.ranged_weapons.iter_mut().find(|w| w.model_id == model_id) {
+                    if let Some((index, existing)) = self.ranged_weapons.iter_mut().enumerate().find(|(_, w)| w.model_id == model_id) {
                         // Update existing weapon
                         eprintln!("[DEBUG] Updating existing weapon with model_id: {}", model_id);
                         *existing = weapon;
+                        // Update name at same index
+                        if index < self.ranged_weapon_names.len() {
+                            self.ranged_weapon_names[index] = weapon_name;
+                        }
                     } else {
-                        // Add new weapon
+                        // Add new weapon and name
                         eprintln!("[DEBUG] Adding new weapon with model_id: {}", model_id);
                         self.ranged_weapons.push(weapon);
+                        self.ranged_weapon_names.push(weapon_name);
                     }
                     
                     // Import upgrades if present
@@ -2273,6 +2298,7 @@ impl MhfdatApp {
                     }
                 }
                 self.ranged_weapons_modified = true;
+                self.ranged_weapon_names_modified = true;
                 self.refresh_weapon_counts_from_entries();
                 eprintln!("[DEBUG] Ranged weapons import completed");
                 return;

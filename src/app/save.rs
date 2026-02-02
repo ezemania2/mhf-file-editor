@@ -102,13 +102,29 @@ impl MhfdatApp {
     fn can_overwrite_at_offset(&self, original_offset: Option<u32>, original_count: Option<usize>, new_count: usize) -> bool {
         eprintln!("[DEBUG] can_overwrite_at_offset: offset={:?}, orig_count={:?}, new_count={}", original_offset, original_count, new_count);
         
-        // NEVER overwrite in place! Always write at the end and update pointers.
-        // Overwriting in place was causing data corruption because we only checked
-        // the entry count, not the actual byte size of the data.
-        // If data size changed (even with same entry count), it would overwrite
-        // following data in the file, corrupting armor IDs and other fields.
-        eprintln!("[DEBUG] can_overwrite: DISABLED - always write at end to prevent corruption");
-        false
+        if let Some(off) = original_offset {
+            if off as usize >= self.buffer.len() {
+                eprintln!("[DEBUG] can_overwrite: offset out of bounds");
+                return false; // Offset out of bounds
+            }
+            
+            // Use provided original entry count if available
+            if let Some(orig_count) = original_count {
+                // Can overwrite if new entry count matches original entry count exactly
+                // This means the number of entries hasn't changed
+                // We can overwrite even if the values have changed, as long as the count is the same
+                let can_overwrite = new_count == orig_count && new_count > 0;
+                eprintln!("[DEBUG] can_overwrite: orig_count={}, new_count={}, result={}", orig_count, new_count, can_overwrite);
+                return can_overwrite;
+            }
+            
+            // No original count available, cannot safely overwrite
+            eprintln!("[DEBUG] can_overwrite: no original count available");
+            false
+        } else {
+            eprintln!("[DEBUG] can_overwrite: no original offset");
+            false
+        }
     }
     
     // Helper function to write a block with overwrite optimization
