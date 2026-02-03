@@ -19,28 +19,50 @@ impl MhfdatApp {
             }
             ui.separator();
             if ui.button("Export HR to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.hr_quests) {
-                    let _ = std::fs::write("hr_quests.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .set_filename("hr_quests.json")
+                    .add_filter("JSON", &["json"])
+                    .show_save_single_file()
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.hr_quests) {
+                        let _ = std::fs::write(path, json);
+                    }
                 }
             }
             if ui.button("Import HR from JSON").clicked() {
-                if let Ok(data) = std::fs::read_to_string("hr_quests.json") {
-                    if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::HRQuests>(&data) {
-                        self.hr_quests = imported;
-                        self.hr_quests_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file()
+                {
+                    if let Ok(data) = std::fs::read_to_string(&path) {
+                        if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::HRQuests>(&data) {
+                            self.hr_quests = imported;
+                            self.hr_quests_modified = true;
+                        }
                     }
                 }
             }
             if ui.button("Export GR to JSON").clicked() {
-                if let Ok(json) = serde_json::to_string_pretty(&self.gr_quests) {
-                    let _ = std::fs::write("gr_quests.json", json);
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .set_filename("gr_quests.json")
+                    .add_filter("JSON", &["json"])
+                    .show_save_single_file()
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.gr_quests) {
+                        let _ = std::fs::write(path, json);
+                    }
                 }
             }
             if ui.button("Import GR from JSON").clicked() {
-                if let Ok(data) = std::fs::read_to_string("gr_quests.json") {
-                    if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::GRQuests>(&data) {
-                        self.gr_quests = imported;
-                        self.gr_quests_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file()
+                {
+                    if let Ok(data) = std::fs::read_to_string(&path) {
+                        if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::GRQuests>(&data) {
+                            self.gr_quests = imported;
+                            self.gr_quests_modified = true;
+                        }
                     }
                 }
             }
