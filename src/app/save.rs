@@ -497,6 +497,14 @@ impl MhfdatApp {
                 self.buffer[crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR as usize..(crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR + 2) as usize]
                     .copy_from_slice(&saved_file_data[crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR as usize..(crate::model::mhfdat_pointers::PART_BREAK_DROP_COUNT_PTR + 2) as usize]);
             }
+            if self.seasonal_events_modified && saved_file_data.len() >= (crate::model::mhfdat_pointers::SEASONAL_EVENT_PTR + 4) as usize {
+                self.buffer[crate::model::mhfdat_pointers::SEASONAL_EVENT_PTR as usize..(crate::model::mhfdat_pointers::SEASONAL_EVENT_PTR + 4) as usize]
+                    .copy_from_slice(&saved_file_data[crate::model::mhfdat_pointers::SEASONAL_EVENT_PTR as usize..(crate::model::mhfdat_pointers::SEASONAL_EVENT_PTR + 4) as usize]);
+            }
+            if self.seasonal_events_count_modified && saved_file_data.len() >= (crate::model::mhfdat_pointers::SEASONAL_EVENT_COUNTER + 2) as usize {
+                self.buffer[crate::model::mhfdat_pointers::SEASONAL_EVENT_COUNTER as usize..(crate::model::mhfdat_pointers::SEASONAL_EVENT_COUNTER + 2) as usize]
+                    .copy_from_slice(&saved_file_data[crate::model::mhfdat_pointers::SEASONAL_EVENT_COUNTER as usize..(crate::model::mhfdat_pointers::SEASONAL_EVENT_COUNTER + 2) as usize]);
+            }
             
             // Mettre à jour les pointeurs d'upgrades seulement si modifiés
             if self.mw_upgrades_modified && saved_file_data.len() >= (MELEE_WEAPON_UPGRADE_PATH_PTR + 4) as usize {
@@ -641,6 +649,22 @@ impl MhfdatApp {
                 ));
                 self.original_entry_counts.insert("sigil_recipes".to_string(), self.sigil_recipes.len());
                 self.sigil_recipes_modified = false;
+            }
+
+            if self.seasonal_events_modified {
+                use crate::model::mhfdat_pointers::{SEASONAL_EVENT_PTR, SEASONAL_EVENT_COUNTER};
+                let off = u32::from_le_bytes(self.buffer[SEASONAL_EVENT_PTR as usize..(SEASONAL_EVENT_PTR + 4) as usize].try_into().unwrap());
+                self.original_seasonal_events_offset = Some(off);
+                if self.buffer.len() >= SEASONAL_EVENT_COUNTER as usize + 2 {
+                    self.seasonal_events_count = u16::from_le_bytes(
+                        self.buffer[SEASONAL_EVENT_COUNTER as usize..SEASONAL_EVENT_COUNTER as usize + 2]
+                            .try_into().unwrap()
+                    );
+                }
+                self.seasonal_events_modified = false;
+            }
+            if self.seasonal_events_count_modified {
+                self.seasonal_events_count_modified = false;
             }
         }
         Ok(())
@@ -1839,6 +1863,32 @@ impl MhfdatApp {
             writer.seek(SeekFrom::Start(SIGIL_SKILL_BLACKLISTS_PTR as u64))?;
             writer.write_all(&bl_base.to_le_bytes())?;
             writer.seek(SeekFrom::End(0))?;
+        }
+
+        // Seasonal Events - write only if modified
+        if self.seasonal_events_modified {
+            use crate::model::mhfdat_pointers::{SEASONAL_EVENT_PTR, SEASONAL_EVENT_COUNTER};
+            use crate::core::mhfdat::write_seasonal_events_block;
+
+            let count = self.seasonal_events.len() as u16;
+            let block = write_seasonal_events_block(&self.seasonal_events)?;
+
+            if count == self.seasonal_events_count && self.original_seasonal_events_offset.is_some() {
+                let original_offset = self.original_seasonal_events_offset.unwrap() as u64;
+                writer.seek(SeekFrom::Start(original_offset))?;
+                writer.write_all(&block)?;
+            } else {
+                let offset = writer.seek(SeekFrom::End(0))? as u32;
+                writer.write_all(&block)?;
+
+                writer.seek(SeekFrom::Start(SEASONAL_EVENT_PTR as u64))?;
+                writer.write_all(&offset.to_le_bytes())?;
+
+                writer.seek(SeekFrom::Start(SEASONAL_EVENT_COUNTER as u64))?;
+                writer.write_all(&count.to_le_bytes())?;
+
+                writer.seek(SeekFrom::End(0))?;
+            }
         }
 
         // Update Equipment Counts at the end

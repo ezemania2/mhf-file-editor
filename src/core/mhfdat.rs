@@ -3606,3 +3606,36 @@ pub fn write_sigil_blacklists_block(blacklists: &[Vec<u16>], base_addr: u32) -> 
     out.write_all(&data_buf)?;
     Ok(out)
 }
+
+// Seasonal event timing functions
+
+use crate::model::mhfdat::EventTime;
+
+const EVENT_TIME_SIZE: usize = 12;
+
+pub fn read_seasonal_events(buffer: &[u8], offset: usize, count: usize) -> Vec<EventTime> {
+    let mut entries = Vec::with_capacity(count);
+    let mut pos = offset;
+    for _ in 0..count {
+        if pos + EVENT_TIME_SIZE > buffer.len() {
+            break;
+        }
+        entries.push(EventTime {
+            event_id: u32::from_le_bytes(buffer[pos..pos+4].try_into().unwrap()),
+            start_time: u32::from_le_bytes(buffer[pos+4..pos+8].try_into().unwrap()),
+            end_time: u32::from_le_bytes(buffer[pos+8..pos+12].try_into().unwrap()),
+        });
+        pos += EVENT_TIME_SIZE;
+    }
+    entries
+}
+
+pub fn write_seasonal_events_block(events: &[EventTime]) -> Result<Vec<u8>> {
+    let mut data = Vec::with_capacity(events.len() * EVENT_TIME_SIZE);
+    for ev in events {
+        data.write_all(&ev.event_id.to_le_bytes())?;
+        data.write_all(&ev.start_time.to_le_bytes())?;
+        data.write_all(&ev.end_time.to_le_bytes())?;
+    }
+    Ok(data)
+}

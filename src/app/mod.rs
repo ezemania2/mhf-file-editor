@@ -11,6 +11,7 @@ pub mod sigil;
 pub mod sharpness;
 pub mod bullet_sets;
 pub mod quests;
+pub mod seasonal_events;
 
 pub use mhfjmp::MhfjmpApp;
 
@@ -97,6 +98,7 @@ pub enum MainTab {
     Sigils,
     Quests,
     Monsters,
+    SeasonalEvents,
 }
 
 impl Default for MainTab {
@@ -397,6 +399,18 @@ pub struct MhfdatApp {
     pub selected_sigil_recipe_index: Option<usize>,
     pub sigil_page: u32,
     
+    // Seasonal Events
+    pub seasonal_events: Vec<crate::model::mhfdat::EventTime>,
+    pub seasonal_events_modified: bool,
+    pub original_seasonal_events_offset: Option<u32>,
+    pub selected_seasonal_event_index: Option<usize>,
+    pub seasonal_events_page: u32,
+    pub seasonal_events_count: u16,
+    pub seasonal_events_count_modified: bool,
+    pub seasonal_event_start_str: String,
+    pub seasonal_event_end_str: String,
+    pub seasonal_event_last_edited_idx: Option<usize>,
+
     // Modification tracking for all data types
     pub melee_weapons_modified: bool,
     pub original_melee_weapons_offset: Option<u32>,
@@ -697,7 +711,19 @@ impl Default for MhfdatApp {
             original_sigil_blacklists_offset: None,
             selected_sigil_recipe_index: None,
             sigil_page: 0,
-            
+
+            // Seasonal Events
+            seasonal_events: Vec::new(),
+            seasonal_events_modified: false,
+            original_seasonal_events_offset: None,
+            selected_seasonal_event_index: None,
+            seasonal_events_page: 0,
+            seasonal_events_count: 0,
+            seasonal_events_count_modified: false,
+            seasonal_event_start_str: String::new(),
+            seasonal_event_end_str: String::new(),
+            seasonal_event_last_edited_idx: None,
+
             // Modification tracking
             melee_weapons_modified: false,
             original_melee_weapons_offset: None,
@@ -1103,6 +1129,9 @@ impl MhfdatApp {
         // Load sigil crafting data
         self.load_sigil_data();
 
+        // Load seasonal event timing
+        self.load_seasonal_events();
+
         // Load automatic skills count limiter from 0x00cd4478
         if self.buffer.len() >= crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as usize + 2 {
             self.automatic_skills_count_limiter = u16::from_le_bytes(
@@ -1365,6 +1394,9 @@ impl App for MhfdatApp {
                 if ui.selectable_label(self.main_tab == MainTab::Monsters, "Monsters").clicked() {
                     self.main_tab = MainTab::Monsters;
                 }
+                if ui.selectable_label(self.main_tab == MainTab::SeasonalEvents, "Seasonal Events").clicked() {
+                    self.main_tab = MainTab::SeasonalEvents;
+                }
             });
             ui.separator();
 
@@ -1398,6 +1430,9 @@ impl App for MhfdatApp {
                 }
                 MainTab::Monsters => {
                     self.show_monster_tab(ui);
+                }
+                MainTab::SeasonalEvents => {
+                    self.show_seasonal_events_tab(ui);
                 }
             }
 

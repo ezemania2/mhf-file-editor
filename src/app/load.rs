@@ -752,4 +752,32 @@ impl MhfdatApp {
             self.sigil_blacklists = read_sigil_blacklists(&self.buffer, off as usize, recipe_count);
         }
     }
+
+    pub fn load_seasonal_events(&mut self) {
+        use crate::model::mhfdat_pointers::{SEASONAL_EVENT_PTR, SEASONAL_EVENT_COUNTER};
+        use crate::core::mhfdat::read_seasonal_events;
+
+        // Read count from SEASONAL_EVENT_COUNTER first
+        let count = if self.buffer.len() >= SEASONAL_EVENT_COUNTER as usize + 2 {
+            u16::from_le_bytes(
+                self.buffer[SEASONAL_EVENT_COUNTER as usize..SEASONAL_EVENT_COUNTER as usize + 2]
+                    .try_into().unwrap()
+            )
+        } else {
+            0
+        };
+        self.seasonal_events_count = count;
+        self.seasonal_events_count_modified = false;
+
+        // Read seasonal events data using the count
+        if self.buffer.len() >= SEASONAL_EVENT_PTR as usize + 4 {
+            let offset = u32::from_le_bytes(
+                self.buffer[SEASONAL_EVENT_PTR as usize..SEASONAL_EVENT_PTR as usize + 4]
+                    .try_into().unwrap()
+            );
+            self.original_seasonal_events_offset = Some(offset);
+            self.seasonal_events_modified = false;
+            self.seasonal_events = read_seasonal_events(&self.buffer, offset as usize, count as usize);
+        }
+    }
 }

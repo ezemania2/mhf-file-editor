@@ -1432,6 +1432,15 @@ pub struct SigilMaterial {
     pub unk: u8,
 }
 
+/// Seasonal event timing entry (12 bytes per entry, 136 entries)
+#[repr(C, packed)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct EventTime {
+    pub event_id: u32,
+    pub start_time: u32,
+    pub end_time: u32,
+}
+
 /// 0x28 (40) bytes per recipe
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SigilRecipe {
