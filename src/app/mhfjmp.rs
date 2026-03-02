@@ -359,7 +359,7 @@ impl MhfjmpApp {
                             area.entries.push(crate::model::mhfjmp::AreaEntry { index: 0, flags: 0 });
                         }
                         egui::Grid::new(format!("area_entries_{}", i)).show(ui, |ui| {
-                            ui.label("Index");
+                            ui.label("ID");
                             ui.label("Flags (dec)");
                             ui.label(""); // up
                             ui.label(""); // down

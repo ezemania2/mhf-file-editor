@@ -51,7 +51,7 @@ impl MhfdatApp {
                     .set_filename("automatic_skills.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(text) = serde_json::to_string_pretty(&self.automatic_skills) {
+                    if let Ok(text) = MhfdatApp::export_indexed_json(&self.automatic_skills) {
                         let _ = std::fs::write(path.to_str().unwrap_or("automatic_skills.json"), text);
                     }
                 }
@@ -148,7 +148,7 @@ impl MhfdatApp {
 
         MhfdatApp::list_scroll(ui, "automatic_skills_scroll", |ui| {
             egui::Grid::new("automatic_skills_grid").striped(true).show(ui, |ui| {
-                ui.label("Index");
+                ui.label("ID");
                 ui.label("Unk00");
                 ui.label("Type");
                 ui.label("Equip ID");

@@ -1555,7 +1555,7 @@ impl MhfdatApp {
                     .set_filename("g50_melee_upgrades.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.g50_melee_weapon_upgrades) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.g50_melee_weapon_upgrades) {
                         let _ = std::fs::write(path.to_str().unwrap_or("g50_melee_upgrades.json"), json);
                     }
                 }
@@ -1711,7 +1711,7 @@ impl MhfdatApp {
                     .set_filename("g50_ranged_upgrades.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.g50_ranged_weapon_upgrades) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.g50_ranged_weapon_upgrades) {
                         let _ = std::fs::write(path.to_str().unwrap_or("g50_ranged_upgrades.json"), json);
                     }
                 }

@@ -121,7 +121,6 @@ pub struct SharpnessCollection {
     pub long_sword: SharpnessData,       // 128 entries
     pub hunting_horn: SharpnessData,     // 128 entries
     pub gunlance: SharpnessData,         // 128 entries
-    pub bow: SharpnessData,              // 128 entries
     pub tonfa: SharpnessData,            // 128 entries
     pub switch_axe: SharpnessData,       // 128 entries
     pub magnet_spike: SharpnessData,     // 128 entries
@@ -1422,4 +1421,40 @@ pub struct ArmorWeaponNamePointers {
     pub waist: u32,    // Waist armor names
     pub melee: u32,    // Melee weapon names
     pub ranged: u32,   // Ranged weapon names
+}
+
+// ── Sigil Crafting ──────────────────────────────────────────────────────
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct SigilMaterial {
+    pub item: u16,
+    pub percentage_filled: u8,
+    pub unk: u8,
+}
+
+/// 0x28 (40) bytes per recipe
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct SigilRecipe {
+    pub unk0: u8,
+    pub extra_skills_low: u8,
+    pub extra_skills_high: u8,
+    pub unk1: u8,
+    pub cost: u16,
+    pub padding: [u8; 2],
+    pub key_materials: [SigilMaterial; 5],
+    pub padding2: [u8; 12],
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct SigilSkillProbability {
+    pub skill: u16,
+    pub percentage_chance: u16,
+    pub low_points: i16,
+    pub high_points: i16,
+}
+
+/// 8 probabilities per recipe = 64 bytes
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct SigilSkillProbabilities {
+    pub probabilities: [SigilSkillProbability; 8],
 }

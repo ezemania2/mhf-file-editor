@@ -408,7 +408,7 @@ impl MhfdatApp {
             }
         }
 
-        // Load all 12 weapon type sharpness data and save original offsets (melee only, no bowguns)
+        // Load all 11 weapon type sharpness data (melee only, no bowguns/bow)
         // Index 0: Great Sword
         if let Some(off) = read_ptr(&self.buffer, SHARPNESS_GREAT_SWORD_PTR) {
             self.original_sharpness_offsets[0] = Some(off);
@@ -457,28 +457,22 @@ impl MhfdatApp {
             self.sharpness_modified[7] = false;
             self.sharpness.gunlance = read_sharpness_data(&self.buffer, off as usize);
         }
-        // Index 8: Bow
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_BOW_PTR) {
+        // Index 8: Tonfa
+        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_TONFA_PTR) {
             self.original_sharpness_offsets[8] = Some(off);
             self.sharpness_modified[8] = false;
-            self.sharpness.bow = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 9: Tonfa
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_TONFA_PTR) {
-            self.original_sharpness_offsets[9] = Some(off);
-            self.sharpness_modified[9] = false;
             self.sharpness.tonfa = read_sharpness_data(&self.buffer, off as usize);
         }
-        // Index 10: Switch Axe
+        // Index 9: Switch Axe
         if let Some(off) = read_ptr(&self.buffer, SHARPNESS_SWITCH_AXE_PTR) {
-            self.original_sharpness_offsets[10] = Some(off);
-            self.sharpness_modified[10] = false;
+            self.original_sharpness_offsets[9] = Some(off);
+            self.sharpness_modified[9] = false;
             self.sharpness.switch_axe = read_sharpness_data(&self.buffer, off as usize);
         }
-        // Index 11: Magnet Spike
+        // Index 10: Magnet Spike
         if let Some(off) = read_ptr(&self.buffer, SHARPNESS_MAGNET_SPIKE_PTR) {
-            self.original_sharpness_offsets[11] = Some(off);
-            self.sharpness_modified[11] = false;
+            self.original_sharpness_offsets[10] = Some(off);
+            self.sharpness_modified[10] = false;
             self.sharpness.magnet_spike = read_sharpness_data(&self.buffer, off as usize);
         }
     }
@@ -717,5 +711,45 @@ impl MhfdatApp {
         // Load monster descriptions using the count
         let descriptions = parse_monster_descriptions(&self.buffer, count as usize);
         self.monster_descriptions = descriptions;
+    }
+
+    pub fn load_sigil_data(&mut self) {
+        use crate::model::mhfdat_pointers::{
+            SIGIL_CRAFTING_RECIPES_PTR,
+            SIGIL_SKILL_PROBABILITIES_PTR,
+            SIGIL_SKILL_BLACKLISTS_PTR,
+        };
+        use crate::core::mhfdat::{read_sigil_recipes, read_sigil_skill_probabilities, read_sigil_blacklists};
+
+        fn read_ptr(buffer: &[u8], ptr_offset: u32) -> Option<u32> {
+            if buffer.len() >= ptr_offset as usize + 4 {
+                Some(u32::from_le_bytes(
+                    buffer[ptr_offset as usize..ptr_offset as usize + 4].try_into().unwrap(),
+                ))
+            } else {
+                None
+            }
+        }
+
+        // Recipes
+        if let Some(off) = read_ptr(&self.buffer, SIGIL_CRAFTING_RECIPES_PTR) {
+            self.original_sigil_recipes_offset = Some(off);
+            self.sigil_recipes_modified = false;
+            self.sigil_recipes = read_sigil_recipes(&self.buffer, off as usize);
+        }
+
+        let recipe_count = self.sigil_recipes.len();
+
+        // Probabilities (same count as recipes)
+        if let Some(off) = read_ptr(&self.buffer, SIGIL_SKILL_PROBABILITIES_PTR) {
+            self.original_sigil_probabilities_offset = Some(off);
+            self.sigil_probabilities = read_sigil_skill_probabilities(&self.buffer, off as usize, recipe_count);
+        }
+
+        // Blacklists (same count as recipes, each entry is a u32 pointer)
+        if let Some(off) = read_ptr(&self.buffer, SIGIL_SKILL_BLACKLISTS_PTR) {
+            self.original_sigil_blacklists_offset = Some(off);
+            self.sigil_blacklists = read_sigil_blacklists(&self.buffer, off as usize, recipe_count);
+        }
     }
 }

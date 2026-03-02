@@ -2477,49 +2477,53 @@ pub fn write_zenith_data(zenith_entries: &[ShopEntry]) -> Result<Vec<u8>> {
 }
 
 pub fn write_armor_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[[String; 4]]) -> Result<u32> {
-    let mut data = Vec::new();
-    let mut cursor = Cursor::new(&mut data);
+    // Get the absolute offset where we will write (reader uses absolute offsets)
+    let base_offset = writer.seek(SeekFrom::Current(0))? as u32;
     
-    // Write the pointer table
     let mut field_offsets = Vec::new();
     let mut strings_data = Vec::new();
     
-    // Calculate string offsets (4 pointers per entry: 3 pour le texte + 1 toujours 0x00000000)
-    let mut current_offset = 4 + (descriptions.len() * 16) as u32; // 4 bytes for table pointer + 16 bytes per entry (4 pointers * 4 bytes)
+    // Pointer table starts at base_offset + 4 (first 4 bytes contain ptr to table)
+    // Table size: descriptions.len() * 16 (4 pointers * 4 bytes per entry)
+    // Strings start at: base_offset + 4 + descriptions.len() * 16
+    let table_size = (descriptions.len() * 16) as u32;
+    let strings_start = base_offset + 4 + table_size;
+    let mut current_string_offset: u32 = 0;
     
     for desc in descriptions {
         let mut entry_offsets = Vec::new();
-        // Les 3 premiers champs contiennent du texte
+        // First 3 fields contain text (same as extract: 4 ptrs per entry, 4th is always 0)
         for j in 0..3 {
-            entry_offsets.push(current_offset);
+            let absolute_ptr = if desc[j].is_empty() {
+                0u32
+            } else {
+                strings_start + current_string_offset
+            };
+            entry_offsets.push(absolute_ptr);
             let encoded = SHIFT_JIS.encode(&desc[j]).0;
             strings_data.extend_from_slice(&encoded);
             strings_data.push(0);
-            current_offset += encoded.len() as u32 + 1;
+            current_string_offset += encoded.len() as u32 + 1;
         }
-        // Le 4ème pointeur est toujours 0x00000000
+        // 4th pointer is always 0x00000000
         entry_offsets.push(0u32);
         field_offsets.extend(entry_offsets);
     }
     
-    // Write the table pointer (points to the field pointer table)
-    cursor.write_all(&(4u32).to_le_bytes())?;
+    // First 4 bytes: absolute pointer to the pointer table (matches read logic)
+    writer.write_all(&(base_offset + 4).to_le_bytes())?;
     
-    // Write field pointers for each entry (4 pointers par entrée)
+    // Pointer table: 4 absolute pointers per entry
     for i in 0..descriptions.len() {
         for j in 0..4 {
-            let offset = field_offsets[i * 4 + j];
-            cursor.write_all(&offset.to_le_bytes())?;
+            writer.write_all(&field_offsets[i * 4 + j].to_le_bytes())?;
         }
     }
     
-    // Write the actual strings
-    cursor.write_all(&strings_data)?;
+    // Actual strings
+    writer.write_all(&strings_data)?;
     
-    // Write the data to the writer
-    writer.write_all(&data)?;
-    
-    Ok(4) // Return the offset where the table pointer was written
+    Ok(base_offset)
 }
 
 // Item reading functions
@@ -3438,4 +3442,167 @@ pub fn write_gr_quests_block(gr: &GRQuests, base_addr: u32) -> Result<Vec<u8>> {
     buffer.write_all(&[0u8; 8])?;
     
     Ok(buffer)
-} 
+}
+
+// ── Sigil Crafting ──────────────────────────────────────────────────────
+
+use crate::model::mhfdat::{SigilRecipe, SigilMaterial, SigilSkillProbabilities, SigilSkillProbability};
+
+pub fn read_sigil_recipes(buffer: &[u8], offset: usize) -> Vec<SigilRecipe> {
+    const RECIPE_SIZE: usize = 0x28; // 40 bytes
+    let mut entries = Vec::new();
+    let mut pos = offset;
+
+    while pos + RECIPE_SIZE <= buffer.len() {
+        if buffer.len() >= pos + 4 {
+            let first4 = u32::from_le_bytes(buffer[pos..pos + 4].try_into().unwrap());
+            if first4 == 0 {
+                break;
+            }
+        }
+        let b = &buffer[pos..pos + RECIPE_SIZE];
+        let mut mats: [SigilMaterial; 5] = Default::default();
+        for i in 0..5 {
+            let m_off = 8 + i * 4;
+            mats[i] = SigilMaterial {
+                item: u16::from_le_bytes(b[m_off..m_off + 2].try_into().unwrap()),
+                percentage_filled: b[m_off + 2],
+                unk: b[m_off + 3],
+            };
+        }
+        let mut pad2 = [0u8; 12];
+        pad2.copy_from_slice(&b[28..40]);
+
+        entries.push(SigilRecipe {
+            unk0: b[0],
+            extra_skills_low: b[1],
+            extra_skills_high: b[2],
+            unk1: b[3],
+            cost: u16::from_le_bytes(b[4..6].try_into().unwrap()),
+            padding: [b[6], b[7]],
+            key_materials: mats,
+            padding2: pad2,
+        });
+        pos += RECIPE_SIZE;
+    }
+    entries
+}
+
+pub fn read_sigil_skill_probabilities(buffer: &[u8], offset: usize, count: usize) -> Vec<SigilSkillProbabilities> {
+    const PROB_SIZE: usize = 8;
+    const GROUP_SIZE: usize = PROB_SIZE * 8; // 64 bytes per recipe
+    let mut entries = Vec::new();
+
+    for i in 0..count {
+        let group_off = offset + i * GROUP_SIZE;
+        if group_off + GROUP_SIZE > buffer.len() {
+            break;
+        }
+        let mut probs: [SigilSkillProbability; 8] = Default::default();
+        for j in 0..8 {
+            let p_off = group_off + j * PROB_SIZE;
+            let b = &buffer[p_off..p_off + PROB_SIZE];
+            probs[j] = SigilSkillProbability {
+                skill: u16::from_le_bytes(b[0..2].try_into().unwrap()),
+                percentage_chance: u16::from_le_bytes(b[2..4].try_into().unwrap()),
+                low_points: i16::from_le_bytes(b[4..6].try_into().unwrap()),
+                high_points: i16::from_le_bytes(b[6..8].try_into().unwrap()),
+            };
+        }
+        entries.push(SigilSkillProbabilities { probabilities: probs });
+    }
+    entries
+}
+
+pub fn read_sigil_blacklists(buffer: &[u8], offset: usize, count: usize) -> Vec<Vec<u16>> {
+    let mut result = Vec::new();
+    for i in 0..count {
+        let ptr_off = offset + i * 4;
+        if ptr_off + 4 > buffer.len() {
+            result.push(Vec::new());
+            continue;
+        }
+        let data_ptr = u32::from_le_bytes(buffer[ptr_off..ptr_off + 4].try_into().unwrap()) as usize;
+        let mut skills = Vec::new();
+        if data_ptr > 0 && data_ptr + 2 <= buffer.len() {
+            let mut pos = data_ptr;
+            while pos + 2 <= buffer.len() {
+                let val = i16::from_le_bytes(buffer[pos..pos + 2].try_into().unwrap());
+                if val == -1 {
+                    break;
+                }
+                skills.push(val as u16);
+                pos += 2;
+            }
+        }
+        result.push(skills);
+    }
+    result
+}
+
+fn write_sigil_recipe(w: &mut impl Write, r: &SigilRecipe) -> Result<()> {
+    w.write_all(&[r.unk0, r.extra_skills_low, r.extra_skills_high, r.unk1])?;
+    w.write_all(&r.cost.to_le_bytes())?;
+    w.write_all(&r.padding)?;
+    for mat in &r.key_materials {
+        w.write_all(&mat.item.to_le_bytes())?;
+        w.write_all(&[mat.percentage_filled, mat.unk])?;
+    }
+    w.write_all(&r.padding2)?;
+    Ok(())
+}
+
+pub fn write_sigil_recipes_block(recipes: &[SigilRecipe]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for r in recipes {
+        write_sigil_recipe(&mut data, r)?;
+    }
+    data.write_all(&[0u8; 4])?; // sentinel
+    Ok(data)
+}
+
+fn write_sigil_prob(w: &mut impl Write, p: &SigilSkillProbability) -> Result<()> {
+    w.write_all(&p.skill.to_le_bytes())?;
+    w.write_all(&p.percentage_chance.to_le_bytes())?;
+    w.write_all(&p.low_points.to_le_bytes())?;
+    w.write_all(&p.high_points.to_le_bytes())?;
+    Ok(())
+}
+
+pub fn write_sigil_probabilities_block(probs: &[SigilSkillProbabilities]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    for group in probs {
+        for p in &group.probabilities {
+            write_sigil_prob(&mut data, p)?;
+        }
+    }
+    Ok(data)
+}
+
+/// Writes the blacklist data + pointer table.
+/// Returns (ptr_table_bytes, base_offset_for_ptrs) where ptr_table is written first,
+/// then data follows. The absolute file offset must be known at call time.
+pub fn write_sigil_blacklists_block(blacklists: &[Vec<u16>], base_addr: u32) -> Result<Vec<u8>> {
+    let count = blacklists.len();
+    let ptr_table_size = (count * 4) as u32;
+
+    // First pass: compute data offsets for each blacklist
+    let mut data_buf = Vec::new();
+    let mut offsets = Vec::new();
+    for bl in blacklists {
+        let data_offset = base_addr + ptr_table_size + data_buf.len() as u32;
+        offsets.push(data_offset);
+        for &skill in bl {
+            data_buf.write_all(&skill.to_le_bytes())?;
+        }
+        data_buf.write_all(&0xFFFFu16.to_le_bytes())?; // -1 sentinel
+    }
+
+    // Build final buffer: ptr table + data
+    let mut out = Vec::new();
+    for off in &offsets {
+        out.write_all(&off.to_le_bytes())?;
+    }
+    out.write_all(&data_buf)?;
+    Ok(out)
+}

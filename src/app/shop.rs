@@ -228,7 +228,7 @@ impl MhfdatApp {
                     .set_filename(default_name)
                     .show_save_single_file() 
                 {
-                    if let Ok(text) = serde_json::to_string_pretty(data) { let _ = std::fs::write(path.to_str().unwrap_or(default_name), text); }
+                    if let Ok(text) = MhfdatApp::export_indexed_json(data) { let _ = std::fs::write(path.to_str().unwrap_or(default_name), text); }
                 }
             }
             if ui.button("Import from JSON").clicked() {
@@ -285,7 +285,7 @@ impl MhfdatApp {
                             .set_filename(default_name)
                             .show_save_single_file() 
                         {
-                            if let Ok(text) = serde_json::to_string_pretty(data) {
+                            if let Ok(text) = MhfdatApp::export_indexed_json(data) {
                                 let _ = std::fs::write(path.to_str().unwrap_or(default_name), text);
                             }
                         }
@@ -521,7 +521,7 @@ impl MhfdatApp {
                     .set_filename("transmog_shop.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.transmog_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.transmog_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("transmog_shop.json"), json);
                     }
                 }
@@ -878,7 +878,7 @@ impl MhfdatApp {
                     .set_filename("weapon_forging.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.weapon_forging_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.weapon_forging_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("weapon_forging.json"), json);
                     }
                 }
@@ -1233,7 +1233,7 @@ impl MhfdatApp {
                     .set_filename("armor_forging.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.armor_forging_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.armor_forging_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("armor_forging.json"), json);
                     }
                 }
@@ -1597,7 +1597,7 @@ impl MhfdatApp {
                     .set_filename("weapon_forging_gr.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.weapon_forging_gr_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.weapon_forging_gr_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("weapon_forging_gr.json"), json);
                     }
                 }
@@ -1946,7 +1946,7 @@ impl MhfdatApp {
                     .set_filename("armor_forging_gr.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.armor_forging_gr_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.armor_forging_gr_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("armor_forging_gr.json"), json);
                     }
                 }
@@ -2310,7 +2310,7 @@ impl MhfdatApp {
                     .set_filename("weapon_forging_zenith.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.weapon_forging_zenith_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.weapon_forging_zenith_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("weapon_forging_zenith.json"), json);
                     }
                 }
@@ -2659,7 +2659,7 @@ impl MhfdatApp {
                     .set_filename("armor_forging_zenith.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.armor_forging_zenith_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.armor_forging_zenith_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("armor_forging_zenith.json"), json);
                     }
                 }
@@ -3023,7 +3023,7 @@ impl MhfdatApp {
                     .set_filename("tower_weapon_forging.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.tower_weapon_forging_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.tower_weapon_forging_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("tower_weapon_forging.json"), json);
                     }
                 }
@@ -3339,7 +3339,7 @@ impl MhfdatApp {
                     .set_filename("tower_armor_forging.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.tower_armor_forging_entries) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.tower_armor_forging_entries) {
                         let _ = std::fs::write(path.to_str().unwrap_or("tower_armor_forging.json"), json);
                     }
                 }

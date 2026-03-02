@@ -7,6 +7,7 @@ pub mod save;
 pub mod load;
 pub mod mhfjmp;
 pub mod automatic_skills;
+pub mod sigil;
 pub mod sharpness;
 pub mod bullet_sets;
 pub mod quests;
@@ -93,6 +94,7 @@ pub enum MainTab {
     Items,
     Shop,
     AutomaticSkills,
+    Sigils,
     Quests,
     Monsters,
 }
@@ -348,8 +350,8 @@ pub struct MhfdatApp {
     pub selected_sharpness_weapon_type: usize, // 0-13 for the 14 weapon types
     pub selected_sharpness_id: Option<usize>, // 0-127
     pub sharpness_page: u32,
-    pub sharpness_modified: [bool; 12], // One flag per weapon type (melee only, no bowguns)
-    pub original_sharpness_offsets: [Option<u32>; 12], // Original offsets for each weapon type
+    pub sharpness_modified: [bool; 11],
+    pub original_sharpness_offsets: [Option<u32>; 11],
     
     // Bullet Sets
     pub bullet_sets: Vec<crate::model::mhfdat::BulletSet>,
@@ -381,8 +383,19 @@ pub struct MhfdatApp {
     pub automatic_skills_skill_search: String,
     pub automatic_skills_modified: bool,
     pub original_automatic_skills_offset: Option<u32>,
-    pub automatic_skills_count_limiter: u16, // Number of automatic skills read from AUTOMATIC_SKILLS_COUNT_LIMITER_PTR
-    pub automatic_skills_count_limiter_modified: bool, // Flag to track if limiter needs to be updated
+    pub automatic_skills_count_limiter: u16,
+    pub automatic_skills_count_limiter_modified: bool,
+
+    // Sigil Crafting
+    pub sigil_recipes: Vec<crate::model::mhfdat::SigilRecipe>,
+    pub sigil_probabilities: Vec<crate::model::mhfdat::SigilSkillProbabilities>,
+    pub sigil_blacklists: Vec<Vec<u16>>,
+    pub sigil_recipes_modified: bool,
+    pub original_sigil_recipes_offset: Option<u32>,
+    pub original_sigil_probabilities_offset: Option<u32>,
+    pub original_sigil_blacklists_offset: Option<u32>,
+    pub selected_sigil_recipe_index: Option<usize>,
+    pub sigil_page: u32,
     
     // Modification tracking for all data types
     pub melee_weapons_modified: bool,
@@ -673,6 +686,17 @@ impl Default for MhfdatApp {
             original_automatic_skills_offset: None,
             automatic_skills_count_limiter: 0,
             automatic_skills_count_limiter_modified: false,
+
+            // Sigil Crafting
+            sigil_recipes: Vec::new(),
+            sigil_probabilities: Vec::new(),
+            sigil_blacklists: Vec::new(),
+            sigil_recipes_modified: false,
+            original_sigil_recipes_offset: None,
+            original_sigil_probabilities_offset: None,
+            original_sigil_blacklists_offset: None,
+            selected_sigil_recipe_index: None,
+            sigil_page: 0,
             
             // Modification tracking
             melee_weapons_modified: false,
@@ -749,8 +773,8 @@ impl Default for MhfdatApp {
             selected_sharpness_weapon_type: 0,
             selected_sharpness_id: None,
             sharpness_page: 0,
-            sharpness_modified: [false; 12],
-            original_sharpness_offsets: [None; 12],
+            sharpness_modified: [false; 11],
+            original_sharpness_offsets: [None; 11],
             bullet_sets: Vec::new(),
             selected_bullet_set_id: None,
             bullet_sets_page: 0,
@@ -881,6 +905,9 @@ impl MhfdatApp {
         
         // Armor upgrade mats
         self.original_entry_counts.insert("armor_upgrade_mats".to_string(), self.armor_upgrade_mats.tables.len());
+        
+        // Sigil crafting
+        self.original_entry_counts.insert("sigil_recipes".to_string(), self.sigil_recipes.len());
         
         // Sharpness - each weapon type has 128 entries
         // Tower params - store weapon count for each type
@@ -1072,6 +1099,9 @@ impl MhfdatApp {
             self.original_automatic_skills_offset = Some(auto_skills_off);
             self.automatic_skills_modified = false;
         }
+
+        // Load sigil crafting data
+        self.load_sigil_data();
 
         // Load automatic skills count limiter from 0x00cd4478
         if self.buffer.len() >= crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as usize + 2 {
@@ -1326,6 +1356,9 @@ impl App for MhfdatApp {
                 if ui.selectable_label(self.main_tab == MainTab::BulletSets, "Bullet Sets").clicked() {
                     self.main_tab = MainTab::BulletSets;
                 }
+                if ui.selectable_label(self.main_tab == MainTab::Sigils, "Sigils").clicked() {
+                    self.main_tab = MainTab::Sigils;
+                }
                 if ui.selectable_label(self.main_tab == MainTab::Quests, "Quests").clicked() {
                     self.main_tab = MainTab::Quests;
                 }
@@ -1356,6 +1389,9 @@ impl App for MhfdatApp {
                 }
                 MainTab::BulletSets => {
                     self.show_bullet_sets_tab(ui);
+                }
+                MainTab::Sigils => {
+                    self.show_sigils_tab(ui);
                 }
                 MainTab::Quests => {
                     self.show_quests_tab(ui);
@@ -1440,6 +1476,24 @@ impl MhfdatApp {
             ui.heading(title);
         });
         ui.separator();
+    }
+
+    /// Export a slice of serializable items to pretty JSON, prepending each entry
+    /// with its array index as an `"idx"` field.
+    pub fn export_indexed_json<T: serde::Serialize>(items: &[T]) -> serde_json::Result<String> {
+        let indexed: Vec<serde_json::Value> = items.iter().enumerate()
+            .map(|(i, e)| {
+                let mut map = serde_json::Map::new();
+                map.insert("idx".to_string(), serde_json::json!(i));
+                if let Ok(serde_json::Value::Object(obj)) = serde_json::to_value(e) {
+                    for (k, v) in obj {
+                        map.insert(k, v);
+                    }
+                }
+                serde_json::Value::Object(map)
+            })
+            .collect();
+        serde_json::to_string_pretty(&indexed)
     }
 }
 

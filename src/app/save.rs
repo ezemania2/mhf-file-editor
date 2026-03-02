@@ -20,6 +20,10 @@ use crate::model::mhfdat_pointers::{
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
     AUTOMATIC_SKILLS_TABLE_PTR, DECO_ID_PTR, ARMOR_UPGRADE_MATS_PTR, ARMOR_STAT_ARRAY_PTR, ARMOR_NAME_ARRAY_PTR, ARMOR_WEAPON_NAMES_ARRAY_PTR,
     MOSNTERS_DESCRIPTION_PTR, MOSNTERS_DESCRIPTION_COUNT_PTR, ARMOR_DESC_PTR,
+    SHARPNESS_GREAT_SWORD_PTR, SHARPNESS_HAMMER_PTR, SHARPNESS_LANCE_PTR,
+    SHARPNESS_SWORD_AND_SHIELD_PTR, SHARPNESS_DUAL_BLADES_PTR, SHARPNESS_LONG_SWORD_PTR,
+    SHARPNESS_HUNTING_HORN_PTR, SHARPNESS_GUNLANCE_PTR,
+    SHARPNESS_TONFA_PTR, SHARPNESS_SWITCH_AXE_PTR, SHARPNESS_MAGNET_SPIKE_PTR,
 };
 use crate::model::mhfdat::{ArmorStatPointers, ArmorNamePointers, ArmorWeaponNamePointers};
 use std::ptr;
@@ -77,6 +81,9 @@ impl MhfdatApp {
         all_offsets.push(self.original_carve_parts_offset);
         all_offsets.push(self.original_part_break_parts_offset);
         all_offsets.push(self.original_monster_descriptions_offset);
+        all_offsets.push(self.original_sigil_recipes_offset);
+        all_offsets.push(self.original_sigil_probabilities_offset);
+        all_offsets.push(self.original_sigil_blacklists_offset);
         
         // Add sharpness offsets
         for offset in &self.original_sharpness_offsets {
@@ -600,6 +607,41 @@ impl MhfdatApp {
             if self.monster_descriptions_count_modified {
                 self.monster_descriptions_count_modified = false;
             }
+            // Update sharpness offsets and reset modified flags
+            {
+                let sharpness_ptrs: [u32; 11] = [
+                    SHARPNESS_GREAT_SWORD_PTR, SHARPNESS_HAMMER_PTR, SHARPNESS_LANCE_PTR,
+                    SHARPNESS_SWORD_AND_SHIELD_PTR, SHARPNESS_DUAL_BLADES_PTR, SHARPNESS_LONG_SWORD_PTR,
+                    SHARPNESS_HUNTING_HORN_PTR, SHARPNESS_GUNLANCE_PTR,
+                    SHARPNESS_TONFA_PTR, SHARPNESS_SWITCH_AXE_PTR, SHARPNESS_MAGNET_SPIKE_PTR,
+                ];
+                for (i, &ptr_addr) in sharpness_ptrs.iter().enumerate() {
+                    if self.sharpness_modified[i] && self.buffer.len() >= ptr_addr as usize + 4 {
+                        let off = u32::from_le_bytes(
+                            self.buffer[ptr_addr as usize..ptr_addr as usize + 4].try_into().unwrap()
+                        );
+                        self.original_sharpness_offsets[i] = Some(off);
+                    }
+                }
+                self.sharpness_modified = [false; 11];
+            }
+
+            if self.sigil_recipes_modified {
+                use crate::model::mhfdat_pointers::{
+                    SIGIL_CRAFTING_RECIPES_PTR, SIGIL_SKILL_PROBABILITIES_PTR, SIGIL_SKILL_BLACKLISTS_PTR,
+                };
+                self.original_sigil_recipes_offset = Some(u32::from_le_bytes(
+                    self.buffer[SIGIL_CRAFTING_RECIPES_PTR as usize..(SIGIL_CRAFTING_RECIPES_PTR + 4) as usize].try_into().unwrap(),
+                ));
+                self.original_sigil_probabilities_offset = Some(u32::from_le_bytes(
+                    self.buffer[SIGIL_SKILL_PROBABILITIES_PTR as usize..(SIGIL_SKILL_PROBABILITIES_PTR + 4) as usize].try_into().unwrap(),
+                ));
+                self.original_sigil_blacklists_offset = Some(u32::from_le_bytes(
+                    self.buffer[SIGIL_SKILL_BLACKLISTS_PTR as usize..(SIGIL_SKILL_BLACKLISTS_PTR + 4) as usize].try_into().unwrap(),
+                ));
+                self.original_entry_counts.insert("sigil_recipes".to_string(), self.sigil_recipes.len());
+                self.sigil_recipes_modified = false;
+            }
         }
         Ok(())
     }
@@ -929,108 +971,38 @@ impl MhfdatApp {
 
         // 12) Armor upgrades removed
 
-        // 12a) Sharpness data blocks - write only if modified, WITHOUT updating pointers
-        // (Pointers remain at their original locations)
-        let _sharpness_offsets = [
-            if self.sharpness_modified[0] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.great_sword)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[0].unwrap_or(0)
-            },
-            if self.sharpness_modified[1] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.hammer)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[1].unwrap_or(0)
-            },
-            if self.sharpness_modified[2] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.lance)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[2].unwrap_or(0)
-            },
-            if self.sharpness_modified[3] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.sword_and_shield)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[3].unwrap_or(0)
-            },
-            if self.sharpness_modified[4] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.dual_blades)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[4].unwrap_or(0)
-            },
-            if self.sharpness_modified[5] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.long_sword)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[5].unwrap_or(0)
-            },
-            if self.sharpness_modified[6] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.hunting_horn)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[6].unwrap_or(0)
-            },
-            if self.sharpness_modified[7] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.gunlance)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[7].unwrap_or(0)
-            },
-            if self.sharpness_modified[8] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.bow)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[8].unwrap_or(0)
-            },
-            if self.sharpness_modified[9] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.tonfa)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[9].unwrap_or(0)
-            },
-            if self.sharpness_modified[10] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.switch_axe)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[10].unwrap_or(0)
-            },
-            if self.sharpness_modified[11] {
-                let offset = writer.seek(SeekFrom::Current(0))? as u32;
-                let block = write_sharpness_data_block(&self.sharpness.magnet_spike)?;
-                writer.write_all(&block)?;
-                offset
-            } else {
-                self.original_sharpness_offsets[11].unwrap_or(0)
-            },
+        // 12a) Sharpness data blocks (11 melee weapon types, no bow)
+        let sharpness_fields: [&Vec<crate::model::mhfdat::SharpnessItem>; 11] = [
+            &self.sharpness.great_sword, &self.sharpness.hammer, &self.sharpness.lance,
+            &self.sharpness.sword_and_shield, &self.sharpness.dual_blades, &self.sharpness.long_sword,
+            &self.sharpness.hunting_horn, &self.sharpness.gunlance,
+            &self.sharpness.tonfa, &self.sharpness.switch_axe, &self.sharpness.magnet_spike,
         ];
+        let mut sharpness_offsets = [0u32; 11];
+        for i in 0..11 {
+            if self.sharpness_modified[i] {
+                let offset = writer.seek(SeekFrom::Current(0))? as u32;
+                let block = write_sharpness_data_block(sharpness_fields[i])?;
+                writer.write_all(&block)?;
+                sharpness_offsets[i] = offset;
+            } else {
+                sharpness_offsets[i] = self.original_sharpness_offsets[i].unwrap_or(0);
+            }
+        }
 
-        // NOTE: Sharpness pointers are NOT updated - only data blocks are written if modified
+        // Update sharpness pointers for modified weapon types
+        let sharpness_ptrs: [u32; 11] = [
+            SHARPNESS_GREAT_SWORD_PTR, SHARPNESS_HAMMER_PTR, SHARPNESS_LANCE_PTR,
+            SHARPNESS_SWORD_AND_SHIELD_PTR, SHARPNESS_DUAL_BLADES_PTR, SHARPNESS_LONG_SWORD_PTR,
+            SHARPNESS_HUNTING_HORN_PTR, SHARPNESS_GUNLANCE_PTR,
+            SHARPNESS_TONFA_PTR, SHARPNESS_SWITCH_AXE_PTR, SHARPNESS_MAGNET_SPIKE_PTR,
+        ];
+        for (i, &ptr_addr) in sharpness_ptrs.iter().enumerate() {
+            if self.sharpness_modified[i] {
+                writer.seek(SeekFrom::Start(ptr_addr as u64))?;
+                writer.write_all(&sharpness_offsets[i].to_le_bytes())?;
+            }
+        }
 
         // 12b) Bullet Sets data block - write only if modified
         let bullet_sets_offset = if self.bullet_sets_modified {
@@ -1827,6 +1799,46 @@ impl MhfdatApp {
                 
                 writer.seek(SeekFrom::End(0))?;
             }
+        }
+
+        // Sigil Crafting - write all three blocks if modified
+        if self.sigil_recipes_modified {
+            use crate::model::mhfdat_pointers::{
+                SIGIL_CRAFTING_RECIPES_PTR,
+                SIGIL_SKILL_PROBABILITIES_PTR,
+                SIGIL_SKILL_BLACKLISTS_PTR,
+            };
+            use crate::core::mhfdat::{
+                write_sigil_recipes_block, write_sigil_probabilities_block,
+                write_sigil_blacklists_block,
+            };
+
+            // 1) Recipes
+            let recipes_offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let recipes_block = write_sigil_recipes_block(&self.sigil_recipes)?;
+            writer.write_all(&recipes_block)?;
+
+            writer.seek(SeekFrom::Start(SIGIL_CRAFTING_RECIPES_PTR as u64))?;
+            writer.write_all(&recipes_offset.to_le_bytes())?;
+            writer.seek(SeekFrom::End(0))?;
+
+            // 2) Probabilities
+            let probs_offset = writer.seek(SeekFrom::Current(0))? as u32;
+            let probs_block = write_sigil_probabilities_block(&self.sigil_probabilities)?;
+            writer.write_all(&probs_block)?;
+
+            writer.seek(SeekFrom::Start(SIGIL_SKILL_PROBABILITIES_PTR as u64))?;
+            writer.write_all(&probs_offset.to_le_bytes())?;
+            writer.seek(SeekFrom::End(0))?;
+
+            // 3) Blacklists (pointer table + data, needs base address)
+            let bl_base = writer.seek(SeekFrom::Current(0))? as u32;
+            let bl_block = write_sigil_blacklists_block(&self.sigil_blacklists, bl_base)?;
+            writer.write_all(&bl_block)?;
+
+            writer.seek(SeekFrom::Start(SIGIL_SKILL_BLACKLISTS_PTR as u64))?;
+            writer.write_all(&bl_base.to_le_bytes())?;
+            writer.seek(SeekFrom::End(0))?;
         }
 
         // Update Equipment Counts at the end

@@ -15,10 +15,10 @@ const SHARPNESS_COLORS: [(egui::Color32, &str); 8] = [
     (egui::Color32::from_rgb(135, 206, 235), "Sky Blue"),
 ];
 
-const WEAPON_TYPES: [&str; 12] = [
+const WEAPON_TYPES: [&str; 11] = [
     "Great Sword", "Hammer", "Lance", "Sword and Shield",
     "Dual Blades", "Long Sword", "Hunting Horn", "Gunlance",
-    "Bow", "Tonfa", "Switch Axe", "Magnet Spike",
+    "Tonfa", "Switch Axe", "Magnet Spike",
 ];
 
 impl MhfdatApp {
@@ -48,7 +48,7 @@ impl MhfdatApp {
                     if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
                         if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::SharpnessCollection>(&data) {
                             self.sharpness = imported;
-                            self.sharpness_modified = [true; 12];
+                            self.sharpness_modified = [true; 11];
                         }
                     }
                 }
@@ -56,7 +56,7 @@ impl MhfdatApp {
         });
         ui.separator();
 
-        if self.selected_sharpness_weapon_type >= 12 {
+        if self.selected_sharpness_weapon_type >= 11 {
             self.selected_sharpness_weapon_type = 0;
         }
 
@@ -89,10 +89,9 @@ impl MhfdatApp {
             5 => &self.sharpness.long_sword,
             6 => &self.sharpness.hunting_horn,
             7 => &self.sharpness.gunlance,
-            8 => &self.sharpness.bow,
-            9 => &self.sharpness.tonfa,
-            10 => &self.sharpness.switch_axe,
-            11 => &self.sharpness.magnet_spike,
+            8 => &self.sharpness.tonfa,
+            9 => &self.sharpness.switch_axe,
+            10 => &self.sharpness.magnet_spike,
             _ => &self.sharpness.great_sword,
         }
     }
@@ -107,10 +106,9 @@ impl MhfdatApp {
             5 => &mut self.sharpness.long_sword,
             6 => &mut self.sharpness.hunting_horn,
             7 => &mut self.sharpness.gunlance,
-            8 => &mut self.sharpness.bow,
-            9 => &mut self.sharpness.tonfa,
-            10 => &mut self.sharpness.switch_axe,
-            11 => &mut self.sharpness.magnet_spike,
+            8 => &mut self.sharpness.tonfa,
+            9 => &mut self.sharpness.switch_axe,
+            10 => &mut self.sharpness.magnet_spike,
             _ => &mut self.sharpness.great_sword,
         }
     }
@@ -133,7 +131,6 @@ impl MhfdatApp {
         let start = page * PAGE_SIZE;
         let end = (start + PAGE_SIZE).min(total);
 
-        // Pre-collect data for display
         let display_data: Vec<_> = {
             let data = self.get_sharpness_data(self.selected_sharpness_weapon_type);
             (start..end).map(|idx| {
@@ -180,7 +177,6 @@ impl MhfdatApp {
             return;
         }
 
-        // Read current values
         let (segments, mut values, total) = {
             let item = &self.get_sharpness_data(weapon_type)[id];
             let segments = Self::build_color_segments(item);
@@ -195,14 +191,12 @@ impl MhfdatApp {
         ui.heading(format!("Sharpness ID: {}", id));
         ui.separator();
 
-        // Visual bar
         ui.label("Sharpness Bar:");
         ui.horizontal(|ui| {
             Self::render_sharpness_bar(ui, &segments, 400.0, 30.0);
         });
         ui.separator();
 
-        // Editable values
         egui::Grid::new("sharpness_grid").striped(true).show(ui, |ui| {
             ui.label("Color");
             ui.label("Value");
@@ -217,7 +211,6 @@ impl MhfdatApp {
             }
         });
 
-        // Write back
         {
             let item = &mut self.get_sharpness_data_mut(weapon_type)[id];
             item.red = values[0];
@@ -245,7 +238,6 @@ impl MhfdatApp {
         let mut segments = Vec::new();
         for (i, &val) in values.iter().enumerate() {
             if val > 0 {
-                // Check if any previous color reached 400
                 let prev_maxed = values[..i].iter().any(|&v| v >= MAX_SHARPNESS);
                 if !prev_maxed {
                     segments.push((val as f32, SHARPNESS_COLORS[i].0));

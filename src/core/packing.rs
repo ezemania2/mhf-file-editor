@@ -9,7 +9,7 @@ pub use rsfrontier_core::PackType;
 pub fn unpack_file(input_path: &Path) -> io::Result<Vec<u8>> {
     let file_buf = std::fs::read(input_path)?;
     let output_path = input_path.to_string_lossy();
-    let unpacked_files = unpack_buffer(&output_path, &file_buf);
+    let unpacked_files = unpack_buffer(&output_path, &file_buf, None);
     
     // Pour un fichier unique, on retourne juste le contenu
     if unpacked_files.len() == 1 {

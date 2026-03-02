@@ -17,7 +17,7 @@ impl MhfdatApp {
                     .set_filename("bullet_sets.json")
                     .show_save_single_file() 
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.bullet_sets) {
+                    if let Ok(json) = MhfdatApp::export_indexed_json(&self.bullet_sets) {
                         let _ = fs::write(path.to_str().unwrap_or("bullet_sets.json"), json);
                     }
                 }

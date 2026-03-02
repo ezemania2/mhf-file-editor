@@ -200,7 +200,7 @@ impl MhfdatApp {
                 .striped(true)
                 .num_columns(3)
                 .show(ui, |ui| {
-                    ui.label("Index");
+                    ui.label("ID");
                     ui.label("Percentage");
                     ui.label("Item");
                     ui.end_row();
@@ -362,7 +362,7 @@ impl MhfdatApp {
                 .striped(true)
                 .num_columns(4)
                 .show(ui, |ui| {
-                    ui.label("Index");
+                    ui.label("ID");
                     ui.label("Percentage");
                     ui.label("Item");
                     ui.label("Number");
@@ -464,7 +464,7 @@ impl MhfdatApp {
                 .striped(true)
                 .num_columns(2)
                 .show(ui, |ui| {
-                    ui.label("Index");
+                    ui.label("ID");
                     ui.label("Description (preview)");
                     ui.end_row();
                     
