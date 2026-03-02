@@ -708,7 +708,12 @@ impl MhfdatApp {
         }
     }
 
-    pub fn render_melee_weapon_details(ui: &mut egui::Ui, weapon: &mut MhfdatMeleeWeapon, zenith_skill_search: &mut String) {
+    pub fn render_melee_weapon_details(
+        ui: &mut egui::Ui,
+        weapon: &mut MhfdatMeleeWeapon,
+        zenith_skill_search: &mut String,
+        sharpness_collection: Option<&crate::model::mhfdat::SharpnessCollection>,
+    ) {
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Basic Stats
             ui.collapsing("Basic Stats", |ui| {
@@ -741,6 +746,33 @@ impl MhfdatApp {
                 Self::render_editable_field(ui, "Affinity", &mut affinity);
                 Self::render_editable_u8_field_with_max(ui, "Sharpness ID", &mut sharpness_id, 128);
                 Self::render_editable_u8_field_with_max(ui, "Sharpness Max", &mut sharpness_max, 4);
+
+                if let Some(collection) = sharpness_collection {
+                    if let Some((data, table_name)) = Self::get_sharpness_data_for_class(collection, weapon.class_id) {
+                        let idx = sharpness_id as usize;
+                        if idx < data.len() {
+                            let clamped_max = sharpness_max.min(4);
+                            let base_gauge = Self::gauge_for_sharpness_max(clamped_max);
+                            let s1_gauge = base_gauge + 50;
+                            let item = &data[idx];
+
+                            ui.add_space(6.0);
+                            ui.label(format!("Sharpness Table: {} [ID: {}]", table_name, idx));
+
+                            let base_segments = Self::build_segments_for_gauge(item, base_gauge);
+                            ui.horizontal(|ui| {
+                                ui.label(format!("Base ({})", base_gauge));
+                                Self::render_sharpness_bar_fixed(ui, &base_segments, 400.0, 300.0, 14.0);
+                            });
+
+                            let s1_segments = Self::build_segments_for_gauge(item, s1_gauge);
+                            ui.horizontal(|ui| {
+                                ui.label(format!("Sharpness+1  ({})", s1_gauge));
+                                Self::render_sharpness_bar_fixed(ui, &s1_segments, 400.0, 300.0, 14.0);
+                            });
+                        }
+                    }
+                }
 
                 weapon.raw_damage = raw_damage;
                 weapon.defense = defense;
@@ -1054,6 +1086,26 @@ impl MhfdatApp {
         });
     }
 
+    fn get_sharpness_data_for_class<'a>(
+        collection: &'a crate::model::mhfdat::SharpnessCollection,
+        class_id: u8,
+    ) -> Option<(&'a Vec<crate::model::mhfdat::SharpnessItem>, &'static str)> {
+        match class_id {
+            0x00 => Some((&collection.great_sword, "Great Sword")),
+            0x02 => Some((&collection.hammer, "Hammer")),
+            0x03 => Some((&collection.lance, "Lance")),
+            0x04 => Some((&collection.sword_and_shield, "Sword & Shield")),
+            0x06 => Some((&collection.dual_blades, "Dual Blades")),
+            0x07 => Some((&collection.long_sword, "Long Sword")),
+            0x08 => Some((&collection.hunting_horn, "Hunting Horn")),
+            0x09 => Some((&collection.gunlance, "Gunlance")),
+            0x0B => Some((&collection.tonfa, "Tonfa")),
+            0x0C => Some((&collection.switch_axe, "Switch Axe")),
+            0x0D => Some((&collection.magnet_spike, "Magnet Spike")),
+            _ => None,
+        }
+    }
+
     pub fn render_combo_field<T: Copy + PartialEq>(
         ui: &mut egui::Ui,
         label: &str,
@@ -1278,7 +1330,7 @@ impl MhfdatApp {
                 });
                 
                 ui.separator();
-                Self::render_melee_weapon_details(ui, weapon, &mut self.zenith_skill_search);
+                Self::render_melee_weapon_details(ui, weapon, &mut self.zenith_skill_search, Some(&self.sharpness));
 
                 // Upgrades (index-aligned: weapon i ↔ upgrade i)
                 ui.separator();

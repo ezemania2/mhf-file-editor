@@ -224,30 +224,77 @@ impl MhfdatApp {
         }
 
         self.sharpness_modified[weapon_type] = true;
-
-        ui.separator();
-        ui.label(format!("Total: {} / 400 ({:.1}%)", total, (total as f32 / MAX_SHARPNESS as f32) * 100.0));
     }
 
-    fn build_color_segments(item: &crate::model::mhfdat::SharpnessItem) -> Vec<(f32, egui::Color32)> {
+    pub fn build_color_segments(item: &crate::model::mhfdat::SharpnessItem) -> Vec<(f32, egui::Color32)> {
         let values = [
             item.red, item.orange, item.yellow, item.green,
             item.blue, item.white, item.purple, item.sky_blue,
         ];
-        
-        let mut segments = Vec::new();
+
+        let mut segments: Vec<(f32, egui::Color32)> = Vec::new();
+        let mut last_value: Option<u16> = None;
+
         for (i, &val) in values.iter().enumerate() {
-            if val > 0 {
-                let prev_maxed = values[..i].iter().any(|&v| v >= MAX_SHARPNESS);
-                if !prev_maxed {
-                    segments.push((val as f32, SHARPNESS_COLORS[i].0));
+            if val == 0 { continue; }
+            if last_value == Some(val) {
+                if let Some(last) = segments.last_mut() {
+                    last.0 += val as f32;
                 }
+            } else {
+                segments.push((val as f32, SHARPNESS_COLORS[i].0));
+                last_value = Some(val);
             }
         }
         segments
     }
 
-    fn render_sharpness_bar(ui: &mut egui::Ui, segments: &[(f32, egui::Color32)], width: f32, height: f32) {
+    pub fn gauge_for_sharpness_max(sharpness_max: u8) -> u16 {
+        let clamped = sharpness_max.min(4) as u16;
+        150 + clamped * 50
+    }
+
+    pub fn build_segments_for_gauge(item: &crate::model::mhfdat::SharpnessItem, gauge: u16) -> Vec<(f32, egui::Color32)> {
+        let values = [
+            item.red, item.orange, item.yellow, item.green,
+            item.blue, item.white, item.purple, item.sky_blue,
+        ];
+
+        let mut groups: Vec<(f32, egui::Color32)> = Vec::new();
+        let mut last_value: Option<u16> = None;
+
+        for (i, &val) in values.iter().enumerate() {
+            if val == 0 { continue; }
+            if last_value == Some(val) {
+                if let Some(last) = groups.last_mut() {
+                    last.0 += val as f32;
+                }
+            } else {
+                groups.push((val as f32, SHARPNESS_COLORS[i].0));
+                last_value = Some(val);
+            }
+        }
+
+        let total: f32 = groups.iter().map(|(v, _)| *v).sum();
+        if total <= 0.0 {
+            return vec![];
+        }
+
+        let scale = MAX_SHARPNESS as f32 / total;
+        let mut segments = Vec::new();
+        let mut remaining = gauge as f32;
+
+        for (val, color) in &groups {
+            if remaining <= 0.0 { break; }
+            let scaled = val * scale;
+            let show = scaled.min(remaining);
+            segments.push((show, *color));
+            remaining -= show;
+        }
+        segments
+    }
+
+    pub fn render_sharpness_bar(ui: &mut egui::Ui, segments: &[(f32, egui::Color32)], width: f32, height: f32) {
         let total: f32 = segments.iter().map(|(v, _)| *v).sum();
         if total <= 0.0 {
             ui.label("(Empty)");
@@ -262,6 +309,33 @@ impl MhfdatApp {
 
             for (value, color) in segments {
                 let segment_width = (*value / total) * width;
+                let segment_rect = egui::Rect::from_min_size(
+                    egui::pos2(x, rect.top()),
+                    egui::vec2(segment_width, height),
+                );
+                painter.rect_filled(segment_rect, 0.0, *color);
+                x += segment_width;
+            }
+
+            painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, egui::Color32::BLACK));
+        }
+    }
+
+    pub fn render_sharpness_bar_fixed(ui: &mut egui::Ui, segments: &[(f32, egui::Color32)], max_gauge: f32, width: f32, height: f32) {
+        if max_gauge <= 0.0 {
+            ui.label("(Empty)");
+            return;
+        }
+
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter();
+            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(40, 40, 40));
+
+            let mut x = rect.left();
+            for (value, color) in segments {
+                let segment_width = (*value / max_gauge) * width;
                 let segment_rect = egui::Rect::from_min_size(
                     egui::pos2(x, rect.top()),
                     egui::vec2(segment_width, height),
