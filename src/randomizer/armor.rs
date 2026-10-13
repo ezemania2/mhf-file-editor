@@ -53,7 +53,7 @@ fn randomize_armor_type_with_options(buf: &mut Vec<u8>, ptr: u32, armor_type: &s
         let at = ptr as usize;
         if buf.len() >= at + 4 {
             let mut off = u32::from_le_bytes([buf[at], buf[at+1], buf[at+2], buf[at+3]]);
-            if (off as usize) >= buf.len() && off >= 0x0180_0000 { off -= 0x0180_0000; }
+            if (off as usize) >= buf.len() { return Err(format!("pointer 0x{:X} is outside the {}-byte file", off, buf.len())); }
             off
         } else {
             return Err(format!("Cannot read {} armor pointer", armor_type));

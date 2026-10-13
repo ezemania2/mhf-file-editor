@@ -111,12 +111,23 @@ impl MhfdatApp {
             ArmorTab::ArmorUpgrade => unreachable!(),
         };
         
-        // Buttons row
+        // Buttons row. The title is the count before this frame's click, same as Melee Weapons.
+        let preview_count = {
+            let preview: &[MhfdatEquipment] = match self.armor_tab {
+                ArmorTab::Head => &self.head_armors,
+                ArmorTab::Body => &self.body_armors,
+                ArmorTab::Arms => &self.arms_armors,
+                ArmorTab::Waist => &self.waist_armors,
+                ArmorTab::Legs => &self.legs_armors,
+                ArmorTab::ArmorUpgrade => unreachable!(),
+            };
+            preview.iter().take_while(|a| a.model_id_male != 0xFFFF).count()
+        };
         let mut do_export = false;
         let mut do_import = false;
         let mut do_add = false;
-        ui.horizontal(|ui| {
-            if ui.button("Export JSON").clicked() { do_export = true; }
+        MhfdatApp::section_header(ui, &format!("{armor_type} Armor (found: {preview_count})"), |ui| {
+            if ui.button("Export to JSON").clicked() { do_export = true; }
             if ui.button("Import from JSON").clicked() { do_import = true; }
             if ui.button("Add New").clicked() { do_add = true; }
         });
@@ -148,10 +159,6 @@ impl MhfdatApp {
             real_count += 1;
         }
         
-        ui.horizontal(|ui| {
-            ui.heading(format!("{} Armor (found: {})", armor_type, real_count.min(armors.len())));
-        });
-
         if do_export {
             if let Ok(Some(path)) = native_dialog::FileDialog::new()
                 .add_filter("JSON", &["json"])
@@ -267,7 +274,7 @@ impl MhfdatApp {
         let max_count = real_count_after.min(armors.len());
 
         // Search and filters
-        ui.horizontal(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
             ui.checkbox(&mut self.show_dummy_weapons, "Show Dummy Armor");
@@ -282,8 +289,8 @@ impl MhfdatApp {
                 .enumerate()
                 .take(max_count)
                 .filter(|(i, armor)| {
-                    let armor_name = names.get(*i).cloned().unwrap_or_default();
-                    
+                    let armor_name: &str = names.get(*i).map(String::as_str).unwrap_or("");
+
                     // Copy fields to local variables to avoid unaligned references
                     let model_id_male = armor.model_id_male;
                     let model_id_female = armor.model_id_female;
@@ -308,7 +315,7 @@ impl MhfdatApp {
                     }
 
                     // Apply search filter
-                    if !query.is_empty() && !armor_name.to_lowercase().contains(&query) {
+                    if !query.is_empty() && !crate::utils::text::contains_ci(armor_name, &query) {
                         return false;
                     }
 
@@ -317,22 +324,9 @@ impl MhfdatApp {
                 .collect();
 
             // Calculate pagination
-            let entries_per_page = 15;
-            let total_pages = if filtered_armors.is_empty() { 1 } else { 
-                ((filtered_armors.len() + entries_per_page - 1) / entries_per_page).max(1)
-            };
-            
-            // Reset page if out of bounds
-            if self.armor_page >= total_pages as u32 {
-                self.armor_page = 0;
-            }
-            
-            let current_page = self.armor_page as usize;
-            let start_idx = current_page * entries_per_page;
-            let end_idx = (start_idx + entries_per_page).min(filtered_armors.len());
+            let (start_idx, end_idx, total_pages) = crate::app::list_window(&mut self.armor_page, filtered_armors.len());
 
-            // Armor list
-            MhfdatApp::list_scroll(ui, "armor_list_scroll", |ui| {
+            MhfdatApp::entity_list(ui, "armor_list_scroll", "Armor", start_idx, end_idx, filtered_armors.len(), |ui| {
                 egui::Grid::new("armor_list_grid")
                     .striped(true)
                     .show(ui, |ui| {
@@ -613,7 +607,8 @@ impl MhfdatApp {
                                             });
                                             
                                             if type_changed {
-                                                armor.armor_type = armor_flags.to_u32();
+                                                // keep the bits this editor has no name for (rain.bin uses several)
+                                                armor.armor_type = armor_flags.merge_into(armor.armor_type);
                                             }
                                         });
             });
@@ -1068,22 +1063,13 @@ impl MhfdatApp {
         });
         
         if table_count == 0 {
-            ui.label("No armor upgrade materials loaded.");
+            ui.colored_label(egui::Color32::YELLOW, "Warning: No armor upgrade materials found!");
             return;
         }
-        
-        // List of tables
-        ui.heading("Tables");
-        
-        let tables_page_size = 50usize;
-        let tables_total_pages = (table_count + tables_page_size - 1) / tables_page_size;
-        let tables_page = self.armor_upgrade_tables_page.min(tables_total_pages.saturating_sub(1) as u32);
-        self.armor_upgrade_tables_page = tables_page;
-        
-        let tables_start = (tables_page as usize) * tables_page_size;
-        let tables_end = (tables_start + tables_page_size).min(table_count);
-        
-        MhfdatApp::list_scroll(ui, "armor_upgrade_tables_scroll", |ui| {
+
+        let (tables_start, tables_end, tables_total_pages) = crate::app::list_window(&mut self.armor_upgrade_tables_page, table_count);
+
+        MhfdatApp::entity_list(ui, "armor_upgrade_tables_scroll", "Table", tables_start, tables_end, table_count, |ui| {
             egui::Grid::new("armor_upgrade_tables_grid")
                 .striped(true)
                 .num_columns(3)
@@ -1132,18 +1118,12 @@ impl MhfdatApp {
             return;
         }
         
-        ui.heading(format!("Armor Upgrade Materials - Table {} ({} items)", table_idx, total));
+        ui.heading(format!("Edit Armor Upgrade Table #{table_idx}"));
         ui.separator();
-        
-        let page_size = 50usize;
-        let total_pages = (total + page_size - 1) / page_size;
-        let page = self.armor_upgrade_page.min(total_pages.saturating_sub(1) as u32);
-        self.armor_upgrade_page = page;
-        
-        let start = (page as usize) * page_size;
-        let end = (start + page_size).min(total);
-        
-        MhfdatApp::list_scroll(ui, "armor_upgrade_details_scroll", |ui| {
+
+        let (start, end, total_pages) = crate::app::list_window(&mut self.armor_upgrade_page, total);
+
+        MhfdatApp::entity_list(ui, "armor_upgrade_details_scroll", "Row", start, end, total, |ui| {
             egui::Grid::new("armor_upgrade_details_grid")
                 .striped(true)
                 .num_columns(8)

@@ -6,7 +6,7 @@ use encoding_rs::SHIFT_JIS;
 use std::env;
 use std::path::PathBuf;
 use std::mem::size_of;
-use crate::model::mhfdat_pointers::EQUIPEMENT_COUNT_PTR;
+use crate::model::mhfdat_pointers::{EQUIPEMENT_COUNT_PTR, IMPORTANT_NUMS_PTR};
 
 fn get_exe_dir() -> PathBuf {
     env::current_exe()
@@ -155,6 +155,9 @@ pub fn read_ranged_weapon<R: Read>(r: &mut R) -> Result<MhfdatRangedWeapon> {
 
 // Fonction pour vérifier si un byte est valide en Shift-JIS
 fn is_valid_shift_jis_byte(b: u8) -> bool {
+    // TAB / LF / CR are real characters of the game text (the monster descriptions break lines with 0x0A);
+    // dropping them on save glued sentences together.
+    b == 0x09 || b == 0x0A || b == 0x0D ||
     // ASCII
     (b >= 0x20 && b <= 0x7E) ||
     // Katakana
@@ -340,7 +343,7 @@ pub fn write_weapon_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> 
         name_data.extend_from_slice(&valid_bytes);
         name_data.push(0);
     }
-    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    let table_offset = writer.seek(SeekFrom::End(0))? as u32;
     for offset in &name_offsets {
         writer.write_all(&(offset + table_offset + (names.len() as u32 * 4)).to_le_bytes())?;
     }
@@ -695,7 +698,9 @@ pub fn read_armor_upgrade_mats(buffer: &[u8], ptr_offset: u32) -> ArmorUpgradeMa
 
 /// Write armor upgrade materials to a byte buffer
 /// Structure: pointer table (u32 per table) ending with 0x00000000, then data blocks
-pub fn write_armor_upgrade_mats_block(mats: &ArmorUpgradeMats) -> Result<Vec<u8>> {
+/// `base` = absolute file offset where the returned block will be written; the pointer table holds
+/// absolute offsets (the file stores file offsets, never block-relative ones).
+pub fn write_armor_upgrade_mats_block(mats: &ArmorUpgradeMats, base: u32) -> Result<Vec<u8>> {
     const ROW_SIZE: usize = size_of::<ArmorUpgradeRow>(); // 16 bytes
     let table_count = mats.tables.len();
     
@@ -704,8 +709,8 @@ pub fn write_armor_upgrade_mats_block(mats: &ArmorUpgradeMats) -> Result<Vec<u8>
     
     // Calculate data offsets for each table
     let mut data_offsets = Vec::new();
-    let mut current_offset = ptr_table_size as u32;
-    
+    let mut current_offset = base + ptr_table_size as u32;
+
     for table in &mats.tables {
         data_offsets.push(current_offset);
         current_offset += (table.rows.len() * ROW_SIZE) as u32;
@@ -816,7 +821,8 @@ pub fn read_carve_parts(buffer: &[u8], ptr_offset: u32, count: usize) -> CarvePa
 
 /// Write carve parts to a byte buffer
 /// Structure: pointer table (u32 per table), then data blocks
-pub fn write_carve_parts_block(parts: &CarveParts) -> Result<Vec<u8>> {
+/// `base` = absolute file offset where the returned block will be written (pointers are absolute).
+pub fn write_carve_parts_block(parts: &CarveParts, base: u32) -> Result<Vec<u8>> {
     const CARVE_SIZE: usize = size_of::<CarveDrop>(); // 4 bytes
     let table_count = parts.tables.len();
     
@@ -825,8 +831,8 @@ pub fn write_carve_parts_block(parts: &CarveParts) -> Result<Vec<u8>> {
     
     // Calculate data offsets for each table
     let mut data_offsets = Vec::new();
-    let mut current_offset = ptr_table_size as u32;
-    
+    let mut current_offset = base + ptr_table_size as u32;
+
     for table in &parts.tables {
         data_offsets.push(current_offset);
         // Each carve is 4 bytes, plus 2 bytes for -1 terminator
@@ -931,7 +937,8 @@ pub fn read_part_break_parts(buffer: &[u8], ptr_offset: u32, count: usize) -> Pa
 
 /// Write part break parts to a byte buffer
 /// Structure: pointer table (u32 per table), then data blocks
-pub fn write_part_break_parts_block(parts: &PartBreakParts) -> Result<Vec<u8>> {
+/// `base` = absolute file offset where the returned block will be written (pointers are absolute).
+pub fn write_part_break_parts_block(parts: &PartBreakParts, base: u32) -> Result<Vec<u8>> {
     
     const DROP_SIZE: usize = size_of::<PartBreakDrop>(); // 6 bytes
     let table_count = parts.tables.len();
@@ -941,8 +948,8 @@ pub fn write_part_break_parts_block(parts: &PartBreakParts) -> Result<Vec<u8>> {
     
     // Calculate data offsets for each table
     let mut data_offsets = Vec::new();
-    let mut current_offset = ptr_table_size as u32;
-    
+    let mut current_offset = base + ptr_table_size as u32;
+
     for table in &parts.tables {
         data_offsets.push(current_offset);
         // Each drop is 6 bytes, plus 2 bytes for -1 terminator
@@ -1352,10 +1359,9 @@ pub fn read_armor_upgrades_from_pointer_table<R: Read + Seek>(
     let mut rows: Vec<ArmorUpgradeRow> = Vec::new();
     reader.seek(SeekFrom::Start(table_off))?;
     while reader.stream_position()? + 4 <= table_end {
-        let mut ptr = reader.read_u32::<LittleEndian>()?;
+        let ptr = reader.read_u32::<LittleEndian>()?;
         if ptr == 0 { break; }
-        // VA rebase if needed
-        if (ptr as u64) >= file_len && ptr >= 0x0180_0000 { ptr -= 0x0180_0000; }
+        // Pointers in a clear file are file offsets; one past the end is corrupt, not a memory address.
         let start = ptr as u64;
         // Ensure we have enough space for fixed rows
         let need = (rows_per_ptr as u64) * 16;
@@ -1921,7 +1927,7 @@ pub fn write_ranged_weapon_names<W: Write + Seek>(writer: &mut W, names: &[Strin
         name_data.extend_from_slice(&valid_bytes);
         name_data.push(0);
     }
-    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    let table_offset = writer.seek(SeekFrom::End(0))? as u32;
     for offset in &name_offsets {
         writer.write_all(&(offset + table_offset + (names.len() as u32 * 4)).to_le_bytes())?;
     }
@@ -2110,6 +2116,27 @@ pub fn read_equipments_until_sentinel<R: Read + Seek>(reader: &mut R, offset: u6
     Ok(armors)
 }
 
+/// Bytes of the NUL-terminated string at `offset` (the NUL excluded; a missing terminator ends at EOF).
+/// Reads in 128-byte chunks: the byte-at-a-time `read_exact` loop it replaces made reading the 68 730
+/// armor descriptions take ~180 ms.
+fn read_c_string_bytes<R: Read + Seek>(reader: &mut R, offset: u64) -> std::io::Result<Vec<u8>> {
+    reader.seek(SeekFrom::Start(offset))?;
+    let mut out = Vec::new();
+    let mut chunk = [0u8; 128];
+    loop {
+        let n = reader.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        if let Some(end) = chunk[..n].iter().position(|&b| b == 0) {
+            out.extend_from_slice(&chunk[..end]);
+            break;
+        }
+        out.extend_from_slice(&chunk[..n]);
+    }
+    Ok(out)
+}
+
 /// Extraction des noms d'armures (head, chest, arms, waist, legs) via table de pointeurs, même format que pour les armes
 pub fn extract_armor_names<R: Read + Seek>(
     reader: &mut R,
@@ -2132,12 +2159,7 @@ pub fn extract_armor_names<R: Read + Seek>(
             continue;
         }
         let cur = reader.seek(SeekFrom::Current(0))?;
-        reader.seek(SeekFrom::Start(str_offset as u64))?;
-        let mut bytes = Vec::new();
-        let mut b = [0u8; 1];
-        while reader.read_exact(&mut b).is_ok() && b[0] != 0 {
-            bytes.push(b[0]);
-        }
+        let bytes = read_c_string_bytes(reader, str_offset as u64)?;
         let cleaned_bytes = clean_shift_jis_bytes(&bytes);
         let (cow, _, _) = SHIFT_JIS.decode(&cleaned_bytes);
         names.push(cow.to_string());
@@ -2177,12 +2199,7 @@ pub fn extract_armor_descriptions<R: Read + Seek>(
                 continue;
             }
             let cur = reader.seek(SeekFrom::Current(0))?;
-            reader.seek(SeekFrom::Start(str_offset as u64))?;
-            let mut bytes = Vec::new();
-            let mut b = [0u8; 1];
-            while reader.read_exact(&mut b).is_ok() && b[0] != 0 {
-                bytes.push(b[0]);
-            }
+            let bytes = read_c_string_bytes(reader, str_offset as u64)?;
             let cleaned_bytes = clean_shift_jis_bytes(&bytes);
             let (cow, _, _) = SHIFT_JIS.decode(&cleaned_bytes);
             descs[i] = cow.to_string();
@@ -2193,27 +2210,99 @@ pub fn extract_armor_descriptions<R: Read + Seek>(
     Ok(all_descs)
 }
 
-pub fn read_equipment_counts(buffer: &[u8]) -> Option<EquipmentCounts> {
-    let mut cursor = std::io::Cursor::new(buffer);
-    cursor.seek(SeekFrom::Start(EQUIPEMENT_COUNT_PTR as u64)).ok()?;
-    
-    let mut counts = EquipmentCounts::default();
-    cursor.read_exact(unsafe { std::slice::from_raw_parts_mut(&mut counts as *mut _ as *mut u8, std::mem::size_of::<EquipmentCounts>()) }).ok()?;
-    
-    Some(counts)
+/// Value stored in header slot `slot` (a file offset), or None when the slot is outside the buffer.
+pub fn read_header_pointer(buffer: &[u8], slot: u32) -> Option<u32> {
+    let at = slot as usize;
+    Some(u32::from_le_bytes(buffer.get(at..at + 4)?.try_into().ok()?))
 }
 
-pub fn write_equipment_counts(buffer: &mut [u8], counts: &EquipmentCounts) -> bool {
-    let mut cursor = std::io::Cursor::new(buffer);
-    // Convertir EQUIPEMENT_COUNT_PTR en u64 pour le seek
-    let ptr_u64 = EQUIPEMENT_COUNT_PTR as u64;
-    if cursor.seek(SeekFrom::Start(ptr_u64)).is_err() {
-        return false;
+/// File offset of the u16 count at `important_nums + inner`; important_nums is found through its header slot.
+pub fn important_count_offset(buffer: &[u8], inner: usize) -> Option<usize> {
+    let base = read_header_pointer(buffer, IMPORTANT_NUMS_PTR)? as usize;
+    let at = base.checked_add(inner)?;
+    buffer.get(at..at + 2)?;
+    Some(at)
+}
+
+pub fn read_important_count(buffer: &[u8], inner: usize) -> Option<u16> {
+    let at = important_count_offset(buffer, inner)?;
+    Some(u16::from_le_bytes([buffer[at], buffer[at + 1]]))
+}
+
+/// Ok when `count` rows of `stride` bytes starting at `offset` lie inside a file of `file_len` bytes.
+/// The message quotes the offset and both sizes so a refusal can be matched to a file.
+pub fn check_table_fits(name: &str, offset: u64, stride: usize, count: usize, file_len: usize) -> std::result::Result<(), String> {
+    let end = (stride as u64).checked_mul(count as u64).and_then(|n| n.checked_add(offset));
+    match end {
+        Some(end) if end <= file_len as u64 => Ok(()),
+        _ => Err(format!(
+            "{name}: {count} rows of {stride} bytes at offset 0x{offset:X} do not fit in the {file_len}-byte file"
+        )),
     }
-    
-    // Écrire les données
-    let data = unsafe { std::slice::from_raw_parts(counts as *const _ as *const u8, std::mem::size_of::<EquipmentCounts>()) };
-    cursor.write_all(data).is_ok()
+}
+
+/// mhfdat starts with u32 0x1A66686D, 0x59, padding, 0x0BC8 (little endian in the file). A wrong first word means
+/// this is not an mhfdat (Err); the other two words differ between builds (the Vita file has 0x0BC4), so they only
+/// give warnings.
+pub fn check_mhfdat_signature(buffer: &[u8]) -> std::result::Result<Vec<String>, String> {
+    let word = |at: usize| buffer.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let show = |w: Option<u32>| w.map(|v| format!("0x{v:08X}")).unwrap_or_else(|| "<missing>".to_string());
+    if word(0) != Some(0x1A66_686D) {
+        return Err(format!(
+            "not a clear mhfdat.bin: the first word is {}, expected 0x1A66686D (bytes 6D 68 66 1A). The file may still be \
+             compressed/encrypted, or be a different kind of file",
+            show(word(0))
+        ));
+    }
+    let mut warnings = Vec::new();
+    if word(4) != Some(0x59) {
+        warnings.push(format!("signature word at 0x4 is {} (expected 0x00000059)", show(word(4))));
+    }
+    if word(12) != Some(0x0BC8) {
+        warnings.push(format!("signature word at 0xC is {} (expected 0x00000BC8): a different build?", show(word(12))));
+    }
+    Ok(warnings)
+}
+
+/// Equipment counts: header slot 0xE8 holds a *pointer* to 8 x u16 (legs, type-1 hole, head, chest, arms, waist,
+/// melee, ranged). The slot itself is not the block.
+pub fn equipment_counts_offset(buffer: &[u8]) -> Option<usize> {
+    let at = read_header_pointer(buffer, EQUIPEMENT_COUNT_PTR)? as usize;
+    if at == 0 {
+        return None;
+    }
+    buffer.get(at..at.checked_add(16)?)?;
+    Some(at)
+}
+
+pub fn read_equipment_counts(buffer: &[u8]) -> Option<EquipmentCounts> {
+    let at = equipment_counts_offset(buffer)?;
+    let b = buffer.get(at..at + 16)?;
+    let w = |i: usize| u16::from_le_bytes([b[i * 2], b[i * 2 + 1]]);
+    Some(EquipmentCounts {
+        numLegA: w(0),
+        numUnk: w(1),
+        numHeadA: w(2),
+        numBodyA: w(3),
+        numArmA: w(4),
+        numWaistA: w(5),
+        numMeleeW: w(6),
+        numRangedW: w(7),
+    })
+}
+
+/// Writes the counts into the block behind header slot 0xE8. Returns false (and writes nothing) when
+/// the pointer is null or the block does not fit in the buffer.
+pub fn write_equipment_counts(buffer: &mut [u8], counts: &EquipmentCounts) -> bool {
+    let Some(at) = equipment_counts_offset(buffer) else { return false };
+    let values = [
+        counts.numLegA, counts.numUnk, counts.numHeadA, counts.numBodyA,
+        counts.numArmA, counts.numWaistA, counts.numMeleeW, counts.numRangedW,
+    ];
+    for (i, v) in values.iter().enumerate() {
+        buffer[at + i * 2..at + i * 2 + 2].copy_from_slice(&v.to_le_bytes());
+    }
+    true
 }
 
 pub fn write_data_with_padding<W: Seek + Write>(writer: &mut W, data: &[u8]) -> Result<()> {
@@ -2433,7 +2522,7 @@ pub fn write_armor_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> R
         name_data.extend_from_slice(&valid_bytes);
         name_data.push(0);
     }
-    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    let table_offset = writer.seek(SeekFrom::End(0))? as u32;
     for offset in &name_offsets {
         writer.write_all(&(offset + table_offset + (names.len() as u32 * 4)).to_le_bytes())?;
     }
@@ -2477,17 +2566,16 @@ pub fn write_zenith_data(zenith_entries: &[ShopEntry]) -> Result<Vec<u8>> {
 }
 
 pub fn write_armor_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[[String; 4]]) -> Result<u32> {
-    // Get the absolute offset where we will write (reader uses absolute offsets)
-    let base_offset = writer.seek(SeekFrom::Current(0))? as u32;
-    
+    // Absolute offset where the table starts. Header slot 0x78 points straight at it (the original file
+    // has no extra pointer in front of the rows, and the reader treats the slot value as the table).
+    let base_offset = writer.seek(SeekFrom::End(0))? as u32;
+
     let mut field_offsets = Vec::new();
     let mut strings_data = Vec::new();
-    
-    // Pointer table starts at base_offset + 4 (first 4 bytes contain ptr to table)
-    // Table size: descriptions.len() * 16 (4 pointers * 4 bytes per entry)
-    // Strings start at: base_offset + 4 + descriptions.len() * 16
+
+    // Table size: descriptions.len() * 16 (4 pointers * 4 bytes per entry); strings follow it
     let table_size = (descriptions.len() * 16) as u32;
-    let strings_start = base_offset + 4 + table_size;
+    let strings_start = base_offset + table_size;
     let mut current_string_offset: u32 = 0;
     
     for desc in descriptions {
@@ -2509,9 +2597,6 @@ pub fn write_armor_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &
         entry_offsets.push(0u32);
         field_offsets.extend(entry_offsets);
     }
-    
-    // First 4 bytes: absolute pointer to the pointer table (matches read logic)
-    writer.write_all(&(base_offset + 4).to_le_bytes())?;
     
     // Pointer table: 4 absolute pointers per entry
     for i in 0..descriptions.len() {
@@ -2756,7 +2841,7 @@ pub fn write_item_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> Re
         name_data.extend_from_slice(&valid_bytes);
         name_data.push(0);
     }
-    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    let table_offset = writer.seek(SeekFrom::End(0))? as u32;
     for offset in &name_offsets {
         writer.write_all(&(offset + table_offset + (names.len() as u32 * 4)).to_le_bytes())?;
     }
@@ -2765,7 +2850,9 @@ pub fn write_item_names<W: Write + Seek>(writer: &mut W, names: &[String]) -> Re
     Ok(table_offset)
 }
 
-pub fn write_item_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[String]) -> Result<u32> {
+/// `preface` = the 0x60 bytes (24 UI-message pointers) that sit in front of the description table in the
+/// original file; the reader starts the table at `slot target + 0x60`.
+pub fn write_item_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[String], preface: &[u8]) -> Result<u32> {
     let mut desc_offsets = Vec::new();
     let mut desc_data = Vec::new();
     for desc in descriptions {
@@ -2801,19 +2888,16 @@ pub fn write_item_descriptions<W: Write + Seek>(writer: &mut W, descriptions: &[
         desc_data.push(0);
     }
     
-    // Item descriptions have a special structure with 0x60 bytes padding
-    let start_offset = writer.seek(SeekFrom::Current(0))? as u32;
-    
-    // Write the first pointer (points to the start of padding area, not the table directly)
-    let padding_start = start_offset + 4;
-    writer.write_all(&padding_start.to_le_bytes())?;
-    
-    // Write 0x60 bytes of padding
-    const PADDING_SIZE: usize = 0x60;
-    writer.write_all(&vec![0u8; PADDING_SIZE])?;
-    
+    // Item descriptions have a special structure: 0x60 bytes of existing pointers, then the table
+    let start_offset = writer.seek(SeekFrom::End(0))? as u32;
+
+    const PREFACE_SIZE: usize = 0x60;
+    let mut head = preface.to_vec();
+    head.resize(PREFACE_SIZE, 0);
+    writer.write_all(&head)?;
+        
     // Write the description offsets table (after padding)
-    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    let table_offset = writer.seek(SeekFrom::End(0))? as u32;
     for offset in &desc_offsets {
         writer.write_all(&(offset + table_offset + (descriptions.len() as u32 * 4)).to_le_bytes())?;
     }
@@ -2916,7 +3000,7 @@ pub fn write_monster_descriptions<W: Write + Seek>(writer: &mut W, descriptions:
         desc_data.extend_from_slice(&valid_bytes);
         desc_data.push(0);
     }
-    let table_offset = writer.seek(SeekFrom::Current(0))? as u32;
+    let table_offset = writer.seek(SeekFrom::End(0))? as u32;
     for offset in &desc_offsets {
         writer.write_all(&(offset + table_offset + (descriptions.len() as u32 * 4)).to_le_bytes())?;
     }
@@ -2926,7 +3010,8 @@ pub fn write_monster_descriptions<W: Write + Seek>(writer: &mut W, descriptions:
 }
 
 /// Write monster descriptions as a block (returns Vec<u8> instead of writing to writer)
-pub fn write_monster_descriptions_block(descriptions: &[String]) -> Result<Vec<u8>> {
+/// `base` = absolute file offset where the returned block will be written (pointers are absolute).
+pub fn write_monster_descriptions_block(descriptions: &[String], base: u32) -> Result<Vec<u8>> {
     let mut desc_offsets = Vec::new();
     let mut desc_data = Vec::new();
     for desc in descriptions {
@@ -2965,9 +3050,9 @@ pub fn write_monster_descriptions_block(descriptions: &[String]) -> Result<Vec<u
     let ptr_table_size = descriptions.len() * 4;
     let mut data = Vec::new();
     
-    // Write pointer table (absolute offsets from start of block)
+    // Write pointer table (absolute file offsets)
     for offset in &desc_offsets {
-        let absolute_offset = (ptr_table_size as u32) + offset;
+        let absolute_offset = base + (ptr_table_size as u32) + offset;
         data.extend_from_slice(&absolute_offset.to_le_bytes());
     }
     
@@ -3638,4 +3723,1312 @@ pub fn write_seasonal_events_block(events: &[EventTime]) -> Result<Vec<u8>> {
         data.write_all(&ev.end_time.to_le_bytes())?;
     }
     Ok(data)
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Tables edited in place: crowns, skill effects, GR menus, Caravan, Hunting Road, extra crafting, weapon
+// parameters, arena. They are read into typed rows (model::mhfdat) and written back over the same bytes:
+// no pointer moves and the table cannot grow (a longer table would run into the block that follows it).
+// ---------------------------------------------------------------------------------------------------------
+
+use crate::model::mhfdat::{
+    PointerBlock, CrownRow, SkillEffect, VoyageLeg, VoyageRoute, VoyageLevel, RankingLeg, RankingRoute, Caravan,
+    RoadMonsterPoint, RoadCatItem, RoadShopRow, RoadSkillPrereq, RoadSkillDef, RoadData, ComboRecipe, ComboShopRow,
+    TowerJewelMat, TowerJewelRecipe, TowerUpgradeStep, ActionDescriptor, HornMelody, CoatingRow, TowerModifierRow, RastaNpc,
+    RastaWeaponOption, RastaArmorSet, WeaponParams, ItemBlock, DefBlock, TutorialSet, Arena,
+};
+use crate::model::mhfdat_pointers::*;
+
+type Res<T> = std::result::Result<T, String>;
+
+/// Bytes to write over an existing table: `offset` is where the table already is.
+#[derive(Clone, Debug)]
+pub struct InPlacePatch {
+    pub table: String,
+    pub offset: u64,
+    pub bytes: Vec<u8>,
+}
+
+/// Rows of `stride` bytes from `start` until `is_end(row)`, `max` rows or the end of the buffer.
+fn count_rows(buffer: &[u8], start: usize, stride: usize, max: usize, is_end: impl Fn(&[u8]) -> bool) -> usize {
+    let mut n = 0;
+    while n < max {
+        let at = start + n * stride;
+        match buffer.get(at..at + stride) {
+            Some(row) if !is_end(row) => n += 1,
+            _ => break,
+        }
+    }
+    n
+}
+
+/// Pointer stored in header slot `slot`; Err (with the slot) when null or outside the buffer.
+fn header_target(buffer: &[u8], name: &str, slot: u32) -> Res<usize> {
+    match read_header_pointer(buffer, slot) {
+        Some(0) => Err(format!("{name}: header slot 0x{slot:X} is null")),
+        Some(p) if (p as usize) <= buffer.len() => Ok(p as usize),
+        Some(p) => Err(format!("{name}: header slot 0x{slot:X} points to 0x{p:X}, outside the {}-byte file", buffer.len())),
+        None => Err(format!("{name}: header slot 0x{slot:X} is outside the {}-byte file", buffer.len())),
+    }
+}
+
+fn important_count(buffer: &[u8], name: &str, inner: usize) -> Res<usize> {
+    read_important_count(buffer, inner)
+        .map(|c| c as usize)
+        .ok_or_else(|| format!("{name}: important_nums (header 0x10) + 0x{inner:X} is outside the {}-byte file", buffer.len()))
+}
+
+/// Parses `count` rows of `stride` bytes at `offset`; the table must fit in the file.
+fn read_table<'b, T>(
+    buffer: &'b [u8],
+    name: &str,
+    offset: usize,
+    stride: usize,
+    count: usize,
+    read_row: impl Fn(&mut Cursor<&'b [u8]>) -> Result<T>,
+) -> Res<Vec<T>> {
+    check_table_fits(name, offset as u64, stride, count, buffer.len())?;
+    let mut rows = Vec::with_capacity(count);
+    for i in 0..count {
+        let at = offset + i * stride;
+        let mut cur = Cursor::new(&buffer[at..at + stride]);
+        rows.push(read_row(&mut cur).map_err(|e| format!("{name}: row {i} at 0x{at:X}: {e}"))?);
+    }
+    Ok(rows)
+}
+
+fn write_table<T>(rows: &[T], write_row: impl Fn(&mut Vec<u8>, &T) -> Result<()>) -> Vec<u8> {
+    let mut out = Vec::new();
+    for r in rows {
+        // writing into a Vec cannot fail
+        let _ = write_row(&mut out, r);
+    }
+    out
+}
+
+/// Patch for a flat table. Refused when the table has more rows than it had when it was read.
+fn flat_patch<T>(
+    table: &str,
+    offset: Option<u32>,
+    original_rows: usize,
+    rows: &[T],
+    write_row: impl Fn(&mut Vec<u8>, &T) -> Result<()>,
+) -> Res<Option<InPlacePatch>> {
+    if rows.len() > original_rows {
+        return Err(format!(
+            "{table}: {} rows now, {original_rows} when read. A longer table would overwrite the block that follows it, so it is not saved",
+            rows.len()
+        ));
+    }
+    Ok(offset.map(|o| InPlacePatch { table: table.to_string(), offset: o as u64, bytes: write_table(rows, write_row) }))
+}
+
+/// Reads the blocks behind `n` pointers (the pointer array is at `array_offset`). A null pointer is an empty
+/// block; a pointer that was already used by an earlier block makes this one an alias.
+fn read_pointer_blocks<'b, T>(
+    buffer: &'b [u8],
+    name: &str,
+    array_offset: usize,
+    n: usize,
+    stride: usize,
+    title: impl Fn(usize) -> String,
+    rows_of: impl Fn(&[u8], usize) -> usize,
+    read_row: impl Fn(&mut Cursor<&'b [u8]>) -> Result<T>,
+) -> Res<Vec<PointerBlock<T>>> {
+    check_table_fits(&format!("{name} pointer array"), array_offset as u64, 4, n, buffer.len())?;
+    let mut blocks: Vec<PointerBlock<T>> = Vec::with_capacity(n);
+    let mut seen: Vec<(u32, usize)> = Vec::new();
+    for i in 0..n {
+        let at = array_offset + i * 4;
+        let ptr = u32::from_le_bytes(buffer[at..at + 4].try_into().unwrap());
+        let mut block = PointerBlock { name: title(i), offset: ptr, alias_of: None, rows: Vec::new() };
+        if ptr != 0 {
+            if let Some(&(_, first)) = seen.iter().find(|(o, _)| *o == ptr) {
+                block.alias_of = Some(first);
+            } else {
+                seen.push((ptr, i));
+                let count = rows_of(buffer, ptr as usize);
+                block.rows = read_table(buffer, &format!("{name} {}", block.name), ptr as usize, stride, count, &read_row)?;
+            }
+        }
+        blocks.push(block);
+    }
+    Ok(blocks)
+}
+
+fn block_patches<T>(
+    table: &str,
+    blocks: &[PointerBlock<T>],
+    original_rows: &[usize],
+    write_row: impl Fn(&mut Vec<u8>, &T) -> Result<()>,
+) -> Res<Vec<InPlacePatch>> {
+    let mut out = Vec::new();
+    for (i, b) in blocks.iter().enumerate() {
+        if b.offset == 0 || b.alias_of.is_some() {
+            continue;
+        }
+        let was = original_rows.get(i).copied().unwrap_or(0);
+        if b.rows.len() > was {
+            return Err(format!(
+                "{table} {}: {} rows now, {was} when read. A longer list would overwrite what follows it, so it is not saved",
+                b.name, b.rows.len()
+            ));
+        }
+        out.push(InPlacePatch { table: format!("{table} {}", b.name), offset: b.offset as u64, bytes: write_table(&b.rows, &write_row) });
+    }
+    Ok(out)
+}
+
+// ---- small field readers / writers ---------------------------------------------------------------------------
+
+fn read_array_u8<const N: usize, R: Read>(r: &mut R) -> Result<[u8; N]> {
+    let mut a = [0u8; N];
+    r.read_exact(&mut a)?;
+    Ok(a)
+}
+
+fn read_array_u16<const N: usize, R: Read>(r: &mut R) -> Result<[u16; N]> {
+    let mut a = [0u16; N];
+    for v in a.iter_mut() {
+        *v = r.read_u16::<LittleEndian>()?;
+    }
+    Ok(a)
+}
+
+fn read_vec_u8<R: Read>(r: &mut R, n: usize) -> Result<Vec<u8>> {
+    let mut v = vec![0u8; n];
+    r.read_exact(&mut v)?;
+    Ok(v)
+}
+
+/// A fixed-width text field written back at exactly `width` bytes (shorter data is zero padded, longer is cut).
+fn write_fixed(w: &mut Vec<u8>, bytes: &[u8], width: usize) {
+    let mut b = bytes.to_vec();
+    b.resize(width, 0);
+    w.extend_from_slice(&b);
+}
+
+/// Shift-JIS bytes of `text` for a `width`-byte field (NUL padded). Err when it does not fit (the terminator
+/// needs a byte) or has a character Shift-JIS cannot store; never truncates silently.
+pub fn encode_fixed_text(text: &str, width: usize) -> std::result::Result<Vec<u8>, String> {
+    let (bytes, _, had_errors) = SHIFT_JIS.encode(text);
+    if had_errors {
+        return Err("contains a character that Shift-JIS cannot store".to_string());
+    }
+    if bytes.len() + 1 > width {
+        return Err(format!("{} bytes, but only {} fit (the last byte is the terminator)", bytes.len(), width - 1));
+    }
+    let mut out = bytes.into_owned();
+    out.resize(width, 0);
+    Ok(out)
+}
+
+/// Text of a NUL terminated Shift-JIS field.
+pub fn decode_fixed_text(bytes: &[u8]) -> String {
+    let end = bytes.iter().position(|&c| c == 0).unwrap_or(bytes.len());
+    SHIFT_JIS.decode(&bytes[..end]).0.into_owned()
+}
+
+/// NUL terminated Shift-JIS string at `offset`, at most `max` bytes (read-only previews of text pointers).
+pub fn preview_text_at(buffer: &[u8], offset: u32, max: usize) -> String {
+    let start = offset as usize;
+    if offset == 0 || start >= buffer.len() {
+        return String::new();
+    }
+    decode_fixed_text(&buffer[start..(start + max).min(buffer.len())])
+}
+
+// ---- crowns -----------------------------------------------------------------------------------------------------
+
+const CROWN_SIZE: usize = 14;
+
+fn read_crown<R: Read>(r: &mut R) -> Result<CrownRow> {
+    Ok(CrownRow {
+        unk00: r.read_u8()?,
+        monster_id: r.read_u8()?,
+        silver_threshold: r.read_i16::<LittleEndian>()?,
+        gold_threshold: r.read_i16::<LittleEndian>()?,
+        mini_threshold: r.read_i16::<LittleEndian>()?,
+        unk08: r.read_i16::<LittleEndian>()?,
+        unk0a: r.read_u16::<LittleEndian>()?,
+        unk0c: r.read_u8()?,
+        monster_id_2: r.read_u8()?,
+    })
+}
+
+fn write_crown(w: &mut Vec<u8>, c: &CrownRow) -> Result<()> {
+    w.write_u8(c.unk00)?;
+    w.write_u8(c.monster_id)?;
+    w.write_i16::<LittleEndian>(c.silver_threshold)?;
+    w.write_i16::<LittleEndian>(c.gold_threshold)?;
+    w.write_i16::<LittleEndian>(c.mini_threshold)?;
+    w.write_i16::<LittleEndian>(c.unk08)?;
+    w.write_u16::<LittleEndian>(c.unk0a)?;
+    w.write_u8(c.unk0c)?;
+    w.write_u8(c.monster_id_2)
+}
+
+pub fn read_crowns(buffer: &[u8]) -> Res<(u32, Vec<CrownRow>)> {
+    let name = "monster crowns (header 0x130)";
+    let count = important_count(buffer, name, MOSNTERS_DESCRIPTION_COUNT_INNER)?;
+    let offset = header_target(buffer, name, CROWNS_PTR)?;
+    Ok((offset as u32, read_table(buffer, name, offset, CROWN_SIZE, count, read_crown)?))
+}
+
+pub fn crowns_patch(offset: Option<u32>, original_rows: usize, rows: &[CrownRow]) -> Res<Option<InPlacePatch>> {
+    flat_patch("monster crowns", offset, original_rows, rows, write_crown)
+}
+
+// ---- skill effects ----------------------------------------------------------------------------------------------
+
+const SKILL_EFFECT_SIZE: usize = 0x1C;
+
+fn read_skill_effect<R: Read>(r: &mut R) -> Result<SkillEffect> {
+    Ok(SkillEffect {
+        skill_id: r.read_u32::<LittleEndian>()?,
+        effect_type: r.read_u32::<LittleEndian>()?,
+        effect_id: r.read_u32::<LittleEndian>()?,
+        value: r.read_i32::<LittleEndian>()?,
+        range_min: r.read_i32::<LittleEndian>()?,
+        range_max: r.read_i32::<LittleEndian>()?,
+        unused18: r.read_i32::<LittleEndian>()?,
+    })
+}
+
+fn write_skill_effect(w: &mut Vec<u8>, e: &SkillEffect) -> Result<()> {
+    w.write_u32::<LittleEndian>(e.skill_id)?;
+    w.write_u32::<LittleEndian>(e.effect_type)?;
+    w.write_u32::<LittleEndian>(e.effect_id)?;
+    w.write_i32::<LittleEndian>(e.value)?;
+    w.write_i32::<LittleEndian>(e.range_min)?;
+    w.write_i32::<LittleEndian>(e.range_max)?;
+    w.write_i32::<LittleEndian>(e.unused18)
+}
+
+pub fn read_skill_effects(buffer: &[u8]) -> Res<(u32, Vec<SkillEffect>)> {
+    let name = "skill effects (header 0x594)";
+    // the count is the u16 at +2 of the block behind header 0x988
+    let host = header_target(buffer, name, SKILL_COUNT_HOST_PTR)?;
+    let count = buffer.get(host + 2..host + 4).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize)
+        .ok_or_else(|| format!("{name}: count at 0x{:X} is outside the {}-byte file", host + 2, buffer.len()))?;
+    let offset = header_target(buffer, name, SKILL_EFFECTS_PTR)?;
+    Ok((offset as u32, read_table(buffer, name, offset, SKILL_EFFECT_SIZE, count, read_skill_effect)?))
+}
+
+pub fn skill_effects_patch(offset: Option<u32>, original_rows: usize, rows: &[SkillEffect]) -> Res<Option<InPlacePatch>> {
+    flat_patch("skill effects", offset, original_rows, rows, write_skill_effect)
+}
+
+// ---- GR menus and beginner quests -------------------------------------------------------------------------------
+
+const GR_MENU_NAMES: [&str; 9] = ["G1", "G2", "G3", "G4", "G5", "G6", "G8", "G9", "G10"];
+
+/// G1-G6 and G8-G10: header slot -> root blob -> first dword -> QuestItem stream. A menu whose chain is broken
+/// is reported in the returned messages and left empty; the others stay editable.
+pub fn read_gr_menus(buffer: &[u8]) -> (Vec<PointerBlock<QuestItem>>, Vec<String>) {
+    let mut blocks: Vec<PointerBlock<QuestItem>> = Vec::new();
+    let mut problems = Vec::new();
+    let mut seen: Vec<(u32, usize)> = Vec::new();
+    for (i, slot) in GR_MENU_PTRS.iter().enumerate() {
+        let name = GR_MENU_NAMES[i];
+        let what = format!("GR menu {name} (header 0x{slot:X})");
+        let mut block = PointerBlock { name: name.to_string(), offset: 0, alias_of: None, rows: Vec::new() };
+        let stream = header_target(buffer, &what, *slot).and_then(|root| {
+            read_header_pointer(buffer, root as u32).filter(|&p| p != 0)
+                .ok_or_else(|| format!("{what}: root blob at 0x{root:X} has no quest pointer"))
+        });
+        match stream {
+            Ok(p) => {
+                block.offset = p;
+                if let Some(&(_, first)) = seen.iter().find(|(o, _)| *o == p) {
+                    block.alias_of = Some(first);
+                } else {
+                    seen.push((p, i));
+                    let count = get_gr_count(buffer, p as usize);
+                    match read_table(buffer, &what, p as usize, 8, count, read_quest_item) {
+                        Ok(rows) => block.rows = rows,
+                        Err(e) => {
+                            problems.push(e);
+                            block.offset = 0;
+                        }
+                    }
+                }
+            }
+            Err(e) => problems.push(e),
+        }
+        blocks.push(block);
+    }
+    (blocks, problems)
+}
+
+pub fn gr_menus_patches(blocks: &[PointerBlock<QuestItem>], original_rows: &[usize]) -> Res<Vec<InPlacePatch>> {
+    block_patches("GR menu", blocks, original_rows, |w, q| write_quest_item(w, q))
+}
+
+pub fn read_beginner_quests(buffer: &[u8]) -> Res<(u32, Vec<u16>)> {
+    let name = "beginner quest ids (header 0x1B8)";
+    let count = important_count(buffer, name, BEGINNER_QUESTS_COUNT_INNER)?;
+    let offset = header_target(buffer, name, BEGINNER_QUEST_IDS_PTR)?;
+    Ok((offset as u32, read_table(buffer, name, offset, 2, count, |r| r.read_u16::<LittleEndian>())?))
+}
+
+pub fn beginner_quests_patch(offset: Option<u32>, original_rows: usize, rows: &[u16]) -> Res<Option<InPlacePatch>> {
+    flat_patch("beginner quest ids", offset, original_rows, rows, |w, v| w.write_u16::<LittleEndian>(*v))
+}
+
+// ---- Caravan -----------------------------------------------------------------------------------------------------
+
+const VOYAGE_ROUTE_SIZE: usize = 0xA1C;
+const VOYAGE_LEG_COUNT: usize = 12;
+const VOYAGE_LEG_SIZE: usize = 0xC4;
+const RANKING_ROUTE_SIZE: usize = 0x10C;
+const RANKING_GROUPS: usize = 16;
+
+fn read_voyage_route<R: Read>(r: &mut R) -> Result<VoyageRoute> {
+    let mut route = VoyageRoute {
+        fee: r.read_u32::<LittleEndian>()?,
+        reward_money: r.read_u32::<LittleEndian>()?,
+        reward_cp: r.read_u32::<LittleEndian>()?,
+        reward_item: r.read_u16::<LittleEndian>()?,
+        reward_item_qty: r.read_u16::<LittleEndian>()?,
+        reputation: r.read_u16::<LittleEndian>()?,
+        unk12: r.read_u16::<LittleEndian>()?,
+        hr_to_post: r.read_u16::<LittleEndian>()?,
+        hr_to_join: r.read_u16::<LittleEndian>()?,
+        cp_bonus: r.read_f32::<LittleEndian>()?,
+        monster_hp: r.read_f32::<LittleEndian>()?,
+        monster_atk: r.read_f32::<LittleEndian>()?,
+        monster_def: r.read_f32::<LittleEndian>()?,
+        final_trial: r.read_u16::<LittleEndian>()?,
+        unk2a: r.read_u16::<LittleEndian>()?,
+        title: read_vec_u8(r, 64)?,
+        success: read_vec_u8(r, 64)?,
+        failure: read_vec_u8(r, 64)?,
+        legs: Vec::with_capacity(VOYAGE_LEG_COUNT),
+    };
+    for _ in 0..VOYAGE_LEG_COUNT {
+        route.legs.push(VoyageLeg {
+            quest_id: r.read_i32::<LittleEndian>()?,
+            map: read_vec_u8(r, 64)?,
+            time: read_vec_u8(r, 64)?,
+            target: read_vec_u8(r, 64)?,
+        });
+    }
+    Ok(route)
+}
+
+fn write_voyage_route(w: &mut Vec<u8>, v: &VoyageRoute) -> Result<()> {
+    w.write_u32::<LittleEndian>(v.fee)?;
+    w.write_u32::<LittleEndian>(v.reward_money)?;
+    w.write_u32::<LittleEndian>(v.reward_cp)?;
+    w.write_u16::<LittleEndian>(v.reward_item)?;
+    w.write_u16::<LittleEndian>(v.reward_item_qty)?;
+    w.write_u16::<LittleEndian>(v.reputation)?;
+    w.write_u16::<LittleEndian>(v.unk12)?;
+    w.write_u16::<LittleEndian>(v.hr_to_post)?;
+    w.write_u16::<LittleEndian>(v.hr_to_join)?;
+    w.write_f32::<LittleEndian>(v.cp_bonus)?;
+    w.write_f32::<LittleEndian>(v.monster_hp)?;
+    w.write_f32::<LittleEndian>(v.monster_atk)?;
+    w.write_f32::<LittleEndian>(v.monster_def)?;
+    w.write_u16::<LittleEndian>(v.final_trial)?;
+    w.write_u16::<LittleEndian>(v.unk2a)?;
+    write_fixed(w, &v.title, 64);
+    write_fixed(w, &v.success, 64);
+    write_fixed(w, &v.failure, 64);
+    for i in 0..VOYAGE_LEG_COUNT {
+        let leg = v.legs.get(i).cloned().unwrap_or_default();
+        w.write_i32::<LittleEndian>(leg.quest_id)?;
+        write_fixed(w, &leg.map, 64);
+        write_fixed(w, &leg.time, 64);
+        write_fixed(w, &leg.target, 64);
+    }
+    debug_assert_eq!(VOYAGE_LEG_SIZE, 4 + 3 * 64);
+    Ok(())
+}
+
+fn read_voyage_level<R: Read>(r: &mut R) -> Result<VoyageLevel> {
+    let mut level = VoyageLevel::default();
+    for v in level.routes.iter_mut() {
+        *v = r.read_i32::<LittleEndian>()?;
+    }
+    Ok(level)
+}
+
+fn write_voyage_level(w: &mut Vec<u8>, l: &VoyageLevel) -> Result<()> {
+    for v in &l.routes {
+        w.write_i32::<LittleEndian>(*v)?;
+    }
+    Ok(())
+}
+
+fn read_ranking_route<R: Read>(r: &mut R) -> Result<RankingRoute> {
+    let mut route = RankingRoute {
+        title_ptr: r.read_u32::<LittleEndian>()?,
+        success_ptr: r.read_u32::<LittleEndian>()?,
+        failure_ptr: r.read_u32::<LittleEndian>()?,
+        route_number: r.read_u16::<LittleEndian>()?,
+        group_number: r.read_u16::<LittleEndian>()?,
+        fee: r.read_i32::<LittleEndian>()?,
+        reward_money: r.read_i32::<LittleEndian>()?,
+        reward_cp: r.read_i32::<LittleEndian>()?,
+        reward_item: r.read_u16::<LittleEndian>()?,
+        unk1e: r.read_u16::<LittleEndian>()?,
+        unk20: r.read_u16::<LittleEndian>()?,
+        reward_item_qty: r.read_u16::<LittleEndian>()?,
+        unk24: r.read_u32::<LittleEndian>()?,
+        rank_type: r.read_u16::<LittleEndian>()?,
+        hr_to_post: r.read_u16::<LittleEndian>()?,
+        hr_to_join: r.read_u16::<LittleEndian>()?,
+        unk2e: r.read_u16::<LittleEndian>()?,
+        cp_bonus_carve: r.read_f32::<LittleEndian>()?,
+        cp_bonus_gather: r.read_f32::<LittleEndian>()?,
+        hunter_title: r.read_i32::<LittleEndian>()?,
+        extra_mission: r.read_i32::<LittleEndian>()?,
+        monster_hp: r.read_f32::<LittleEndian>()?,
+        monster_atk: r.read_f32::<LittleEndian>()?,
+        monster_def: r.read_f32::<LittleEndian>()?,
+        legs: Vec::with_capacity(12),
+    };
+    for _ in 0..12 {
+        route.legs.push(RankingLeg {
+            quest_id: r.read_i32::<LittleEndian>()?,
+            map_ptr: r.read_u32::<LittleEndian>()?,
+            time_ptr: r.read_u32::<LittleEndian>()?,
+            target_ptr: r.read_u32::<LittleEndian>()?,
+        });
+    }
+    Ok(route)
+}
+
+fn write_ranking_route(w: &mut Vec<u8>, v: &RankingRoute) -> Result<()> {
+    w.write_u32::<LittleEndian>(v.title_ptr)?;
+    w.write_u32::<LittleEndian>(v.success_ptr)?;
+    w.write_u32::<LittleEndian>(v.failure_ptr)?;
+    w.write_u16::<LittleEndian>(v.route_number)?;
+    w.write_u16::<LittleEndian>(v.group_number)?;
+    w.write_i32::<LittleEndian>(v.fee)?;
+    w.write_i32::<LittleEndian>(v.reward_money)?;
+    w.write_i32::<LittleEndian>(v.reward_cp)?;
+    w.write_u16::<LittleEndian>(v.reward_item)?;
+    w.write_u16::<LittleEndian>(v.unk1e)?;
+    w.write_u16::<LittleEndian>(v.unk20)?;
+    w.write_u16::<LittleEndian>(v.reward_item_qty)?;
+    w.write_u32::<LittleEndian>(v.unk24)?;
+    w.write_u16::<LittleEndian>(v.rank_type)?;
+    w.write_u16::<LittleEndian>(v.hr_to_post)?;
+    w.write_u16::<LittleEndian>(v.hr_to_join)?;
+    w.write_u16::<LittleEndian>(v.unk2e)?;
+    w.write_f32::<LittleEndian>(v.cp_bonus_carve)?;
+    w.write_f32::<LittleEndian>(v.cp_bonus_gather)?;
+    w.write_i32::<LittleEndian>(v.hunter_title)?;
+    w.write_i32::<LittleEndian>(v.extra_mission)?;
+    w.write_f32::<LittleEndian>(v.monster_hp)?;
+    w.write_f32::<LittleEndian>(v.monster_atk)?;
+    w.write_f32::<LittleEndian>(v.monster_def)?;
+    for i in 0..12 {
+        let leg = v.legs.get(i).cloned().unwrap_or_default();
+        w.write_i32::<LittleEndian>(leg.quest_id)?;
+        w.write_u32::<LittleEndian>(leg.map_ptr)?;
+        w.write_u32::<LittleEndian>(leg.time_ptr)?;
+        w.write_u32::<LittleEndian>(leg.target_ptr)?;
+    }
+    Ok(())
+}
+
+/// Offsets of the two flat Caravan tables, needed to write them back.
+#[derive(Clone, Debug, Default)]
+pub struct CaravanOffsets {
+    pub voyage: Option<u32>,
+    pub levels: Option<u32>,
+}
+
+/// Voyage routes (end on an empty title), the level index and the ranking groups. A table that does not fit
+/// the file is reported in the messages and left empty.
+pub fn read_caravan(buffer: &[u8]) -> (Caravan, CaravanOffsets, Vec<String>) {
+    let mut caravan = Caravan::default();
+    let mut offsets = CaravanOffsets::default();
+    let mut problems = Vec::new();
+
+    let name = "Caravan voyage routes (header 0x22C)";
+    match header_target(buffer, name, VOYAGE_ROUTES_PTR).and_then(|o| {
+        let count = count_rows(buffer, o, VOYAGE_ROUTE_SIZE, 4096, |r| r[0x2C] == 0);
+        read_table(buffer, name, o, VOYAGE_ROUTE_SIZE, count, read_voyage_route).map(|rows| (o, rows))
+    }) {
+        Ok((o, rows)) => {
+            offsets.voyage = Some(o as u32);
+            caravan.voyage = rows;
+        }
+        Err(e) => problems.push(e),
+    }
+
+    let name = "Caravan level index (header 0x230)";
+    match header_target(buffer, name, VOYAGE_LEVEL_INDEX_PTR)
+        .and_then(|o| read_table(buffer, name, o, 48, 15, read_voyage_level).map(|rows| (o, rows)))
+    {
+        Ok((o, rows)) => {
+            offsets.levels = Some(o as u32);
+            caravan.levels = rows;
+        }
+        Err(e) => problems.push(e),
+    }
+
+    let name = "Caravan ranking routes (header 0x91C)";
+    match header_target(buffer, name, RANKING_ROUTES_PTR).and_then(|o| {
+        read_pointer_blocks(
+            buffer, name, o, RANKING_GROUPS, RANKING_ROUTE_SIZE,
+            |i| format!("group {i}"),
+            // a group ends at the first record whose title pointer is 0 (at most 12 records)
+            |b, p| count_rows(b, p, RANKING_ROUTE_SIZE, 12, |r| r[..4] == [0, 0, 0, 0]),
+            read_ranking_route,
+        )
+    }) {
+        Ok(groups) => caravan.ranking = groups,
+        Err(e) => problems.push(e),
+    }
+    (caravan, offsets, problems)
+}
+
+pub fn caravan_patches(
+    caravan: &Caravan,
+    offsets: &CaravanOffsets,
+    original_voyage_rows: usize,
+    original_ranking_rows: &[usize],
+) -> Res<Vec<InPlacePatch>> {
+    let mut out = Vec::new();
+    out.extend(flat_patch("Caravan voyage routes", offsets.voyage, original_voyage_rows, &caravan.voyage, write_voyage_route)?);
+    out.extend(flat_patch("Caravan level index", offsets.levels, 15, &caravan.levels, write_voyage_level)?);
+    out.extend(block_patches("Caravan ranking", &caravan.ranking, original_ranking_rows, write_ranking_route)?);
+    Ok(out)
+}
+
+// ---- Hunting Road -----------------------------------------------------------------------------------------------
+
+const ROAD_POINT_SIZE: usize = 16;
+const ROAD_CAT_SIZE: usize = 8;
+const ROAD_SHOP_SIZE: usize = 16;
+const ROAD_SKILL_SIZE: usize = 0x28;
+const ROAD_WEIGHT_WINDOW: usize = 16;
+
+fn read_road_point<R: Read>(r: &mut R) -> Result<RoadMonsterPoint> {
+    Ok(RoadMonsterPoint {
+        monster_id: r.read_u16::<LittleEndian>()?,
+        flags: r.read_u16::<LittleEndian>()?,
+        points: read_array_u16::<5, _>(r)?,
+        unk0e: r.read_u16::<LittleEndian>()?,
+    })
+}
+
+fn write_road_point(w: &mut Vec<u8>, p: &RoadMonsterPoint) -> Result<()> {
+    w.write_u16::<LittleEndian>(p.monster_id)?;
+    w.write_u16::<LittleEndian>(p.flags)?;
+    for v in &p.points {
+        w.write_u16::<LittleEndian>(*v)?;
+    }
+    w.write_u16::<LittleEndian>(p.unk0e)
+}
+
+fn read_road_cat<R: Read>(r: &mut R) -> Result<RoadCatItem> {
+    Ok(RoadCatItem { item_id: r.read_u16::<LittleEndian>()?, unk02: r.read_u32::<LittleEndian>()?, unk06: r.read_u16::<LittleEndian>()? })
+}
+
+fn write_road_cat(w: &mut Vec<u8>, c: &RoadCatItem) -> Result<()> {
+    w.write_u16::<LittleEndian>(c.item_id)?;
+    w.write_u32::<LittleEndian>(c.unk02)?;
+    w.write_u16::<LittleEndian>(c.unk06)
+}
+
+fn read_road_shop<R: Read>(r: &mut R) -> Result<RoadShopRow> {
+    Ok(RoadShopRow {
+        unk00: r.read_u16::<LittleEndian>()?,
+        unk02: r.read_u16::<LittleEndian>()?,
+        unk04: r.read_u32::<LittleEndian>()?,
+        unk08: r.read_u8()?,
+        unk09: r.read_u8()?,
+        unk0a: r.read_u8()?,
+        unk0b: r.read_u8()?,
+        unk0c: r.read_u32::<LittleEndian>()?,
+    })
+}
+
+fn write_road_shop(w: &mut Vec<u8>, s: &RoadShopRow) -> Result<()> {
+    w.write_u16::<LittleEndian>(s.unk00)?;
+    w.write_u16::<LittleEndian>(s.unk02)?;
+    w.write_u32::<LittleEndian>(s.unk04)?;
+    w.write_u8(s.unk08)?;
+    w.write_u8(s.unk09)?;
+    w.write_u8(s.unk0a)?;
+    w.write_u8(s.unk0b)?;
+    w.write_u32::<LittleEndian>(s.unk0c)
+}
+
+fn read_road_skill<R: Read>(r: &mut R) -> Result<RoadSkillDef> {
+    let mut d = RoadSkillDef {
+        skill_id: r.read_u16::<LittleEndian>()?,
+        level: r.read_u16::<LittleEndian>()?,
+        category: r.read_u16::<LittleEndian>()?,
+        desc_id: r.read_u16::<LittleEndian>()?,
+        sort_key: r.read_u16::<LittleEndian>()?,
+        unk0a: r.read_u16::<LittleEndian>()?,
+        cost: r.read_u32::<LittleEndian>()?,
+        road_rank_req: r.read_u16::<LittleEndian>()?,
+        road_points: r.read_u16::<LittleEndian>()?,
+        icon_id: r.read_u16::<LittleEndian>()?,
+        prereqs: Default::default(),
+        unk26: 0,
+    };
+    for p in d.prereqs.iter_mut() {
+        *p = RoadSkillPrereq { skill_id: r.read_u16::<LittleEndian>()?, level: r.read_u16::<LittleEndian>()? };
+    }
+    d.unk26 = r.read_u16::<LittleEndian>()?;
+    Ok(d)
+}
+
+fn write_road_skill(w: &mut Vec<u8>, d: &RoadSkillDef) -> Result<()> {
+    w.write_u16::<LittleEndian>(d.skill_id)?;
+    w.write_u16::<LittleEndian>(d.level)?;
+    w.write_u16::<LittleEndian>(d.category)?;
+    w.write_u16::<LittleEndian>(d.desc_id)?;
+    w.write_u16::<LittleEndian>(d.sort_key)?;
+    w.write_u16::<LittleEndian>(d.unk0a)?;
+    w.write_u32::<LittleEndian>(d.cost)?;
+    w.write_u16::<LittleEndian>(d.road_rank_req)?;
+    w.write_u16::<LittleEndian>(d.road_points)?;
+    w.write_u16::<LittleEndian>(d.icon_id)?;
+    for p in &d.prereqs {
+        w.write_u16::<LittleEndian>(p.skill_id)?;
+        w.write_u16::<LittleEndian>(p.level)?;
+    }
+    w.write_u16::<LittleEndian>(d.unk26)
+}
+
+/// Offsets of the five Hunting Road tables.
+#[derive(Clone, Debug, Default)]
+pub struct RoadOffsets {
+    pub points: Option<u32>,
+    pub cat_shop: Option<u32>,
+    pub shop: Option<u32>,
+    pub skills: Option<u32>,
+    pub weight: Option<u32>,
+}
+
+pub fn read_road(buffer: &[u8]) -> (RoadData, RoadOffsets, Vec<String>) {
+    let mut road = RoadData::default();
+    let mut offsets = RoadOffsets::default();
+    let mut problems = Vec::new();
+    let counters = header_target(buffer, "Hunting Road counters (header 0xB04)", ROAD_COUNTERS_PTR);
+    let counter_at = |at: usize| buffer.get(at..at + 2).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize);
+
+    let name = "Hunting Road points per monster (header 0xB20)";
+    match counters.clone().and_then(|c| counter_at(c + 8).ok_or_else(|| format!("{name}: count is outside the file")))
+        .and_then(|count| header_target(buffer, name, ROAD_MONSTER_POINTS_PTR).map(|o| (o, count)))
+        .and_then(|(o, count)| read_table(buffer, name, o, ROAD_POINT_SIZE, count, read_road_point).map(|r| (o, r)))
+    {
+        Ok((o, rows)) => { offsets.points = Some(o as u32); road.points = rows; }
+        Err(e) => problems.push(e),
+    }
+
+    let name = "Hunting Road Felyne shop (header 0xB10)";
+    match counters.and_then(|c| counter_at(c + 4).ok_or_else(|| format!("{name}: count is outside the file")))
+        .and_then(|count| header_target(buffer, name, ROAD_CAT_SHOP_PTR).map(|o| (o, count)))
+        .and_then(|(o, count)| read_table(buffer, name, o, ROAD_CAT_SIZE, count, read_road_cat).map(|r| (o, r)))
+    {
+        Ok((o, rows)) => { offsets.cat_shop = Some(o as u32); road.cat_shop = rows; }
+        Err(e) => problems.push(e),
+    }
+
+    let name = "Hunting Road fallback shop (special shops -> ptRoadShop)";
+    match header_target(buffer, name, SPECIAL_SHOPS_PTR)
+        .and_then(|h| read_header_pointer(buffer, h as u32).filter(|&p| p != 0).ok_or_else(|| format!("{name}: ptRoadShop is null")))
+        .and_then(|o| {
+            // the sources only say "16 bytes per row": the table ends on an all-zero row
+            let count = count_rows(buffer, o as usize, ROAD_SHOP_SIZE, 8192, |r| r.iter().all(|&b| b == 0));
+            read_table(buffer, name, o as usize, ROAD_SHOP_SIZE, count, read_road_shop).map(|r| (o, r))
+        })
+    {
+        Ok((o, rows)) => { offsets.shop = Some(o); road.shop = rows; }
+        Err(e) => problems.push(e),
+    }
+
+    let name = "Hunting Road skills (header 0x930, meta 0x910)";
+    match header_target(buffer, name, ROAD_SKILL_META_PTR)
+        .and_then(|m| buffer.get(m + 8..m + 10).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize).ok_or_else(|| format!("{name}: count is outside the file")))
+        .and_then(|count| header_target(buffer, name, ROAD_SKILLS_PTR).map(|o| (o, count)))
+        .and_then(|(o, count)| read_table(buffer, name, o, ROAD_SKILL_SIZE, count, read_road_skill).map(|r| (o, r)))
+    {
+        Ok((o, rows)) => { offsets.skills = Some(o as u32); road.skills = rows; }
+        Err(e) => problems.push(e),
+    }
+
+    // header 0x928 -> +0x8C4: neither the shape nor the length is documented, so a window of raw dwords
+    let name = "Hunting Road spawn weight bonus (header 0x928 + 0x8C4)";
+    match header_target(buffer, name, ROAD_UNK_928_PTR)
+        .and_then(|h| read_table(buffer, name, h + 0x8C4, 4, ROAD_WEIGHT_WINDOW, |r| r.read_u32::<LittleEndian>()).map(|r| (h + 0x8C4, r)))
+    {
+        Ok((o, rows)) => { offsets.weight = Some(o as u32); road.weight_window = rows; }
+        Err(e) => problems.push(e),
+    }
+    (road, offsets, problems)
+}
+
+pub fn road_patches(road: &RoadData, offsets: &RoadOffsets, original_rows: [usize; 5]) -> Res<Vec<InPlacePatch>> {
+    let mut out = Vec::new();
+    out.extend(flat_patch("Hunting Road points", offsets.points, original_rows[0], &road.points, write_road_point)?);
+    out.extend(flat_patch("Hunting Road Felyne shop", offsets.cat_shop, original_rows[1], &road.cat_shop, write_road_cat)?);
+    out.extend(flat_patch("Hunting Road fallback shop", offsets.shop, original_rows[2], &road.shop, write_road_shop)?);
+    out.extend(flat_patch("Hunting Road skills", offsets.skills, original_rows[3], &road.skills, write_road_skill)?);
+    out.extend(flat_patch("Hunting Road weight window", offsets.weight, original_rows[4], &road.weight_window, |w, v| w.write_u32::<LittleEndian>(*v))?);
+    Ok(out)
+}
+
+// ---- extra crafting tables ----------------------------------------------------------------------------------------
+
+/// Forging tables the Shop tab does not edit (special weapon 0x7AC, armor premium 0x7B0, second transmog 0xABC):
+/// ShopEntry rows that end on a first byte of 0xFF (crafting.hexpat CraftMatTable).
+pub fn read_forging_rows(buffer: &[u8], name: &str, slot: u32) -> Res<(u32, Vec<ShopEntry>)> {
+    let offset = header_target(buffer, name, slot)?;
+    let size = size_of::<ShopEntry>();
+    let mut rows = Vec::new();
+    loop {
+        let at = offset + rows.len() * size;
+        let slice = buffer.get(at..at + size).ok_or_else(|| {
+            format!("{name}: no terminator row before the end of the {}-byte file (table at 0x{offset:X})", buffer.len())
+        })?;
+        let entry = read_shop_entry(&mut Cursor::new(slice)).map_err(|e| format!("{name}: row {} at 0x{at:X}: {e}", rows.len()))?;
+        if slice[0] == 0xFF {
+            break;
+        }
+        rows.push(entry);
+    }
+    Ok((offset as u32, rows))
+}
+
+/// The terminator row that follows the entries is left as it is (it is not rewritten).
+pub fn forging_rows_patch(table: &str, offset: Option<u32>, original_rows: usize, rows: &[ShopEntry]) -> Res<Option<InPlacePatch>> {
+    flat_patch(table, offset, original_rows, rows, |w, e| write_shop_entry(w, e))
+}
+
+const COMBO_SHOP_SIZE: usize = 0x30;
+
+fn read_combo_shop<R: Read>(r: &mut R) -> Result<ComboShopRow> {
+    let mut row = ComboShopRow {
+        item_id: r.read_u16::<LittleEndian>()?,
+        combo_fee: r.read_u16::<LittleEndian>()?,
+        recipe_no: r.read_u16::<LittleEndian>()?,
+        recipes: Default::default(),
+    };
+    for rec in row.recipes.iter_mut() {
+        *rec = ComboRecipe { min: r.read_u8()?, max: r.read_u8()?, item_ids: [0; 3], item_qtys: [0; 3] };
+        for k in 0..3 {
+            rec.item_ids[k] = r.read_u16::<LittleEndian>()?;
+            rec.item_qtys[k] = r.read_u16::<LittleEndian>()?;
+        }
+    }
+    Ok(row)
+}
+
+fn write_combo_shop(w: &mut Vec<u8>, row: &ComboShopRow) -> Result<()> {
+    w.write_u16::<LittleEndian>(row.item_id)?;
+    w.write_u16::<LittleEndian>(row.combo_fee)?;
+    w.write_u16::<LittleEndian>(row.recipe_no)?;
+    for rec in &row.recipes {
+        w.write_u8(rec.min)?;
+        w.write_u8(rec.max)?;
+        for k in 0..3 {
+            w.write_u16::<LittleEndian>(rec.item_ids[k])?;
+            w.write_u16::<LittleEndian>(rec.item_qtys[k])?;
+        }
+    }
+    Ok(())
+}
+
+pub fn read_combine_shop(buffer: &[u8]) -> Res<(u32, Vec<ComboShopRow>)> {
+    let name = "combine shop (header 0xBAC)";
+    let offset = header_target(buffer, name, COMBINE_SHOP_PTR)?;
+    // shop.hexpat get_combo_shop_count: itemId != 0 and every item id <= 16700
+    let count = count_rows(buffer, offset, COMBO_SHOP_SIZE, 5000, |r| {
+        let id = |o: usize| u16::from_le_bytes([r[o], r[o + 1]]);
+        id(0) == 0 || id(0) > 16700 || id(8) > 16700 || id(12) > 16700 || id(16) > 16700
+    });
+    Ok((offset as u32, read_table(buffer, name, offset, COMBO_SHOP_SIZE, count, read_combo_shop)?))
+}
+
+pub fn combine_shop_patch(offset: Option<u32>, original_rows: usize, rows: &[ComboShopRow]) -> Res<Option<InPlacePatch>> {
+    flat_patch("combine shop", offset, original_rows, rows, write_combo_shop)
+}
+
+const TOWER_JEWEL_SIZE: usize = 0x20;
+
+fn read_tower_jewel<R: Read>(r: &mut R) -> Result<TowerJewelRecipe> {
+    let mut j = TowerJewelRecipe {
+        weapon_id: r.read_u16::<LittleEndian>()?,
+        level_min: r.read_u16::<LittleEndian>()?,
+        level_max: r.read_u16::<LittleEndian>()?,
+        stat_id: r.read_u8()?,
+        equip_type: r.read_u8()?,
+        mats: Default::default(),
+    };
+    for m in j.mats.iter_mut() {
+        *m = TowerJewelMat { item: r.read_u16::<LittleEndian>()?, qty: r.read_u16::<LittleEndian>()?, unk04: r.read_u32::<LittleEndian>()? };
+    }
+    Ok(j)
+}
+
+fn write_tower_jewel(w: &mut Vec<u8>, j: &TowerJewelRecipe) -> Result<()> {
+    w.write_u16::<LittleEndian>(j.weapon_id)?;
+    w.write_u16::<LittleEndian>(j.level_min)?;
+    w.write_u16::<LittleEndian>(j.level_max)?;
+    w.write_u8(j.stat_id)?;
+    w.write_u8(j.equip_type)?;
+    for m in &j.mats {
+        w.write_u16::<LittleEndian>(m.item)?;
+        w.write_u16::<LittleEndian>(m.qty)?;
+        w.write_u32::<LittleEndian>(m.unk04)?;
+    }
+    Ok(())
+}
+
+pub fn read_tower_jewels(buffer: &[u8]) -> Res<(u32, Vec<TowerJewelRecipe>)> {
+    let name = "tower jewel recipes (header 0x938)";
+    let count = important_count(buffer, name, TOWER_JEWEL_RECIPES_COUNT_INNER)?;
+    let offset = header_target(buffer, name, TOWER_JEWEL_RECIPES_PTR)?;
+    Ok((offset as u32, read_table(buffer, name, offset, TOWER_JEWEL_SIZE, count, read_tower_jewel)?))
+}
+
+pub fn tower_jewels_patch(offset: Option<u32>, original_rows: usize, rows: &[TowerJewelRecipe]) -> Res<Option<InPlacePatch>> {
+    flat_patch("tower jewel recipes", offset, original_rows, rows, write_tower_jewel)
+}
+
+// ---- weapon parameter tables ---------------------------------------------------------------------------------------
+
+const ACTION_DESCRIPTOR_SIZE: usize = 0x88;
+const ACTION_DESCRIPTOR_COUNT: usize = 0x35;
+const THRESHOLD_COUNT: usize = 0x34; // provisional in weapon_action_thresholds.hexpat
+const COATING_COUNT: usize = 23;
+const COATING_SIZE: usize = 0x18;
+const TOWER_MODIFIER_COUNT: usize = 32;
+const TOWER_MODIFIER_OFFSET: usize = 0x258;
+
+fn read_action_descriptor<R: Read>(r: &mut R) -> Result<ActionDescriptor> {
+    let mut d = ActionDescriptor {
+        valid: r.read_u8()?,
+        unk01: read_array_u8::<3, _>(r)?,
+        primary_mv: read_array_u16::<12, _>(r)?,
+        element_magnitude: read_array_u8::<12, _>(r)?,
+        attr28: read_array_u8::<12, _>(r)?,
+        attr34: read_array_u8::<12, _>(r)?,
+        scale: [0.0; 12],
+        secondary_mv: [0; 12],
+    };
+    for v in d.scale.iter_mut() {
+        *v = r.read_f32::<LittleEndian>()?;
+    }
+    d.secondary_mv = read_array_u16::<12, _>(r)?;
+    Ok(d)
+}
+
+fn write_action_descriptor(w: &mut Vec<u8>, d: &ActionDescriptor) -> Result<()> {
+    w.write_u8(d.valid)?;
+    w.extend_from_slice(&d.unk01);
+    for v in &d.primary_mv {
+        w.write_u16::<LittleEndian>(*v)?;
+    }
+    w.extend_from_slice(&d.element_magnitude);
+    w.extend_from_slice(&d.attr28);
+    w.extend_from_slice(&d.attr34);
+    for v in &d.scale {
+        w.write_f32::<LittleEndian>(*v)?;
+    }
+    for v in &d.secondary_mv {
+        w.write_u16::<LittleEndian>(*v)?;
+    }
+    Ok(())
+}
+
+fn read_rasta_npc<R: Read>(r: &mut R) -> Result<RastaNpc> {
+    Ok(RastaNpc { companion_type: r.read_u8()?, visual: read_array_u8::<3, _>(r)?, unk4: r.read_u8()?, unk5: r.read_u8()?, unk06: read_array_u8::<2, _>(r)? })
+}
+
+fn write_rasta_npc(w: &mut Vec<u8>, n: &RastaNpc) -> Result<()> {
+    w.write_u8(n.companion_type)?;
+    w.extend_from_slice(&n.visual);
+    w.write_u8(n.unk4)?;
+    w.write_u8(n.unk5)?;
+    w.extend_from_slice(&n.unk06);
+    Ok(())
+}
+
+fn read_rasta_weapon<R: Read>(r: &mut R) -> Result<RastaWeaponOption> {
+    Ok(RastaWeaponOption {
+        companion_type: r.read_u8()?,
+        weapon_type: r.read_u8()?,
+        level_min: r.read_u16::<LittleEndian>()?,
+        level_max: r.read_u16::<LittleEndian>()?,
+        weapon_id: r.read_u16::<LittleEndian>()?,
+    })
+}
+
+fn write_rasta_weapon(w: &mut Vec<u8>, o: &RastaWeaponOption) -> Result<()> {
+    w.write_u8(o.companion_type)?;
+    w.write_u8(o.weapon_type)?;
+    w.write_u16::<LittleEndian>(o.level_min)?;
+    w.write_u16::<LittleEndian>(o.level_max)?;
+    w.write_u16::<LittleEndian>(o.weapon_id)
+}
+
+fn read_rasta_armor<R: Read>(r: &mut R) -> Result<RastaArmorSet> {
+    Ok(RastaArmorSet {
+        companion_type: r.read_u8()?,
+        subtype: r.read_u8()?,
+        level_min: r.read_u16::<LittleEndian>()?,
+        level_max: r.read_u16::<LittleEndian>()?,
+        slot2_id: r.read_u16::<LittleEndian>()?,
+        slot3_id: r.read_u16::<LittleEndian>()?,
+        slot4_id: r.read_u16::<LittleEndian>()?,
+        slot5_id: r.read_u16::<LittleEndian>()?,
+        slot0_id: r.read_u16::<LittleEndian>()?,
+    })
+}
+
+fn write_rasta_armor(w: &mut Vec<u8>, a: &RastaArmorSet) -> Result<()> {
+    w.write_u8(a.companion_type)?;
+    w.write_u8(a.subtype)?;
+    w.write_u16::<LittleEndian>(a.level_min)?;
+    w.write_u16::<LittleEndian>(a.level_max)?;
+    w.write_u16::<LittleEndian>(a.slot2_id)?;
+    w.write_u16::<LittleEndian>(a.slot3_id)?;
+    w.write_u16::<LittleEndian>(a.slot4_id)?;
+    w.write_u16::<LittleEndian>(a.slot5_id)?;
+    w.write_u16::<LittleEndian>(a.slot0_id)
+}
+
+/// Offsets (file offsets, None = table could not be located) of every weapon parameter table.
+#[derive(Clone, Debug, Default)]
+pub struct WeaponParamOffsets {
+    pub thresholds: Option<u32>,
+    pub coating: Option<u32>,
+    pub tower_modifiers: Option<u32>,
+    pub melodies: Option<u32>,
+    pub gl_shell_types: Option<u32>,
+    pub gl_param_pairs: Option<u32>,
+    pub sa_phials: Option<u32>,
+    pub motion_primary: Option<u32>,
+    pub motion_alt: Option<u32>,
+    pub rasta_npcs: Option<u32>,
+    pub rasta_weapons: Option<u32>,
+    pub rasta_armors: Option<u32>,
+}
+
+pub fn read_weapon_params(buffer: &[u8]) -> (WeaponParams, WeaponParamOffsets, Vec<String>) {
+    let mut p = WeaponParams::default();
+    let mut o = WeaponParamOffsets::default();
+    let mut problems = Vec::new();
+    macro_rules! table {
+        ($offset:expr, $rows:expr, $res:expr) => {
+            match $res {
+                Ok((at, rows)) => { $offset = Some(at as u32); $rows = rows; }
+                Err(e) => problems.push(e),
+            }
+        };
+    }
+
+    let name = "weapon action thresholds (header 0xA0)";
+    table!(o.thresholds, p.thresholds, header_target(buffer, name, WEAPON_ACTION_THRESHOLDS_PTR)
+        .and_then(|at| read_table(buffer, name, at, 4, THRESHOLD_COUNT, |r| read_array_u8::<4, _>(r)).map(|r| (at, r))));
+
+    let name = "weapon coating modifiers (header 0xB0)";
+    table!(o.coating, p.coating, header_target(buffer, name, WEAPON_COATING_MODIFIERS_PTR).and_then(|at| {
+        read_table(buffer, name, at, COATING_SIZE, COATING_COUNT, |r| {
+            Ok(CoatingRow { delta_coating: r.read_i16::<LittleEndian>()?, unused: read_vec_u8(r, COATING_SIZE - 2)? })
+        }).map(|r| (at, r))
+    }));
+
+    let name = "tower / special weapon modifiers (header 0xB0 + 0x258)";
+    table!(o.tower_modifiers, p.tower_modifiers, header_target(buffer, name, WEAPON_COATING_MODIFIERS_PTR).and_then(|base| {
+        let at = base + TOWER_MODIFIER_OFFSET;
+        read_table(buffer, name, at, 8, TOWER_MODIFIER_COUNT, |r| {
+            Ok(TowerModifierRow { delta_tower: r.read_i16::<LittleEndian>()?, unused: read_array_u8::<6, _>(r)? })
+        }).map(|r| (at, r))
+    }));
+
+    let name = "hunting horn melodies (header 0x670)";
+    table!(o.melodies, p.melodies, important_count(buffer, name, HORN_MELODIES_COUNT_INNER).and_then(|count| {
+        let at = header_target(buffer, name, HUNTING_HORN_MELODIES_PTR)?;
+        read_table(buffer, name, at, 5, count, |r| Ok(HornMelody { song_id: r.read_u8()?, notes: read_array_u8::<4, _>(r)? })).map(|r| (at, r))
+    }));
+
+    let name = "gunlance random shell types (header 0x4F0)";
+    match header_target(buffer, name, GUNLANCE_RANDOM_SHELL_TYPES_PTR)
+        .and_then(|at| read_table(buffer, name, at, 3, 1, |r| read_array_u8::<3, _>(r)).map(|r| (at, r)))
+    {
+        Ok((at, rows)) => { o.gl_shell_types = Some(at as u32); p.gl_shell_types = rows[0]; }
+        Err(e) => problems.push(e),
+    }
+
+    let name = "gunlance random param pairs (header 0x4F8)";
+    table!(o.gl_param_pairs, p.gl_param_pairs, header_target(buffer, name, GUNLANCE_RANDOM_PARAM_PAIRS_PTR)
+        .and_then(|at| read_table(buffer, name, at, 2, 64, |r| read_array_u8::<2, _>(r)).map(|r| (at, r))));
+
+    // milli = *(i16*)( *( *(mhfdat+0xA88) + 0x1C ) + phial*2 )
+    let name = "switch axe phial strength (header 0xA88 -> +0x1C)";
+    match header_target(buffer, name, SWITCH_AXE_PHIAL_STRENGTH_PTR)
+        .and_then(|h| read_header_pointer(buffer, (h + 0x1C) as u32).filter(|&q| q != 0).ok_or_else(|| format!("{name}: pointer at struct+0x1C is null or outside the file")))
+        .and_then(|at| read_table(buffer, name, at as usize, 10, 1, |r| {
+            let mut a = [0i16; 5];
+            for v in a.iter_mut() { *v = r.read_i16::<LittleEndian>()?; }
+            Ok(a)
+        }).map(|r| (at, r)))
+    {
+        Ok((at, rows)) => { o.sa_phials = Some(at); p.sa_phials = rows[0]; }
+        Err(e) => problems.push(e),
+    }
+
+    let name = "weapon action descriptors (header 0x63C)";
+    table!(o.motion_primary, p.motion_primary, header_target(buffer, name, WEAPON_ACTION_DESCRIPTORS_PTR)
+        .and_then(|at| read_table(buffer, name, at, ACTION_DESCRIPTOR_SIZE, ACTION_DESCRIPTOR_COUNT, read_action_descriptor).map(|r| (at, r))));
+    let name = "weapon action descriptors, alternate bank (header 0x74C)";
+    table!(o.motion_alt, p.motion_alt, header_target(buffer, name, WEAPON_ACTION_DESCRIPTORS_ALT_PTR)
+        .and_then(|at| read_table(buffer, name, at, ACTION_DESCRIPTOR_SIZE, ACTION_DESCRIPTOR_COUNT, read_action_descriptor).map(|r| (at, r))));
+
+    let name = "Rasta NPC base entries (header 0x56C)";
+    table!(o.rasta_npcs, p.rasta_npcs, important_count(buffer, name, RASTA_NPCS_COUNT_INNER).and_then(|count| {
+        let at = header_target(buffer, name, RASTA_NPCS_PTR)?;
+        read_table(buffer, name, at, 8, count, read_rasta_npc).map(|r| (at, r))
+    }));
+    let name = "Rasta weapon options (header 0x570)";
+    table!(o.rasta_weapons, p.rasta_weapons, important_count(buffer, name, RASTA_WEAPONS_COUNT_INNER).and_then(|count| {
+        let at = header_target(buffer, name, RASTA_WEAPONS_PTR)?;
+        read_table(buffer, name, at, 8, count, read_rasta_weapon).map(|r| (at, r))
+    }));
+    let name = "Rasta armor sets (header 0x574)";
+    table!(o.rasta_armors, p.rasta_armors, important_count(buffer, name, RASTA_ARMOR_SETS_COUNT_INNER).and_then(|count| {
+        let at = header_target(buffer, name, RASTA_ARMOR_SETS_PTR)?;
+        read_table(buffer, name, at, 16, count, read_rasta_armor).map(|r| (at, r))
+    }));
+    (p, o, problems)
+}
+
+/// `original` = the row counts when the tables were read: [thresholds, coating, tower modifiers, melodies,
+/// GL pairs, motion primary, motion alt, rasta npcs, rasta weapons] then the rasta armor sets.
+pub fn weapon_params_patches(p: &WeaponParams, o: &WeaponParamOffsets, original: &[usize; 10]) -> Res<Vec<InPlacePatch>> {
+    let mut out = Vec::new();
+    out.extend(flat_patch("weapon action thresholds", o.thresholds, original[0], &p.thresholds, |w, v| { w.extend_from_slice(v); Ok(()) })?);
+    out.extend(flat_patch("weapon coating modifiers", o.coating, original[1], &p.coating, |w, c| {
+        w.write_i16::<LittleEndian>(c.delta_coating)?;
+        write_fixed(w, &c.unused, COATING_SIZE - 2);
+        Ok(())
+    })?);
+    out.extend(flat_patch("tower modifiers", o.tower_modifiers, original[2], &p.tower_modifiers, |w, t| {
+        w.write_i16::<LittleEndian>(t.delta_tower)?;
+        w.extend_from_slice(&t.unused);
+        Ok(())
+    })?);
+    out.extend(flat_patch("hunting horn melodies", o.melodies, original[3], &p.melodies, |w, m| {
+        w.write_u8(m.song_id)?;
+        w.extend_from_slice(&m.notes);
+        Ok(())
+    })?);
+    if let Some(at) = o.gl_shell_types {
+        out.push(InPlacePatch { table: "gunlance shell types".to_string(), offset: at as u64, bytes: p.gl_shell_types.to_vec() });
+    }
+    out.extend(flat_patch("gunlance param pairs", o.gl_param_pairs, original[4], &p.gl_param_pairs, |w, v| { w.extend_from_slice(v); Ok(()) })?);
+    if let Some(at) = o.sa_phials {
+        let mut bytes = Vec::new();
+        for v in &p.sa_phials {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        out.push(InPlacePatch { table: "switch axe phial strength".to_string(), offset: at as u64, bytes });
+    }
+    out.extend(flat_patch("weapon action descriptors", o.motion_primary, original[5], &p.motion_primary, write_action_descriptor)?);
+    out.extend(flat_patch("weapon action descriptors (alt)", o.motion_alt, original[6], &p.motion_alt, write_action_descriptor)?);
+    out.extend(flat_patch("Rasta NPCs", o.rasta_npcs, original[7], &p.rasta_npcs, write_rasta_npc)?);
+    out.extend(flat_patch("Rasta weapon options", o.rasta_weapons, original[8], &p.rasta_weapons, write_rasta_weapon)?);
+    out.extend(flat_patch("Rasta armor sets", o.rasta_armors, original[9], &p.rasta_armors, write_rasta_armor)?);
+    Ok(out)
+}
+
+// ---- arena and tutorial sets ----------------------------------------------------------------------------------------
+
+fn read_item_block<R: Read>(r: &mut R) -> Result<ItemBlock> {
+    Ok(ItemBlock { quantity: r.read_u16::<LittleEndian>()?, id: r.read_u16::<LittleEndian>()? })
+}
+
+fn write_item_block(w: &mut Vec<u8>, b: &ItemBlock) -> Result<()> {
+    w.write_u16::<LittleEndian>(b.quantity)?;
+    w.write_u16::<LittleEndian>(b.id)
+}
+
+fn read_def_block<R: Read>(r: &mut R) -> Result<DefBlock> {
+    Ok(DefBlock {
+        weapon_class: r.read_u16::<LittleEndian>()?,
+        weapon_id: r.read_u16::<LittleEndian>()?,
+        unk04: r.read_u16::<LittleEndian>()?,
+        head: r.read_u16::<LittleEndian>()?,
+        chest: r.read_u16::<LittleEndian>()?,
+        arms: r.read_u16::<LittleEndian>()?,
+        waist: r.read_u16::<LittleEndian>()?,
+        legs: r.read_u16::<LittleEndian>()?,
+        set_idx: r.read_u16::<LittleEndian>()?,
+        multi: r.read_u16::<LittleEndian>()?,
+    })
+}
+
+fn write_def_block(w: &mut Vec<u8>, d: &DefBlock) -> Result<()> {
+    for v in [d.weapon_class, d.weapon_id, d.unk04, d.head, d.chest, d.arms, d.waist, d.legs, d.set_idx, d.multi] {
+        w.write_u16::<LittleEndian>(v)?;
+    }
+    Ok(())
+}
+
+fn read_tutorial_set<R: Read>(r: &mut R) -> Result<TutorialSet> {
+    Ok(TutorialSet {
+        weapon_equip_type: r.read_u8()?,
+        unk01: r.read_u8()?,
+        weapon_id: r.read_u16::<LittleEndian>()?,
+        weapon_level: r.read_u16::<LittleEndian>()?,
+        head: r.read_u16::<LittleEndian>()?,
+        chest: r.read_u16::<LittleEndian>()?,
+        arms: r.read_u16::<LittleEndian>()?,
+        waist: r.read_u16::<LittleEndian>()?,
+        legs: r.read_u16::<LittleEndian>()?,
+        unk10: read_array_u8::<4, _>(r)?,
+    })
+}
+
+fn write_tutorial_set(w: &mut Vec<u8>, t: &TutorialSet) -> Result<()> {
+    w.write_u8(t.weapon_equip_type)?;
+    w.write_u8(t.unk01)?;
+    for v in [t.weapon_id, t.weapon_level, t.head, t.chest, t.arms, t.waist, t.legs] {
+        w.write_u16::<LittleEndian>(v)?;
+    }
+    w.extend_from_slice(&t.unk10);
+    Ok(())
+}
+
+/// Offsets of the two stage id lists (the other arena tables are reached through pointers, see PointerBlock).
+#[derive(Clone, Debug, Default)]
+pub struct ArenaOffsets {
+    pub stage_ids_0: Option<u32>,
+    pub stage_ids_1: Option<u32>,
+}
+
+pub fn read_arena(buffer: &[u8]) -> (Arena, ArenaOffsets, Vec<String>) {
+    let mut a = Arena::default();
+    let mut o = ArenaOffsets::default();
+    let mut problems = Vec::new();
+    // an item list ends on a quantity of -1
+    let item_rows = |b: &[u8], p: usize| count_rows(b, p, 4, 400, |r| r[0] == 0xFF && r[1] == 0xFF);
+
+    let name = "arena items (header 0x144)";
+    match header_target(buffer, name, ARENA_ITEMS_PTR).and_then(|at| {
+        read_pointer_blocks(buffer, name, at, 68, 4, |i| format!("#{i}"), item_rows, read_item_block)
+    }) {
+        Ok(v) => a.items = v,
+        Err(e) => problems.push(e),
+    }
+
+    let name = "arena equipment (header 0x148)";
+    match header_target(buffer, name, ARENA_EQUIPMENT_PTR).and_then(|at| {
+        read_pointer_blocks(buffer, name, at, 17, 20, |i| format!("#{i}"), |_, _| 4, read_def_block)
+    }) {
+        Ok(v) => a.equipment = v,
+        Err(e) => problems.push(e),
+    }
+
+    let name = "arena ammo (header 0x158)";
+    match header_target(buffer, name, ARENA_AMMO_PTR).and_then(|at| {
+        read_pointer_blocks(buffer, name, at, 23, 4, |i| format!("#{i}"), item_rows, read_item_block)
+    }) {
+        Ok(v) => a.ammo = v,
+        Err(e) => problems.push(e),
+    }
+
+    let name = "arena stage ids, chunk 0 (header 0x154)";
+    match header_target(buffer, name, ARENA_STAGE_IDS_0_PTR)
+        .and_then(|at| read_table(buffer, name, at, 2, 28, |r| r.read_u16::<LittleEndian>()).map(|r| (at, r)))
+    {
+        Ok((at, rows)) => { o.stage_ids_0 = Some(at as u32); a.stage_ids_0 = rows; }
+        Err(e) => problems.push(e),
+    }
+    let name = "arena stage ids, chunk 1 (header 0x14C)";
+    match header_target(buffer, name, ARENA_STAGE_IDS_1_PTR)
+        .and_then(|at| read_table(buffer, name, at, 2, 34, |r| r.read_u16::<LittleEndian>()).map(|r| (at, r)))
+    {
+        Ok((at, rows)) => { o.stage_ids_1 = Some(at as u32); a.stage_ids_1 = rows; }
+        Err(e) => problems.push(e),
+    }
+
+    let name = "tutorial equipment sets (header 0x15C)";
+    match important_count(buffer, name, TUTORIAL_EQUIP_SETS_COUNT_INNER).and_then(|n| {
+        let at = header_target(buffer, name, TUTORIAL_EQUIP_SETS_PTR)?;
+        read_pointer_blocks(buffer, name, at, n, 20, |i| format!("#{i}"), |_, _| 1, read_tutorial_set)
+    }) {
+        Ok(v) => a.tutorial = v,
+        Err(e) => problems.push(e),
+    }
+    (a, o, problems)
+}
+
+/// `original` = rows per list when read: items (68), ammo (23), tutorial sets; equipment blocks are always 4.
+pub fn arena_patches(a: &Arena, o: &ArenaOffsets, original_items: &[usize], original_ammo: &[usize], original_tutorial: &[usize]) -> Res<Vec<InPlacePatch>> {
+    let mut out = Vec::new();
+    out.extend(block_patches("arena items", &a.items, original_items, write_item_block)?);
+    let equipment_rows: Vec<usize> = a.equipment.iter().map(|_| 4).collect();
+    out.extend(block_patches("arena equipment", &a.equipment, &equipment_rows, write_def_block)?);
+    out.extend(block_patches("arena ammo", &a.ammo, original_ammo, write_item_block)?);
+    out.extend(block_patches("tutorial equipment sets", &a.tutorial, original_tutorial, write_tutorial_set)?);
+    out.extend(flat_patch("arena stage ids 0", o.stage_ids_0, 28, &a.stage_ids_0, |w, v| w.write_u16::<LittleEndian>(*v))?);
+    out.extend(flat_patch("arena stage ids 1", o.stage_ids_1, 34, &a.stage_ids_1, |w, v| w.write_u16::<LittleEndian>(*v))?);
+    Ok(out)
+}
+
+// ---- tower seals and tower upgrade costs -------------------------------------------------------------------------
+
+const TOWER_SEAL_SIZE: usize = 0x14;
+const TOWER_STEP_SIZE: usize = 24;
+
+/// Tower seal recipes (header 0x944). They end on an item id of 0 (tower_seal_craft_fill_recipes).
+pub fn read_tower_seals(buffer: &[u8]) -> Res<(u32, Vec<SigilTowerTable>)> {
+    let name = "tower seal recipes (header 0x944)";
+    let offset = header_target(buffer, name, TOWER_SEAL_FORGING_PTR)?;
+    let count = count_rows(buffer, offset, TOWER_SEAL_SIZE, 20000, |r| r[0] == 0 && r[1] == 0);
+    Ok((offset as u32, read_table(buffer, name, offset, TOWER_SEAL_SIZE, count, read_sigil_tower_entry)?))
+}
+
+pub fn tower_seals_patch(offset: Option<u32>, original_rows: usize, rows: &[SigilTowerTable]) -> Res<Option<InPlacePatch>> {
+    flat_patch("tower seal recipes", offset, original_rows, rows, write_sigil_tower_table)
+}
+
+fn read_tower_step<R: Read>(r: &mut R) -> Result<TowerUpgradeStep> {
+    let mut step = TowerUpgradeStep::default();
+    for pair in step.ok_cost.iter_mut() {
+        *pair = read_array_u8::<2, _>(r)?;
+    }
+    step.bow = read_array_u8::<4, _>(r)?;
+    Ok(step)
+}
+
+fn write_tower_step(w: &mut Vec<u8>, s: &TowerUpgradeStep) -> Result<()> {
+    for pair in &s.ok_cost {
+        w.extend_from_slice(pair);
+    }
+    w.extend_from_slice(&s.bow);
+    Ok(())
+}
+
+/// Tower upgrade cost tables (header 0x93C): a list of pointers that ends on a 0, one block of steps per pointer.
+pub fn read_tower_costs(buffer: &[u8]) -> Res<Vec<PointerBlock<TowerUpgradeStep>>> {
+    let name = "tower upgrade cost tables (header 0x93C)";
+    let at = header_target(buffer, name, TOWER_UPGRADE_COST_TABLES_PTR)?;
+    let n = count_rows(buffer, at, 4, 4096, |r| r == [0, 0, 0, 0]);
+    read_pointer_blocks(
+        buffer, name, at, n, TOWER_STEP_SIZE,
+        |i| format!("param {i}"),
+        |b, p| count_rows(b, p, TOWER_STEP_SIZE, 4096, |r| r.iter().all(|&x| x == 0)),
+        read_tower_step,
+    )
+}
+
+pub fn tower_costs_patches(blocks: &[PointerBlock<TowerUpgradeStep>], original_rows: &[usize]) -> Res<Vec<InPlacePatch>> {
+    block_patches("tower upgrade costs", blocks, original_rows, write_tower_step)
 }

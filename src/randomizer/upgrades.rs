@@ -50,7 +50,7 @@ fn collect_obtainable_item_ids(buf: &[u8]) -> Vec<u16> {
             buf[ITEM_DATA_PTR as usize + 2],
             buf[ITEM_DATA_PTR as usize + 3],
         ]);
-        if (off as usize) >= buf.len() && off >= 0x0180_0000 { off -= 0x0180_0000; }
+        if (off as usize) >= buf.len() { return Vec::new(); }
         off as usize
     } else {
         match read_item_offsets(buf) { Some((off, _, _)) => off as usize, None => return Vec::new() }
@@ -96,7 +96,7 @@ fn randomize_melee_upgrades_with_options(buf: &mut Vec<u8>, item_ids: &[u16], rn
             buf[MELEE_WEAPON_UPGRADE_PATH_PTR as usize + 2],
             buf[MELEE_WEAPON_UPGRADE_PATH_PTR as usize + 3],
         ]);
-        if (p as usize) >= buf.len() && p >= 0x0180_0000 { p -= 0x0180_0000; }
+        if (p as usize) >= buf.len() { return Err(format!("pointer 0x{:X} is outside the {}-byte file", p, buf.len())); }
         p as u64
     } else {
         return Ok(0);
@@ -143,7 +143,7 @@ fn randomize_ranged_upgrades_with_options(buf: &mut Vec<u8>, item_ids: &[u16], r
             buf[RANGED_WEAPON_UPGRADE_PATH_PTR as usize + 2],
             buf[RANGED_WEAPON_UPGRADE_PATH_PTR as usize + 3],
         ]);
-        if (p as usize) >= buf.len() && p >= 0x0180_0000 { p -= 0x0180_0000; }
+        if (p as usize) >= buf.len() { return Err(format!("pointer 0x{:X} is outside the {}-byte file", p, buf.len())); }
         p as u64
     } else { return Ok(0); };
     let mut cur = Cursor::new(&*buf);
@@ -183,7 +183,7 @@ fn count_melee_weapons(buf: &[u8]) -> usize {
         let at = MELEE_WEAPONS_PTR as usize;
         if buf.len() >= at + 4 {
             let mut off = u32::from_le_bytes([buf[at], buf[at+1], buf[at+2], buf[at+3]]);
-            if (off as usize) >= buf.len() && off >= 0x0180_0000 { off -= 0x0180_0000; }
+            if (off as usize) >= buf.len() { return 0; }
             off
         } else {
             match read_mhfdat_offsets(buf) { Some((melee_off, _)) => melee_off, None => 0 }
@@ -199,7 +199,7 @@ fn count_ranged_weapons(buf: &[u8]) -> usize {
         let at = RANGED_WEAPONS_PTR as usize;
         if buf.len() >= at + 4 {
             let mut off = u32::from_le_bytes([buf[at], buf[at+1], buf[at+2], buf[at+3]]);
-            if (off as usize) >= buf.len() && off >= 0x0180_0000 { off -= 0x0180_0000; }
+            if (off as usize) >= buf.len() { return 0; }
             off
         } else {
             match read_mhfdat_offsets(buf) { Some((_, ranged_off)) => ranged_off, None => 0 }

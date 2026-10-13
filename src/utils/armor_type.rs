@@ -34,6 +34,15 @@ impl Default for ArmorTypeFlags {
 }
 
 impl ArmorTypeFlags {
+    /// Bits that have a name here (0, 6-9, 14-16, 18, 19). rain.bin armors also use bits 1-5, 10-13 and 17
+    /// (0x23C3E): they must survive a check box being toggled.
+    pub const KNOWN_MASK: u32 = (1 << 0) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 14) | (1 << 15) | (1 << 16) | (1 << 18) | (1 << 19);
+
+    /// `stored` with the named bits replaced by this value and every other bit left as it was.
+    pub fn merge_into(&self, stored: u32) -> u32 {
+        (stored & !Self::KNOWN_MASK) | (self.to_u32() & Self::KNOWN_MASK)
+    }
+
     /// Decode a u32 armor_type value into individual flags
     pub fn from_u32(value: u32) -> Self {
         Self {

@@ -113,6 +113,15 @@ pub struct WeaponType {
 }
 
 impl WeaponType {
+    /// Bits that have a name here (0..=12, 14, 27). Any other bit of the stored u32 belongs to nobody
+    /// the editor knows about and must be kept when a check box is toggled.
+    pub const KNOWN_MASK: u32 = 0x0000_1FFF | 0x0000_4000 | 0x0800_0000;
+
+    /// `stored` with the named bits replaced by this value and every other bit left as it was.
+    pub fn merge_into(&self, stored: u32) -> u32 {
+        (stored & !Self::KNOWN_MASK) | (self.to_u32() & Self::KNOWN_MASK)
+    }
+
     pub fn from_u32(value: u32) -> Self {
         Self {
             finess_base: (value & 0x00000001) != 0,

@@ -1,3 +1,15 @@
+/// Drag value for a field of a `#[repr(packed)]` struct: the value is copied out and back, a reference to it is never
+/// taken (it could be unaligned). Sets `$changed` to true when the value was edited.
+macro_rules! packed_drag {
+    ($ui:expr, $field:expr, $changed:ident) => {{
+        let mut v = $field;
+        if $ui.add(egui::DragValue::new(&mut v)).changed() {
+            $field = v;
+            $changed = true;
+        }
+    }};
+}
+
 pub mod weapons;
 pub mod armor;
 pub mod monster;
@@ -12,6 +24,13 @@ pub mod sharpness;
 pub mod bullet_sets;
 pub mod quests;
 pub mod seasonal_events;
+pub mod crowns;
+pub mod skill_effects;
+pub mod caravan;
+pub mod road;
+pub mod craft_more;
+pub mod weapon_params;
+pub mod arena;
 
 pub use mhfjmp::MhfjmpApp;
 
@@ -99,6 +118,12 @@ pub enum MainTab {
     Quests,
     Monsters,
     SeasonalEvents,
+    SkillEffects,
+    Caravan,
+    HuntingRoad,
+    CraftMore,
+    WeaponParams,
+    Arena,
 }
 
 impl Default for MainTab {
@@ -112,6 +137,8 @@ pub enum WorkshopCategory {
     WeaponShops,
     ArmorShops,
     Deco,
+    Combine,
+    TowerSeals,
 }
 
 impl Default for WorkshopCategory {
@@ -124,6 +151,8 @@ impl Default for WorkshopCategory {
 pub enum QuestTab {
     HR,
     GR,
+    GRMenus,
+    Beginner,
 }
 
 impl Default for QuestTab {
@@ -138,6 +167,9 @@ pub enum WeaponShopTab {
     ForgingGR,
     ForgingZenith,
     ForgingTower,
+    Special,
+    TowerJewels,
+    TowerCosts,
 }
 
 impl Default for WeaponShopTab {
@@ -153,6 +185,7 @@ pub enum ArmorShopTab {
     ForgingGR,
     ForgingZenith,
     ForgingTower,
+    Premium,
 }
 
 impl Default for ArmorShopTab {
@@ -197,6 +230,7 @@ pub enum MonsterTab {
     CarveParts,
     PartBreakDrops,
     MonsterDescriptions,
+    Crowns,
 }
 
 impl Default for MonsterTab {
@@ -492,6 +526,57 @@ pub struct MhfdatApp {
     pub selected_quest_index: Option<usize>,
     pub selected_quest_rank: usize, // 0-5 for HR, 0-6 for GR
     pub quest_page: u32,
+
+    // Tables that are rewritten in place (core/mhfdat.rs: read_crowns ... read_arena). None of them can grow:
+    // a longer table would overwrite the block that follows it, so the save refuses it.
+    /// (tab, message) for every table that could not be read; shown at the top of the tab.
+    pub table_problems: Vec<(&'static str, String)>,
+    pub gr_menus: Vec<crate::model::mhfdat::PointerBlock<crate::model::mhfdat::QuestItem>>,
+    pub gr_menus_modified: bool,
+    pub selected_gr_menu: usize,
+    pub gr_menu_page: u32,
+    pub beginner_quests: Vec<u16>,
+    pub beginner_quests_modified: bool,
+    pub crowns: Vec<crate::model::mhfdat::CrownRow>,
+    pub crowns_modified: bool,
+    pub crowns_page: u32,
+    pub crowns_selected: Option<usize>,
+    pub skill_effects: Vec<crate::model::mhfdat::SkillEffect>,
+    pub skill_effects_modified: bool,
+    pub skill_effects_page: u32,
+    pub skill_effects_selected: Option<usize>,
+    pub skill_effects_search: String,
+    pub caravan: crate::model::mhfdat::Caravan,
+    pub caravan_modified: bool,
+    pub caravan_tab: caravan::CaravanTab,
+    pub caravan_selected: Option<usize>,
+    pub caravan_group: usize,
+    pub caravan_page: u32,
+    pub road: crate::model::mhfdat::RoadData,
+    pub road_modified: bool,
+    pub road_tab: road::RoadTab,
+    pub road_page: u32,
+    pub road_selected: Option<usize>,
+    pub special_weapon_forging: Vec<ShopEntry>,
+    pub armor_premium_forging: Vec<ShopEntry>,
+    pub transmog_forging_2: Vec<ShopEntry>,
+    pub combine_shop: Vec<crate::model::mhfdat::ComboShopRow>,
+    pub tower_jewels: Vec<crate::model::mhfdat::TowerJewelRecipe>,
+    pub tower_costs: Vec<crate::model::mhfdat::PointerBlock<crate::model::mhfdat::TowerUpgradeStep>>,
+    pub craft_more_modified: bool,
+    pub craft_more_page: u32,
+    pub craft_more_selected: Option<usize>,
+    pub weapon_params: crate::model::mhfdat::WeaponParams,
+    pub weapon_params_modified: bool,
+    pub weapon_params_tab: weapon_params::WeaponParamsTab,
+    pub weapon_params_page: u32,
+    pub weapon_params_selected: usize,
+    pub weapon_params_group: usize,
+    pub arena: crate::model::mhfdat::Arena,
+    pub arena_modified: bool,
+    pub arena_tab: arena::ArenaTab,
+    pub arena_selected: usize,
+    pub arena_chunk: u32,
     
     // Armor Upgrade Materials
     pub armor_upgrade_mats: crate::model::mhfdat::ArmorUpgradeMats,
@@ -818,6 +903,54 @@ impl Default for MhfdatApp {
             selected_quest_index: None,
             selected_quest_rank: 0,
             quest_page: 0,
+
+            table_problems: Vec::new(),
+            gr_menus: Vec::new(),
+            gr_menus_modified: false,
+            selected_gr_menu: 0,
+            gr_menu_page: 0,
+            beginner_quests: Vec::new(),
+            beginner_quests_modified: false,
+            crowns: Vec::new(),
+            crowns_modified: false,
+            crowns_page: 0,
+            crowns_selected: None,
+            skill_effects: Vec::new(),
+            skill_effects_modified: false,
+            skill_effects_page: 0,
+            skill_effects_selected: None,
+            skill_effects_search: String::new(),
+            caravan: Default::default(),
+            caravan_modified: false,
+            caravan_tab: Default::default(),
+            caravan_selected: None,
+            caravan_group: 0,
+            caravan_page: 0,
+            road: Default::default(),
+            road_modified: false,
+            road_tab: Default::default(),
+            road_page: 0,
+            road_selected: None,
+            special_weapon_forging: Vec::new(),
+            armor_premium_forging: Vec::new(),
+            transmog_forging_2: Vec::new(),
+            combine_shop: Vec::new(),
+            tower_jewels: Vec::new(),
+            tower_costs: Vec::new(),
+            craft_more_modified: false,
+            craft_more_page: 0,
+            craft_more_selected: None,
+            weapon_params: Default::default(),
+            weapon_params_modified: false,
+            weapon_params_tab: Default::default(),
+            weapon_params_page: 0,
+            weapon_params_selected: 0,
+            weapon_params_group: 0,
+            arena: Default::default(),
+            arena_modified: false,
+            arena_tab: Default::default(),
+            arena_selected: 0,
+            arena_chunk: 0,
             
             // Armor Upgrade Materials
             armor_upgrade_mats: Default::default(),
@@ -939,10 +1072,34 @@ impl MhfdatApp {
         // Tower params - store weapon count for each type
     }
     
+    /// Opens a clear mhfdat: refuses (with the file size and SHA-256) anything that does not start like one,
+    /// instead of showing an empty editor with "File loaded successfully."
+    pub fn open(path: PathBuf, data: Vec<u8>) -> Result<Self, String> {
+        let refuse = |why: String, data: &[u8]| {
+            format!("{why} (file {}: {} bytes, SHA-256 {})", path.display(), data.len(), crate::core::packing::sha256_hex(data))
+        };
+        let warnings = crate::core::mhfdat::check_mhfdat_signature(&data).map_err(|e| refuse(e, &data))?;
+        // the pointer table must fit, otherwise every table lookup would be out of the file
+        if data.len() < 0xBB4 {
+            return Err(refuse(format!("the header pointer table needs 0xBB4 bytes, the file has {}", data.len()), &data));
+        }
+        let melee_slot = crate::core::mhfdat::read_header_pointer(&data, MELEE_WEAPONS_PTR).unwrap_or(0);
+        let mut app = MhfdatApp::default();
+        app.load_file(path.clone(), data);
+        if app.melee_weapons.is_empty() && app.ranged_weapons.is_empty() {
+            let buffer = std::mem::take(&mut app.buffer);
+            return Err(refuse(format!("no weapon table could be read: melee pointer (header 0x7C) = 0x{melee_slot:X}"), &buffer));
+        }
+        if !warnings.is_empty() {
+            app.error_message = Some(format!("Loaded with warnings: {}", warnings.join("; ")));
+        }
+        Ok(app)
+    }
+
     pub fn load_file(&mut self, path: PathBuf, data: Vec<u8>) {
         // Load the file data into the app
         self.current_file = Some(path);
-        self.buffer = data.clone();
+        self.buffer = data;
         // Clear previous logs; only armor-upgrade debug is kept elsewhere on demand
         self.debug_logs.clear();
         // Armor Upgrade logs (RegAUpgradeRow) – pointer, offset, count, preview
@@ -1086,9 +1243,11 @@ impl MhfdatApp {
             self.ranged_weapon_descriptions.truncate(min_ranged);
         }
         
-        // Load armor data (this also loads items)
-        let buffer_ref = self.buffer.clone();
+        // Load armor data (this also loads items). The loader reads the buffer through `&[u8]` while it
+        // fills `self`, so move the buffer out for the call instead of copying 28 MB.
+        let buffer_ref = std::mem::take(&mut self.buffer);
         self.load_armor_data(&buffer_ref);
+        self.buffer = buffer_ref;
 
         // After armors are loaded, refresh equipment counts from entries
         #[allow(unused)]
@@ -1096,15 +1255,9 @@ impl MhfdatApp {
             self.refresh_equipment_counts_from_entries();
         }
 
-        // Load deco count limiter from 0x00cd418a (must be loaded before deco_ids)
-        if self.buffer.len() >= crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR as usize + 2 {
-            self.deco_id_count_limiter = u16::from_le_bytes(
-                self.buffer[crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR as usize..
-                            crate::model::mhfdat_pointers::DECO_ID_COUNT_LIMITER_PTR as usize + 2]
-                    .try_into().unwrap()
-            );
-            self.deco_id_count_limiter_modified = false;
-        }
+        // Decoration count (important_nums + 0x0A); must be loaded before deco_ids
+        self.deco_id_count_limiter = self.imp_count(crate::model::mhfdat_pointers::DECO_ID_COUNT_INNER);
+        self.deco_id_count_limiter_modified = false;
 
         // Load decorations (DecoID table)
         if let Some(deco_off) = {
@@ -1132,15 +1285,12 @@ impl MhfdatApp {
         // Load seasonal event timing
         self.load_seasonal_events();
 
-        // Load automatic skills count limiter from 0x00cd4478
-        if self.buffer.len() >= crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as usize + 2 {
-            self.automatic_skills_count_limiter = u16::from_le_bytes(
-                self.buffer[crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as usize..
-                            crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_LIMITER_PTR as usize + 2]
-                    .try_into().unwrap()
-            );
-            self.automatic_skills_count_limiter_modified = false;
-        }
+        // Tables rewritten in place (crowns, skill effects, GR menus, Caravan, Hunting Road, ...)
+        self.load_inplace_tables();
+
+        // Automatic skills count (important_nums + 0x2F8)
+        self.automatic_skills_count_limiter = self.imp_count(crate::model::mhfdat_pointers::AUTOMATIC_SKILLS_COUNT_INNER);
+        self.automatic_skills_count_limiter_modified = false;
 
         // Load upgrade paths for melee and ranged weapons (dereferenced pointers)
         if let Some(mw_off) = {
@@ -1261,37 +1411,56 @@ impl MhfdatApp {
         // Reset pages
         self.shop_page = 0;
         self.armor_page = 0;
+
+        self.clear_inplace_tables();
         
         // Clear debug logs
         self.debug_logs.clear();
     }
 }
 
+/// Rows per page on every entity list. Melee Weapons is the reference.
+pub const LIST_PAGE_SIZE: usize = 15;
+
+/// `(start, end)` of page `page` in a list of `len` rows, clamped so that `list[start..end]` can never
+/// panic: a page past the end (e.g. after a search shrinks the list) shows the last page instead.
+pub fn page_range(page: usize, per_page: usize, len: usize) -> (usize, usize) {
+    if per_page == 0 || len == 0 {
+        return (0, 0);
+    }
+    let last = (len - 1) / per_page;
+    let start = page.min(last) * per_page;
+    (start, (start + per_page).min(len))
+}
+
+/// Clamp `page` and return `(start, end, total_pages)` for `LIST_PAGE_SIZE` rows.
+pub fn list_window(page: &mut u32, total: usize) -> (usize, usize, usize) {
+    let total_pages = if total == 0 {
+        1
+    } else {
+        (total + LIST_PAGE_SIZE - 1) / LIST_PAGE_SIZE
+    };
+    let current = (*page as usize).min(total_pages - 1);
+    if *page != current as u32 {
+        *page = current as u32;
+    }
+    let (start, end) = page_range(current, LIST_PAGE_SIZE, total);
+    (start, end, total_pages)
+}
+
 impl App for MhfdatApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Apply NotoSansCJKjp font everywhere
-        let mut fonts = FontDefinitions::default();
-        fonts.font_data.insert(
-            "noto".to_owned(),
-            FontData::from_owned(NOTO_FONT.to_vec()),
-        );
-        for family in [
-            FontFamily::Proportional,
-            FontFamily::Monospace,
-            FontFamily::Name("noto".into()),
-        ] {
-            fonts.families.entry(family).or_default().insert(0, "noto".to_owned());
-        }
-        ctx.set_fonts(fonts);
-        let mut style = (*ctx.style()).clone();
-        style.text_styles = [
-            (egui::TextStyle::Heading, egui::FontId::new(24.0, FontFamily::Proportional)),
-            (egui::TextStyle::Body, egui::FontId::new(18.0, FontFamily::Proportional)),
-            (egui::TextStyle::Monospace, egui::FontId::new(16.0, FontFamily::Monospace)),
-            (egui::TextStyle::Button, egui::FontId::new(18.0, FontFamily::Proportional)),
-            (egui::TextStyle::Small, egui::FontId::new(14.0, FontFamily::Proportional)),
-        ].into();
-        ctx.set_style(style);
+        self.ui(ctx);
+    }
+}
+
+impl MhfdatApp {
+    /// One frame of the editor. Separate from `App::update` (which only forwards here) so a frame can be
+    /// driven without a window, e.g. by the timing tests.
+    pub fn ui(&mut self, ctx: &egui::Context) {
+        // NotoSansCJKjp everywhere + the editor's text sizes, installed once (not every frame)
+        crate::utils::theme::install_fonts(ctx);
+        crate::utils::theme::install_mhfdat_text_styles(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if ui.button("Back").clicked() {
@@ -1397,6 +1566,19 @@ impl App for MhfdatApp {
                 if ui.selectable_label(self.main_tab == MainTab::SeasonalEvents, "Seasonal Events").clicked() {
                     self.main_tab = MainTab::SeasonalEvents;
                 }
+                for (tab, label) in [
+                    (MainTab::SkillEffects, "Skill Effects"),
+                    (MainTab::Caravan, "Caravan"),
+                    (MainTab::HuntingRoad, "Hunting Road"),
+                    (MainTab::CraftMore, "More Crafting"),
+                    (MainTab::WeaponParams, "Weapon Params"),
+                    (MainTab::Arena, "Arena"),
+                ] {
+                    if ui.selectable_label(self.main_tab == tab, label).clicked() {
+                        self.main_tab = tab;
+                    }
+                }
+
             });
             ui.separator();
 
@@ -1434,6 +1616,12 @@ impl App for MhfdatApp {
                 MainTab::SeasonalEvents => {
                     self.show_seasonal_events_tab(ui);
                 }
+                MainTab::SkillEffects => self.show_skill_effects_tab(ui),
+                MainTab::Caravan => self.show_caravan_tab(ui),
+                MainTab::HuntingRoad => self.show_road_tab(ui),
+                MainTab::CraftMore => self.show_craft_more_tab(ui),
+                MainTab::WeaponParams => self.show_weapon_params_tab(ui),
+                MainTab::Arena => self.show_arena_tab(ui),
             }
 
             // Place Debug Logs at the end of the CentralPanel UI
@@ -1449,6 +1637,103 @@ impl App for MhfdatApp {
 }
 
 impl MhfdatApp {
+    /// Shows, in red, every table of `tab` that could not be read and why (the rest of the tab stays usable).
+    pub fn show_table_problems(&self, ui: &mut egui::Ui, tab: &str) {
+        for (_, msg) in self.table_problems.iter().filter(|(t, _)| *t == tab) {
+            ui.colored_label(egui::Color32::from_rgb(220, 70, 70), msg);
+        }
+    }
+
+    /// `label` + drag value as one grid row; true when the value changed.
+    pub fn num_row<N: egui::emath::Numeric>(ui: &mut egui::Ui, label: &str, value: &mut N) -> bool {
+        ui.label(label);
+        let changed = ui.add(egui::DragValue::new(value)).changed();
+        ui.end_row();
+        changed
+    }
+
+    /// Same for a float (finer drag speed).
+    pub fn float_row(ui: &mut egui::Ui, label: &str, value: &mut f32) -> bool {
+        ui.label(label);
+        let changed = ui.add(egui::DragValue::new(value).speed(0.01)).changed();
+        ui.end_row();
+        changed
+    }
+
+    /// A word of flags: one check box per named bit, the bits without a name are listed as bit N.
+    pub fn bits_row(ui: &mut egui::Ui, label: &str, value: &mut u16, names: &[&str]) -> bool {
+        let mut changed = false;
+        ui.label(label);
+        ui.horizontal_wrapped(|ui| {
+            for bit in 0..16 {
+                let mut on = *value & (1 << bit) != 0;
+                let name = names.get(bit).copied().filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| format!("bit {bit}"));
+                if ui.checkbox(&mut on, name).changed() {
+                    *value = (*value & !(1 << bit)) | ((on as u16) << bit);
+                    changed = true;
+                }
+            }
+            ui.label(format!("= 0x{:04X}", *value));
+        });
+        ui.end_row();
+        changed
+    }
+
+    /// A 0/1 field as a check box (any other value is shown as checked, with its number, and kept until the box is clicked).
+    pub fn flag_row<N: Copy + PartialEq + From<u8> + std::fmt::Display>(ui: &mut egui::Ui, label: &str, value: &mut N) -> bool {
+        let (zero, one) = (N::from(0), N::from(1));
+        let mut on = *value != zero;
+        ui.label(label);
+        let note = if *value != zero && *value != one { format!("(value {})", *value) } else { String::new() };
+        let changed = ui.checkbox(&mut on, note).changed();
+        if changed {
+            *value = if on { one } else { zero };
+        }
+        ui.end_row();
+        changed
+    }
+
+    /// A 0/1 byte as a check box inside a row (any other value is shown as checked and kept until the box is clicked).
+    pub fn flag_cell(ui: &mut egui::Ui, value: &mut u8) -> bool {
+        let mut on = *value != 0;
+        let note = if *value > 1 { format!("{}", *value) } else { String::new() };
+        let changed = ui.checkbox(&mut on, note).changed();
+        if changed {
+            *value = on as u8;
+        }
+        changed
+    }
+
+    /// Fixed-width Shift-JIS text field. A text that does not fit is refused on the spot and the bytes stay as they were.
+    pub fn text_row(ui: &mut egui::Ui, label: &str, bytes: &mut Vec<u8>, width: usize) -> bool {
+        let mut text = crate::core::mhfdat::decode_fixed_text(bytes);
+        ui.label(label);
+        let mut changed = false;
+        ui.vertical(|ui| {
+            if ui.add(egui::TextEdit::singleline(&mut text).desired_width(320.0)).changed() {
+                match crate::core::mhfdat::encode_fixed_text(&text, width) {
+                    Ok(b) => {
+                        *bytes = b;
+                        changed = true;
+                    }
+                    Err(e) => {
+                        ui.colored_label(egui::Color32::from_rgb(220, 70, 70), format!("not applied: {e}"));
+                    }
+                }
+            }
+        });
+        ui.end_row();
+        changed
+    }
+
+    /// Item name of an id, for the labels next to item id fields.
+    pub fn item_label(names: &[String], id: u16) -> String {
+        match names.get(id as usize) {
+            Some(n) if !n.is_empty() => n.clone(),
+            _ => String::new(),
+        }
+    }
+
     /// Render a horizontally wrapped row for responsive layouts
     pub fn responsive_row<F: FnOnce(&mut egui::Ui)>(ui: &mut egui::Ui, add_contents: F) {
         ui.horizontal_wrapped(|ui| {
@@ -1470,6 +1755,38 @@ impl MhfdatApp {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 add_contents(ui);
+            });
+    }
+
+    /// True when `key` is showing a details page, the same switch Melee Weapons uses.
+    pub fn category_details(&self, key: &str) -> bool {
+        matches!(self.view_mode.get(key).copied(), Some(ViewMode::Details))
+    }
+
+    pub fn open_category_details(&mut self, key: &str) {
+        self.view_mode.insert(key.to_string(), ViewMode::Details);
+    }
+
+    pub fn back_category_list(&mut self, key: &str) {
+        self.view_mode.insert(key.to_string(), ViewMode::List);
+    }
+
+    /// Collapsing list used by Melee Weapons: "Noun List (showing a-b of n)" around a vertical scroll.
+    pub fn entity_list<F: FnOnce(&mut egui::Ui)>(
+        ui: &mut egui::Ui,
+        scroll_id: &str,
+        noun: &str,
+        start: usize,
+        end: usize,
+        total: usize,
+        body: F,
+    ) {
+        let showing_start = if total == 0 { 0 } else { start + 1 };
+        egui::CollapsingHeader::new(format!("{noun} List (showing {showing_start}-{end} of {total})"))
+            .id_source(format!("{scroll_id}_header"))
+            .default_open(true)
+            .show(ui, |ui| {
+                Self::list_scroll(ui, scroll_id, body);
             });
     }
 

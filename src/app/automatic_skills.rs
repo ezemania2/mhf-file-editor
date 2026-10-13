@@ -2,7 +2,6 @@ use super::*;
 use egui;
 use crate::utils::automatic_skills::{auto_skill_name, AUTO_SKILL_LIST};
 
-const PAGE_SIZE: usize = 20;
 const EQ_TYPES: [(u8, &str); 7] = [
     (0x00, "Legs"),
     (0x02, "Head"),
@@ -44,7 +43,21 @@ impl MhfdatApp {
     }
 
     fn show_automatic_skills_list(&mut self, ui: &mut egui::Ui) {
-        MhfdatApp::section_header(ui, "Automatic Skills Table", |ui| {
+        MhfdatApp::section_header(ui, &format!("Automatic Skills (found: {})", self.automatic_skills.len()), |ui| {
+            if ui.button("Add New").clicked() {
+                self.automatic_skills.push(AutomaticSkill {
+                    is_armor: false,
+                    eq_type: 0x02,
+                    equip_id: 0,
+                    skill_id: 0,
+                    padding: [0; 2],
+                });
+                self.automatic_skills_count_limiter = self.automatic_skills.len() as u16;
+                self.automatic_skills_count_limiter_modified = true;
+                self.selected_automatic_skill_index = Some(self.automatic_skills.len() - 1);
+                self.view_mode.insert("automatic_skills".to_string(), ViewMode::Details);
+                self.automatic_skills_modified = true;
+            }
             if ui.button("Export to JSON").clicked() {
                 if let Ok(Some(path)) = native_dialog::FileDialog::new()
                     .add_filter("JSON", &["json"])
@@ -72,7 +85,7 @@ impl MhfdatApp {
         });
 
         // Filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             let filter_text = self.automatic_skills_eq_type_filter
                 .map(Self::get_eq_type_name)
@@ -88,21 +101,6 @@ impl MhfdatApp {
 
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.automatic_skills_search);
-
-            if ui.button("Add New").clicked() {
-                self.automatic_skills.push(AutomaticSkill {
-                    is_armor: false,
-                    eq_type: 0x02,
-                    equip_id: 0,
-                    skill_id: 0,
-                    padding: [0; 2],
-                });
-                self.automatic_skills_count_limiter = self.automatic_skills.len() as u16;
-                self.automatic_skills_count_limiter_modified = true;
-                self.selected_automatic_skill_index = Some(self.automatic_skills.len() - 1);
-                self.view_mode.insert("automatic_skills".to_string(), ViewMode::Details);
-                self.automatic_skills_modified = true;
-            }
         });
 
         // Filter entries
@@ -127,18 +125,8 @@ impl MhfdatApp {
             .collect();
 
         // Pagination
-        let total = filtered.len();
-        let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-        let page = (self.automatic_skills_page as usize).min(total_pages.saturating_sub(1));
-        if page != self.automatic_skills_page as usize {
-            self.automatic_skills_page = page as u32;
-        }
-        MhfdatApp::pagination_controls(ui, &mut self.automatic_skills_page, total_pages);
+        let (start, end, total_pages) = crate::app::list_window(&mut self.automatic_skills_page, filtered.len());
 
-        let start = page * PAGE_SIZE;
-        let end = (start + PAGE_SIZE).min(total);
-
-        // Pre-compute names
         let display_data: Vec<_> = filtered[start..end].iter()
             .map(|(idx, is_armor, eq_type, equip_id, skill_id)| {
                 let name = self.get_equip_name_from_autoskill(*eq_type, *equip_id);
@@ -146,10 +134,10 @@ impl MhfdatApp {
             })
             .collect();
 
-        MhfdatApp::list_scroll(ui, "automatic_skills_scroll", |ui| {
+        MhfdatApp::entity_list(ui, "automatic_skills_scroll", "Skill", start, end, filtered.len(), |ui| {
             egui::Grid::new("automatic_skills_grid").striped(true).show(ui, |ui| {
                 ui.label("ID");
-                ui.label("Unk00");
+                ui.label("Is Armor");
                 ui.label("Type");
                 ui.label("Equip ID");
                 ui.label("Equip Name");
@@ -173,6 +161,7 @@ impl MhfdatApp {
                 }
             });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.automatic_skills_page, total_pages);
     }
 
     fn show_automatic_skills_details(&mut self, ui: &mut egui::Ui) {

@@ -26,6 +26,9 @@ enum AppState {
 pub struct RootApp {
     state: AppState,
     recent_files: Vec<String>,
+    /// Last "could not open this file" message, drawn on the selector screen (stderr is invisible in the
+    /// windowed build).
+    open_error: Option<String>,
 }
 
 impl Default for RootApp {
@@ -33,6 +36,7 @@ impl Default for RootApp {
         Self {
             state: AppState::FileTypeSelector,
             recent_files: Vec::new(),
+            open_error: None,
         }
     }
 }
@@ -45,22 +49,8 @@ impl eframe::App for RootApp {
             return;
         }
 
-        // Initialize fonts
-        let mut fonts = egui::FontDefinitions::default();
-        fonts.font_data.insert(
-            "noto".to_owned(),
-            egui::FontData::from_owned(NOTO_FONT.to_vec()),
-        );
-        for family in [
-            egui::FontFamily::Proportional,
-            egui::FontFamily::Monospace,
-            egui::FontFamily::Name("noto".into()),
-        ] {
-            fonts.families.entry(family).or_default().insert(0, "noto".to_owned());
-        }
-        ctx.set_fonts(fonts);
-
-        
+        // Fonts are installed once per context, not every frame
+        crate::utils::theme::install_fonts(ctx);
 
         match &mut self.state {
             AppState::FileTypeSelector => {
@@ -79,74 +69,39 @@ impl eframe::App for RootApp {
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("MHFJMP Files", &["bin"])
                             .set_title("Select MHFJMP file")
-                            .pick_file() 
+                            .pick_file()
                         {
-                            // Vérifier que le nom du fichier contient "mhfjmp" (insensible à la casse)
-                            if let Some(file_name) = path.file_name() {
-                                let file_name_str = file_name.to_string_lossy().to_lowercase();
-                                if file_name_str.contains("mhfjmp") {
-                                    match crate::core::packing::unpack_file(&path) {
-                                        Ok(data) => {
-                                            let mut app = app::MhfjmpApp::default();
-                                            let opened_file = path.display().to_string();
-                                            app.load_file(path, data);
-                                            self.state = AppState::Mhfjmp(app);
-                                            
-                                            // Ajouter aux fichiers récents
-                                            if !self.recent_files.contains(&opened_file) {
-                                                self.recent_files.insert(0, opened_file.clone());
-                                                if self.recent_files.len() > 5 {
-                                                    self.recent_files.pop();
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Error loading file: {}", e);
-                                        }
-                                    }
-                                } else {
-                                    // Afficher un message d'erreur si le fichier ne contient pas "mhfjmp" dans le nom
-                                    eprintln!("Error: Selected file must contain 'mhfjmp' in its name");
+                            match open_mhfjmp(path.clone()) {
+                                Ok(app) => {
+                                    self.open_error = None;
+                                    remember_recent(&mut self.recent_files, &path);
+                                    self.state = AppState::Mhfjmp(app);
                                 }
+                                Err(e) => self.open_error = Some(e),
                             }
                         }
                     }
-                    
+
                     if ui.button("Open mhfdat").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("MHFDAT Files", &["bin"])
                             .set_title("Select MHFDAT file")
-                            .pick_file() 
+                            .pick_file()
                         {
-                            // Vérifier que le nom du fichier contient "mhfdat" (insensible à la casse)
-                            if let Some(file_name) = path.file_name() {
-                                let file_name_str = file_name.to_string_lossy().to_lowercase();
-                                if file_name_str.contains("mhfdat") {
-                                    match crate::core::packing::unpack_file(&path) {
-                                        Ok(data) => {
-                                            let mut app = app::MhfdatApp::default();
-                                            let opened_file = path.display().to_string();
-                                            app.load_file(path, data);
-                                            self.state = AppState::Mhfdat(app);
-                                            
-                                            // Ajouter aux fichiers récents
-                                            if !self.recent_files.contains(&opened_file) {
-                                                self.recent_files.insert(0, opened_file.clone());
-                                                if self.recent_files.len() > 5 {
-                                                    self.recent_files.pop();
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Error loading file: {}", e);
-                                        }
-                                    }
-                                } else {
-                                    // Afficher un message d'erreur si le fichier ne contient pas "mhfdat" dans le nom
-                                    eprintln!("Error: Selected file must contain 'mhfdat' in its name");
+                            match open_mhfdat(path.clone()) {
+                                Ok(app) => {
+                                    self.open_error = None;
+                                    remember_recent(&mut self.recent_files, &path);
+                                    self.state = AppState::Mhfdat(app);
                                 }
+                                Err(e) => self.open_error = Some(e),
                             }
                         }
+                    }
+
+                    if let Some(err) = &self.open_error {
+                        ui.add_space(6.0);
+                        ui.colored_label(egui::Color32::from_rgb(220, 70, 70), err);
                     }
 
                     ui.add_space(10.0);
@@ -186,6 +141,46 @@ impl eframe::App for RootApp {
             }
         }
     }
+}
+
+fn remember_recent(recent: &mut Vec<String>, path: &std::path::Path) {
+    let opened = path.display().to_string();
+    if !recent.contains(&opened) {
+        recent.insert(0, opened);
+        recent.truncate(5);
+    }
+}
+
+/// Reads the file (stripping ECD/JPK wrappers only) and checks the name; every failure is a message
+/// for the screen, never a panic.
+fn read_clear(path: &std::path::Path, needle: &str) -> Result<Vec<u8>, String> {
+    let name = path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if !name.contains(needle) {
+        return Err(format!("The selected file must contain '{needle}' in its name ({})", path.display()));
+    }
+    crate::core::packing::unpack_file(path).map_err(|e| format!("Cannot open {}: {e}", path.display()))
+}
+
+fn open_mhfjmp(path: std::path::PathBuf) -> Result<app::MhfjmpApp, String> {
+    let data = read_clear(&path, "mhfjmp")?;
+    let sha = crate::core::packing::sha256_hex(&data);
+    let size = data.len();
+    let mut app = app::MhfjmpApp::default();
+    app.load_file(path.clone(), data);
+    match app.error_message.take() {
+        Some(e) if app.current_file.is_none() => {
+            Err(format!("{e} ({}: {size} bytes, SHA-256 {sha})", path.display()))
+        }
+        other => {
+            app.error_message = other;
+            Ok(app)
+        }
+    }
+}
+
+fn open_mhfdat(path: std::path::PathBuf) -> Result<app::MhfdatApp, String> {
+    let data = read_clear(&path, "mhfdat")?;
+    app::MhfdatApp::open(path, data)
 }
 
 fn main() -> Result<(), eframe::Error> {

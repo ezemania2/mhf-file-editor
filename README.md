@@ -4,7 +4,9 @@ A GUI editor for Monster Hunter Frontier data files.
 
 ## Supported files
 
-- mhfdat.bin: weapons (melee/ranged), armor, items, transmog/shop, weapon upgrades, names/descriptions.
+- mhfdat.bin: weapons (melee/ranged), armor, items, transmog/shop, weapon upgrades, names/descriptions,
+  quests, sigils, sharpness, bullet sets, seasonal events, and (in-place editors) monster crowns, Caravan routes,
+  skill effects, Hunting Road tables, extra crafting/weapon-parameter tables, arena sets.
 - mhfjmp.bin: menu/area and strings.
 
 ## Build
@@ -37,6 +39,32 @@ Or run the built executable from `target/release/mhf-file-editor.exe`.
 2) Navigate with the left tabs (Weapons, Armor, Items, Shop).
 3) Select an entry by its ID (IDs start at 0) to view and edit.
 4) Save to write changes. Use “Save (Pack + Encrypt)” to JPK-compress and optionally ECD-encrypt the output.
+
+### Opening files
+
+The editor works on the **clear** file. If the file is still wrapped in ECD and/or JPK, those two wrappers (and
+only those) are removed in memory; no archive format is ever guessed at (an earlier build handed every file to
+rsfrontier's generic unpacker, whose NSO-archive heuristic panics on clear `mhfjmp.bin` files: issue #1).
+A file that cannot be opened is refused with a message on the start screen, quoting the offsets, the sizes and the
+SHA-256 of the file.
+
+### Saving
+
+- Saving writes into a copy of the file and replaces the original only when everything succeeded.
+- Tables whose size can change (names, descriptions, shops, carve/part-break drops, ...) are rebuilt at the end of the
+  file with absolute pointers and the header pointer is updated; the old copy is left where it is.
+- The tabs **Crowns, Skill Effects, Caravan, Hunting Road, More Crafting, Weapon Params, Arena** and the quest
+  sub-tabs **GR menus G1-G10 / Beginner quests** edit values *in place*: they rewrite the bytes of the table where it
+  already is, no pointer moves and no row can be added or removed. Bytes the documentation does not name are shown as
+  raw integers labelled with their offset (`unk +0x0A`). If a table would grow, or would not fit in the file, the save
+  is refused with a message and nothing is written. A table that cannot be read when the file is opened is reported in
+  red on its tab (the other tabs keep working); a build whose header word at 0xC is not 0xBC8 (the Vita file) does not
+  load these tabs at all.
+- Where the code lives: header slots and `important_nums` offsets in `src/model/mhfdat_pointers.rs`, row structs in
+  `src/model/mhfdat.rs`, reading/writing in `src/core/mhfdat.rs`, loading in `src/app/load.rs`
+  (`load_inplace_tables`), saving in `src/app/save.rs` (`table_patches`), one file per tab in `src/app/`.
+- Pointers in the file are offsets from the start of the clear file; counts are read from `important_nums` (the block
+  the first header pointer points to), never from fixed addresses.
 
 Notes:
 - **Always backup** your original files before editing.

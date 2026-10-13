@@ -1,7 +1,5 @@
 use super::*;
 use egui;
-use std::fs::File;
-use std::io::Write;
 use serde_json;
 use serde::{Serialize, Deserialize};
 use crate::utils::item_patterns::{ITEM_ICON_LIST, icon_name};
@@ -229,19 +227,10 @@ impl MhfdatApp {
             indices.retain(|&i| self.deco_ids[i].zenith_skill == zen);
         }
 
-        // Paging controls (20 rows per page)
-        let items_per_page = 20usize;
         let total = indices.len();
-        let total_pages = (total + items_per_page - 1) / items_per_page;
-        let current_page = (self.deco_page as usize).min(total_pages.saturating_sub(1));
-        if current_page != self.deco_page as usize { self.deco_page = current_page as u32; }
+        let (start_idx, end_idx, total_pages) = crate::app::list_window(&mut self.deco_page, total);
 
-        MhfdatApp::pagination_controls(ui, &mut self.deco_page, total_pages);
-
-        let start_idx = current_page * items_per_page;
-        let end_idx = (start_idx + items_per_page).min(total);
-
-        MhfdatApp::list_scroll(ui, "deco_id_grid_scroll", |ui| {
+        MhfdatApp::entity_list(ui, "deco_id_grid_scroll", "Decoration", start_idx, end_idx, total, |ui| {
             egui::Grid::new("deco_id_grid")
                 .num_columns(12)
                 .striped(true)
@@ -297,11 +286,12 @@ impl MhfdatApp {
                 }
             });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.deco_page, total_pages);
     }
 
     pub fn show_items_list(&mut self, ui: &mut egui::Ui) {
                  MhfdatApp::section_header(ui, &format!("Items (found: {})", self.items.len()), |ui| {
-                     if ui.button("Export JSON").clicked() {
+                    if ui.button("Export to JSON").clicked() {
                          if let Ok(Some(path)) = native_dialog::FileDialog::new()
                              .add_filter("JSON", &["json"])
                              .set_filename("items.json")
@@ -361,43 +351,6 @@ impl MhfdatApp {
             ui.text_edit_singleline(&mut self.search_query);
         });
 
-        // Export buttons
-        ui.horizontal(|ui| {
-            if ui.button("Export Items to JSON").clicked() {
-                if let Ok(Some(path)) = native_dialog::FileDialog::new()
-                    .add_filter("JSON", &["json"])
-                    .set_filename("items.json")
-                    .show_save_single_file() 
-                {
-                    // Convert items to export format
-                    let export_items: Vec<ItemExport> = self.items
-                        .iter()
-                        .enumerate()
-                        .map(|(index, item)| {
-                            let name = if index < self.item_names.len() {
-                                self.item_names[index].clone()
-                            } else {
-                                String::new()
-                            };
-                            let description = if index < self.item_descriptions.len() {
-                                self.item_descriptions[index].clone()
-                            } else {
-                                String::new()
-                            };
-                            ItemExport::from_item_with_data(item, &name, &description, index)
-                        })
-                        .collect();
-                    
-                    if let Ok(json) = serde_json::to_string_pretty(&export_items) {
-                        if let Ok(mut file) = File::create(path.to_str().unwrap_or("items.json")) {
-                            let _ = file.write_all(json.as_bytes());
-                        }
-                    }
-                }
-            }
-            
-        });
-
         if self.items.is_empty() {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No items found or not yet loaded!");
         } else {
@@ -409,31 +362,16 @@ impl MhfdatApp {
                     if query.is_empty() {
                         true
                     } else {
-                        let item_name = if *index < self.item_names.len() {
-                            self.item_names[*index].clone()
-                        } else {
-                            String::new()
-                        };
-                        item_name.to_lowercase().contains(&query)
+                        let item_name: &str = self.item_names.get(*index).map(String::as_str).unwrap_or("");
+                        crate::utils::text::contains_ci(item_name, &query)
                     }
                 })
                 .collect();
 
             let filtered_count = filtered_items.len();
-            let items_per_page = 20;
-            let total_pages = (filtered_count + items_per_page - 1) / items_per_page;
-            let current_page = (self.item_page as usize).min(total_pages.saturating_sub(1));
-            
-            // Reset page if out of bounds
-            if current_page != self.item_page as usize {
-                self.item_page = current_page as u32;
-            }
-            
-            let start_idx = current_page * items_per_page;
-            let end_idx = (start_idx + items_per_page).min(filtered_count);
+            let (start_idx, end_idx, total_pages) = crate::app::list_window(&mut self.item_page, filtered_count);
 
-                         // Show items table
-            MhfdatApp::list_scroll(ui, "items_grid_scroll", |ui| {
+            MhfdatApp::entity_list(ui, "items_grid_scroll", "Item", start_idx, end_idx, filtered_count, |ui| {
                                   egui::Grid::new("items_grid")
                       .num_columns(7)
                       .striped(true)
@@ -501,7 +439,7 @@ impl MhfdatApp {
 
         if let Some(index) = self.selected_item_index {
             if let Some(item) = self.items.get(index) {
-                ui.heading("Item Details");
+                ui.heading(format!("Edit Item #{index}"));
                 
                 // Ensure we have valid data for this index
                 if index >= self.item_names.len() {

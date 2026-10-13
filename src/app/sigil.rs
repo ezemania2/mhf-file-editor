@@ -3,8 +3,6 @@ use egui;
 use crate::model::mhfdat::{SigilRecipe, SigilSkillProbabilities};
 use crate::utils::sigil_skills_name::sigil_skill_name;
 
-const PAGE_SIZE: usize = 20;
-
 impl MhfdatApp {
     fn get_item_name_sigil(&self, id: u16) -> String {
         if id == 0 {
@@ -87,16 +85,7 @@ impl MhfdatApp {
             }
         });
 
-        let total = self.sigil_recipes.len();
-        let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-        let page = (self.sigil_page as usize).min(total_pages.saturating_sub(1));
-        if page != self.sigil_page as usize {
-            self.sigil_page = page as u32;
-        }
-        MhfdatApp::pagination_controls(ui, &mut self.sigil_page, total_pages);
-
-        let start = page * PAGE_SIZE;
-        let end = (start + PAGE_SIZE).min(total);
+        let (start, end, total_pages) = crate::app::list_window(&mut self.sigil_page, self.sigil_recipes.len());
 
         let display_data: Vec<_> = (start..end).map(|i| {
             let recipe = &self.sigil_recipes[i];
@@ -108,7 +97,7 @@ impl MhfdatApp {
             (i, recipe.cost, mats, recipe.extra_skills_low, recipe.extra_skills_high)
         }).collect();
 
-        MhfdatApp::list_scroll(ui, "sigil_list_scroll", |ui| {
+        MhfdatApp::entity_list(ui, "sigil_list_scroll", "Recipe", start, end, self.sigil_recipes.len(), |ui| {
             egui::Grid::new("sigil_list_grid")
                 .num_columns(4)
                 .striped(true)
@@ -132,6 +121,7 @@ impl MhfdatApp {
                     }
                 });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.sigil_page, total_pages);
     }
 
     fn show_sigil_details(&mut self, ui: &mut egui::Ui) {
@@ -169,14 +159,6 @@ impl MhfdatApp {
                 ui.label("Extra Skills High:");
                 if ui.add(egui::DragValue::new(&mut recipe.extra_skills_high)).changed() { changed = true; }
                 ui.end_row();
-
-                ui.label("Unk0:");
-                if ui.add(egui::DragValue::new(&mut recipe.unk0)).changed() { changed = true; }
-                ui.end_row();
-
-                ui.label("Unk1:");
-                if ui.add(egui::DragValue::new(&mut recipe.unk1)).changed() { changed = true; }
-                ui.end_row();
             });
 
             ui.add_space(8.0);
@@ -186,7 +168,6 @@ impl MhfdatApp {
                 ui.strong("Item");
                 ui.strong("Item ID");
                 ui.strong("% Filled");
-                ui.strong("Unk");
                 ui.end_row();
 
                 let recipe = &mut self.sigil_recipes[idx];
@@ -197,7 +178,6 @@ impl MhfdatApp {
                     ui.label(&item_name);
                     if ui.add(egui::DragValue::new(&mut recipe.key_materials[j].item)).changed() { changed = true; }
                     if ui.add(egui::DragValue::new(&mut recipe.key_materials[j].percentage_filled)).changed() { changed = true; }
-                    if ui.add(egui::DragValue::new(&mut recipe.key_materials[j].unk)).changed() { changed = true; }
                     ui.end_row();
                 }
             });

@@ -1,21 +1,25 @@
 use super::*;
 use std::fs;
 
-const PAGE_SIZE: usize = 15;
-
 impl MhfdatApp {
     pub fn show_bullet_sets_tab(&mut self, ui: &mut egui::Ui) {
         if !self.view_mode.contains_key("bullet_sets") {
             self.view_mode.insert("bullet_sets".to_string(), ViewMode::List);
         }
+        match self.view_mode.get("bullet_sets").unwrap_or(&ViewMode::List) {
+            ViewMode::List => self.show_bullet_sets_list(ui),
+            ViewMode::Details => self.show_bullet_set_details_view(ui),
+        }
+    }
 
-        ui.horizontal(|ui| {
-            ui.heading("Bullet Sets Editor");
+    fn show_bullet_sets_list(&mut self, ui: &mut egui::Ui) {
+        let total = self.bullet_sets.len();
+        MhfdatApp::section_header(ui, &format!("Bullet Sets (found: {total})"), |ui| {
             if ui.button("Export to JSON").clicked() {
                 if let Ok(Some(path)) = native_dialog::FileDialog::new()
                     .add_filter("JSON", &["json"])
                     .set_filename("bullet_sets.json")
-                    .show_save_single_file() 
+                    .show_save_single_file()
                 {
                     if let Ok(json) = MhfdatApp::export_indexed_json(&self.bullet_sets) {
                         let _ = fs::write(path.to_str().unwrap_or("bullet_sets.json"), json);
@@ -25,7 +29,7 @@ impl MhfdatApp {
             if ui.button("Import from JSON").clicked() {
                 if let Ok(Some(path)) = native_dialog::FileDialog::new()
                     .add_filter("JSON", &["json"])
-                    .show_open_single_file() 
+                    .show_open_single_file()
                 {
                     if let Ok(data) = fs::read_to_string(path.to_str().unwrap_or("")) {
                         if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::BulletSet>>(&data) {
@@ -36,30 +40,13 @@ impl MhfdatApp {
                 }
             }
         });
-        ui.separator();
 
-        match self.view_mode.get("bullet_sets").unwrap_or(&ViewMode::List) {
-            ViewMode::List => self.show_bullet_sets_list(ui),
-            ViewMode::Details => self.show_bullet_set_details_view(ui),
-        }
-    }
-
-    fn show_bullet_sets_list(&mut self, ui: &mut egui::Ui) {
-        if self.bullet_sets.is_empty() {
-            ui.label("No bullet sets data loaded.");
+        if total == 0 {
+            ui.colored_label(egui::Color32::YELLOW, "Warning: No bullet sets found!");
             return;
         }
 
-        let total = self.bullet_sets.len();
-        let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-        let page = (self.bullet_sets_page as usize).min(total_pages.saturating_sub(1));
-
-        ui.label(format!("Total bullet sets: {}", total));
-        MhfdatApp::pagination_controls(ui, &mut self.bullet_sets_page, total_pages);
-        ui.separator();
-
-        let start = page * PAGE_SIZE;
-        let end = (start + PAGE_SIZE).min(total);
+        let (start, end, total_pages) = crate::app::list_window(&mut self.bullet_sets_page, total);
 
         let display_data: Vec<_> = (start..end).map(|idx| {
             let s = &self.bullet_sets[idx];
@@ -73,7 +60,7 @@ impl MhfdatApp {
             )
         }).collect();
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "bullet_sets_list_scroll", "Bullet Set", start, end, total, |ui| {
             egui::Grid::new("bullet_sets_list_grid").striped(true).show(ui, |ui| {
                 ui.label("ID");
                 ui.label("Normal Lv1-3");
@@ -98,6 +85,7 @@ impl MhfdatApp {
                 }
             });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.bullet_sets_page, total_pages);
     }
 
     fn show_bullet_set_details_view(&mut self, ui: &mut egui::Ui) {
@@ -118,7 +106,7 @@ impl MhfdatApp {
         }
 
         let set = &mut self.bullet_sets[id];
-        ui.heading(format!("Bullet Set ID: {}", id));
+        ui.heading(format!("Edit Bullet Set #{id}"));
         ui.separator();
 
         let mut modified = false;

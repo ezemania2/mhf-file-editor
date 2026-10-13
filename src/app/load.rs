@@ -122,7 +122,7 @@ impl MhfdatApp {
         }
 
         // Load items
-        let items = parse_items(&self.buffer);
+        let items = parse_items(buffer);
         self.items = items;
         
         // Save original offsets for items
@@ -140,11 +140,11 @@ impl MhfdatApp {
         }
         
         // Load item names using the new parse function
-        let names = parse_item_names(&self.buffer, self.items.len());
+        let names = parse_item_names(buffer, self.items.len());
         self.item_names = names;
         
         // Load item descriptions using the new parse function
-        let descriptions = parse_item_descriptions(&self.buffer, self.items.len());
+        let descriptions = parse_item_descriptions(buffer, self.items.len());
         self.item_descriptions = descriptions;
     }
 
@@ -351,17 +351,7 @@ impl MhfdatApp {
         
         if data_offset == 0 || data_offset >= self.buffer.len() { return; }
         
-        // Try using sentinel first (like other shop entries)
-        let mut cursor = std::io::Cursor::new(&self.buffer);
-        if let Ok(entries) = crate::core::mhfdat::read_shop_entries_until_sentinel(&mut cursor, data_offset as u64) {
-            // Filter to only include valid armor types
-            self.tower_armor_forging_entries = entries.into_iter()
-                .filter(|e| valid_types.contains(&e.equip_type))
-                .collect();
-            return;
-        }
-        
-        // Fallback: manual reading if sentinel method fails
+        // Same terminator as every forging table: a row whose first byte is 0xFF
         let entry_size = std::mem::size_of::<ShopEntry>();
         let mut cursor = data_offset;
         let mut entries = Vec::new();
@@ -399,81 +389,58 @@ impl MhfdatApp {
         Ok(())
     }
 
-    pub fn load_sharpness_data(&mut self) {
-        fn read_ptr(buffer: &[u8], ptr_offset: u32) -> Option<u32> {
-            if buffer.len() >= ptr_offset as usize + 4 {
-                Some(u32::from_le_bytes(buffer[ptr_offset as usize..ptr_offset as usize+4].try_into().unwrap()))
-            } else {
-                None
-            }
-        }
+    /// Value of an `important_nums` count (0 when the block cannot be reached). The block is found
+    /// through header slot 0x10, not through a fixed address.
+    pub(crate) fn imp_count(&self, inner: usize) -> u16 {
+        read_important_count(&self.buffer, inner).unwrap_or(0)
+    }
 
-        // Load all 11 weapon type sharpness data (melee only, no bowguns/bow)
-        // Index 0: Great Sword
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_GREAT_SWORD_PTR) {
-            self.original_sharpness_offsets[0] = Some(off);
-            self.sharpness_modified[0] = false;
-            self.sharpness.great_sword = read_sharpness_data(&self.buffer, off as usize);
+    /// File offset of an `important_nums` count, for writing it back.
+    pub(crate) fn imp_count_pos(&self, inner: usize) -> std::io::Result<u64> {
+        important_count_offset(&self.buffer, inner).map(|o| o as u64).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("important_nums (header 0x10) + 0x{inner:X} is outside the {}-byte file", self.buffer.len()),
+            )
+        })
+    }
+
+    /// File offset of the pointer for sharpness weapon type `i` (0..11), inside the array behind
+    /// header slot 0xAC.
+    pub(crate) fn sharpness_slot(&self, i: usize) -> Option<usize> {
+        let inner = *SHARPNESS_INNER_BY_INDEX.get(i)?;
+        let base = read_header_pointer(&self.buffer, SHARPNESS_ARRAY_SLOT)? as usize;
+        let slot = base.checked_add(inner)?;
+        self.buffer.get(slot..slot + 4)?;
+        Some(slot)
+    }
+
+    pub(crate) fn sharpness_data_mut(&mut self, i: usize) -> &mut crate::model::mhfdat::SharpnessData {
+        match i {
+            0 => &mut self.sharpness.great_sword,
+            1 => &mut self.sharpness.hammer,
+            2 => &mut self.sharpness.lance,
+            3 => &mut self.sharpness.sword_and_shield,
+            4 => &mut self.sharpness.dual_blades,
+            5 => &mut self.sharpness.long_sword,
+            6 => &mut self.sharpness.hunting_horn,
+            7 => &mut self.sharpness.gunlance,
+            8 => &mut self.sharpness.tonfa,
+            9 => &mut self.sharpness.switch_axe,
+            _ => &mut self.sharpness.magnet_spike,
         }
-        // Index 1: Hammer
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_HAMMER_PTR) {
-            self.original_sharpness_offsets[1] = Some(off);
-            self.sharpness_modified[1] = false;
-            self.sharpness.hammer = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 2: Lance
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_LANCE_PTR) {
-            self.original_sharpness_offsets[2] = Some(off);
-            self.sharpness_modified[2] = false;
-            self.sharpness.lance = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 3: Sword and Shield
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_SWORD_AND_SHIELD_PTR) {
-            self.original_sharpness_offsets[3] = Some(off);
-            self.sharpness_modified[3] = false;
-            self.sharpness.sword_and_shield = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 4: Dual Blades
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_DUAL_BLADES_PTR) {
-            self.original_sharpness_offsets[4] = Some(off);
-            self.sharpness_modified[4] = false;
-            self.sharpness.dual_blades = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 5: Long Sword
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_LONG_SWORD_PTR) {
-            self.original_sharpness_offsets[5] = Some(off);
-            self.sharpness_modified[5] = false;
-            self.sharpness.long_sword = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 6: Hunting Horn
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_HUNTING_HORN_PTR) {
-            self.original_sharpness_offsets[6] = Some(off);
-            self.sharpness_modified[6] = false;
-            self.sharpness.hunting_horn = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 7: Gunlance
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_GUNLANCE_PTR) {
-            self.original_sharpness_offsets[7] = Some(off);
-            self.sharpness_modified[7] = false;
-            self.sharpness.gunlance = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 8: Tonfa
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_TONFA_PTR) {
-            self.original_sharpness_offsets[8] = Some(off);
-            self.sharpness_modified[8] = false;
-            self.sharpness.tonfa = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 9: Switch Axe
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_SWITCH_AXE_PTR) {
-            self.original_sharpness_offsets[9] = Some(off);
-            self.sharpness_modified[9] = false;
-            self.sharpness.switch_axe = read_sharpness_data(&self.buffer, off as usize);
-        }
-        // Index 10: Magnet Spike
-        if let Some(off) = read_ptr(&self.buffer, SHARPNESS_MAGNET_SPIKE_PTR) {
-            self.original_sharpness_offsets[10] = Some(off);
-            self.sharpness_modified[10] = false;
-            self.sharpness.magnet_spike = read_sharpness_data(&self.buffer, off as usize);
+    }
+
+    pub fn load_sharpness_data(&mut self) {
+        // 11 melee weapon types (no bowguns / bow), see SHARPNESS_INNER_BY_INDEX
+        for i in 0..SHARPNESS_INNER_BY_INDEX.len() {
+            let off = self.sharpness_slot(i).and_then(|slot| read_header_pointer(&self.buffer, slot as u32));
+            if let Some(off) = off {
+                self.original_sharpness_offsets[i] = Some(off);
+                self.sharpness_modified[i] = false;
+                let data = read_sharpness_data(&self.buffer, off as usize);
+                *self.sharpness_data_mut(i) = data;
+            }
         }
     }
 
@@ -527,7 +494,7 @@ impl MhfdatApp {
     pub fn load_g50_weapon_upgrades(&mut self) {
         use crate::model::mhfdat_pointers::{
             G50_MELEE_WEAPON_UPGRADE_PTR, G50_RANGED_WEAPON_UPGRADE_PTR,
-            G50_MELEE_WEAPON_UPGRADE_COUNT_LIMITER_PTR, G50_RANGED_WEAPON_UPGRADE_COUNT_LIMITER_PTR
+            G50_MELEE_WEAPON_UPGRADE_COUNT_INNER, G50_RANGED_WEAPON_UPGRADE_COUNT_INNER
         };
         use crate::core::mhfdat::read_g50_weapon_until_sentinel;
         use std::io::Cursor;
@@ -540,24 +507,16 @@ impl MhfdatApp {
             }
         }
         
-        fn read_u16_val(buffer: &[u8], offset: u32) -> u16 {
-            if buffer.len() >= offset as usize + 2 {
-                u16::from_le_bytes(buffer[offset as usize..offset as usize+2].try_into().unwrap())
-            } else {
-                0
-            }
-        }
-
         // Load G50 Melee Weapon Upgrades
         if let Some(off) = read_ptr(&self.buffer, G50_MELEE_WEAPON_UPGRADE_PTR) {
             self.original_g50_melee_weapon_upgrades_offset = Some(off);
             self.g50_melee_weapon_upgrades_modified = false;
             // Read counter first to know how many entries to read
-            let count = read_u16_val(&self.buffer, G50_MELEE_WEAPON_UPGRADE_COUNT_LIMITER_PTR) as usize;
+            let count = self.imp_count(G50_MELEE_WEAPON_UPGRADE_COUNT_INNER) as usize;
             self.g50_melee_count_limiter = count as u16;
             self.g50_melee_count_limiter_modified = false;
             
-            let mut cursor = Cursor::new(self.buffer.clone());
+            let mut cursor = Cursor::new(&self.buffer[..]);
             if let Ok(entries) = crate::core::mhfdat::read_g50_weapon_by_count(&mut cursor, off as u64, count) {
                 self.g50_melee_weapon_upgrades = entries;
             }
@@ -568,11 +527,11 @@ impl MhfdatApp {
             self.original_g50_ranged_weapon_upgrades_offset = Some(off);
             self.g50_ranged_weapon_upgrades_modified = false;
             // Read counter first to know how many entries to read
-            let count = read_u16_val(&self.buffer, G50_RANGED_WEAPON_UPGRADE_COUNT_LIMITER_PTR) as usize;
+            let count = self.imp_count(G50_RANGED_WEAPON_UPGRADE_COUNT_INNER) as usize;
             self.g50_ranged_count_limiter = count as u16;
             self.g50_ranged_count_limiter_modified = false;
             
-            let mut cursor = Cursor::new(self.buffer.clone());
+            let mut cursor = Cursor::new(&self.buffer[..]);
             if let Ok(entries) = crate::core::mhfdat::read_g50_weapon_by_count(&mut cursor, off as u64, count) {
                 self.g50_ranged_weapon_upgrades = entries;
             }
@@ -627,18 +586,10 @@ impl MhfdatApp {
     }
     
     pub fn load_carve_parts(&mut self) {
-        use crate::model::mhfdat_pointers::{CARVE_PARTS_PTR, CARVE_PARTS_COUNT_PTR};
+        use crate::model::mhfdat_pointers::{CARVE_PARTS_PTR, CARVE_PARTS_COUNT_INNER};
         use crate::core::mhfdat::read_carve_parts;
-        
-        // Read count from CARVE_PARTS_COUNT_PTR first
-        let count = if self.buffer.len() >= CARVE_PARTS_COUNT_PTR as usize + 2 {
-            u16::from_le_bytes(
-                self.buffer[CARVE_PARTS_COUNT_PTR as usize..CARVE_PARTS_COUNT_PTR as usize + 2]
-                    .try_into().unwrap()
-            )
-        } else {
-            0
-        };
+
+        let count = self.imp_count(CARVE_PARTS_COUNT_INNER);
         self.carve_parts_count = count;
         self.carve_parts_count_modified = false;
         
@@ -655,18 +606,10 @@ impl MhfdatApp {
     }
     
     pub fn load_part_break_parts(&mut self) {
-        use crate::model::mhfdat_pointers::{PART_BREAK_DROP_PTR, PART_BREAK_DROP_COUNT_PTR};
+        use crate::model::mhfdat_pointers::{PART_BREAK_DROP_PTR, PART_BREAK_DROP_COUNT_INNER};
         use crate::core::mhfdat::read_part_break_parts;
-        
-        // Read count from PART_BREAK_DROP_COUNT_PTR first
-        let count = if self.buffer.len() >= PART_BREAK_DROP_COUNT_PTR as usize + 2 {
-            u16::from_le_bytes(
-                self.buffer[PART_BREAK_DROP_COUNT_PTR as usize..PART_BREAK_DROP_COUNT_PTR as usize + 2]
-                    .try_into().unwrap()
-            )
-        } else {
-            0
-        };
+
+        let count = self.imp_count(PART_BREAK_DROP_COUNT_INNER);
         self.part_break_parts_count = count;
         self.part_break_parts_count_modified = false;
         
@@ -683,17 +626,9 @@ impl MhfdatApp {
     }
     
     pub fn load_monster_descriptions(&mut self) {
-        use crate::model::mhfdat_pointers::{MOSNTERS_DESCRIPTION_PTR, MOSNTERS_DESCRIPTION_COUNT_PTR};
-        
-        // Read count from MOSNTERS_DESCRIPTION_COUNT_PTR first
-        let count = if self.buffer.len() >= MOSNTERS_DESCRIPTION_COUNT_PTR as usize + 2 {
-            u16::from_le_bytes(
-                self.buffer[MOSNTERS_DESCRIPTION_COUNT_PTR as usize..MOSNTERS_DESCRIPTION_COUNT_PTR as usize + 2]
-                    .try_into().unwrap()
-            )
-        } else {
-            0
-        };
+        use crate::model::mhfdat_pointers::{MOSNTERS_DESCRIPTION_PTR, MOSNTERS_DESCRIPTION_COUNT_INNER};
+
+        let count = self.imp_count(MOSNTERS_DESCRIPTION_COUNT_INNER);
         self.monster_descriptions_count = count;
         self.monster_descriptions_count_modified = false;
         
@@ -754,18 +689,10 @@ impl MhfdatApp {
     }
 
     pub fn load_seasonal_events(&mut self) {
-        use crate::model::mhfdat_pointers::{SEASONAL_EVENT_PTR, SEASONAL_EVENT_COUNTER};
+        use crate::model::mhfdat_pointers::{SEASONAL_EVENT_PTR, SEASONAL_EVENT_COUNT_INNER};
         use crate::core::mhfdat::read_seasonal_events;
 
-        // Read count from SEASONAL_EVENT_COUNTER first
-        let count = if self.buffer.len() >= SEASONAL_EVENT_COUNTER as usize + 2 {
-            u16::from_le_bytes(
-                self.buffer[SEASONAL_EVENT_COUNTER as usize..SEASONAL_EVENT_COUNTER as usize + 2]
-                    .try_into().unwrap()
-            )
-        } else {
-            0
-        };
+        let count = self.imp_count(SEASONAL_EVENT_COUNT_INNER);
         self.seasonal_events_count = count;
         self.seasonal_events_count_modified = false;
 
@@ -779,5 +706,139 @@ impl MhfdatApp {
             self.seasonal_events_modified = false;
             self.seasonal_events = read_seasonal_events(&self.buffer, offset as usize, count as usize);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Tables that are rewritten in place. Each one is read through its header slot (core/mhfdat.rs); a table that
+// cannot be read is reported on its tab and left empty, the others stay available.
+// ---------------------------------------------------------------------------------------------------------
+impl MhfdatApp {
+    pub fn load_inplace_tables(&mut self) {
+        self.clear_inplace_tables();
+
+        // The header slots used below are documented for the 0xBC8-byte header only. Another build (the Vita file has
+        // 0xBC4 at 0xC) puts other things behind them, so its tables are not read rather than shown wrong.
+        let word = self.buffer.get(0xC..0x10).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+        if word != Some(0xBC8) {
+            let why = format!(
+                "this file's header word at 0xC is {}, not 0xBC8: the header layout of this build is not documented, so this tab is not read",
+                word.map_or("missing".to_string(), |w| format!("0x{w:X}"))
+            );
+            for tab in ["quests", "crowns", "skills", "caravan", "road", "craft", "weapon", "arena"] {
+                self.table_problems.push((tab, why.clone()));
+            }
+            return;
+        }
+
+        match read_crowns(&self.buffer) {
+            Ok((_, rows)) => self.crowns = rows,
+            Err(e) => self.table_problems.push(("crowns", e)),
+        }
+        match read_skill_effects(&self.buffer) {
+            Ok((_, rows)) => self.skill_effects = rows,
+            Err(e) => self.table_problems.push(("skills", e)),
+        }
+
+        let (menus, problems) = read_gr_menus(&self.buffer);
+        self.gr_menus = menus;
+        self.table_problems.extend(problems.into_iter().map(|e| ("quests", e)));
+        match read_beginner_quests(&self.buffer) {
+            Ok((_, rows)) => self.beginner_quests = rows,
+            Err(e) => self.table_problems.push(("quests", e)),
+        }
+
+        let (caravan, _, problems) = read_caravan(&self.buffer);
+        self.caravan = caravan;
+        self.table_problems.extend(problems.into_iter().map(|e| ("caravan", e)));
+
+        let (road, _, problems) = read_road(&self.buffer);
+        self.road = road;
+        self.table_problems.extend(problems.into_iter().map(|e| ("road", e)));
+
+        for (slot, name) in [
+            (SPECIAL_WEAPON_FORGING_PTR, "special weapon forging (header 0x7AC)"),
+            (ARMOR_PREMIUM_FORGING_PTR, "armor premium forging (header 0x7B0)"),
+            (TRANSMOG_FORGING_2_PTR, "second transmog forging (header 0xABC)"),
+        ] {
+            match read_forging_rows(&self.buffer, name, slot) {
+                Ok((_, rows)) => match slot {
+                    SPECIAL_WEAPON_FORGING_PTR => self.special_weapon_forging = rows,
+                    ARMOR_PREMIUM_FORGING_PTR => self.armor_premium_forging = rows,
+                    _ => self.transmog_forging_2 = rows,
+                },
+                Err(e) => self.table_problems.push(("craft", e)),
+            }
+        }
+        match read_combine_shop(&self.buffer) {
+            Ok((_, rows)) => self.combine_shop = rows,
+            Err(e) => self.table_problems.push(("craft", e)),
+        }
+        match read_tower_jewels(&self.buffer) {
+            Ok((_, rows)) => self.tower_jewels = rows,
+            Err(e) => self.table_problems.push(("craft", e)),
+        }
+        match read_tower_seals(&self.buffer) {
+            Ok((_, rows)) => self.sigil_tower_entries = rows,
+            Err(e) => self.table_problems.push(("craft", e)),
+        }
+        match read_tower_costs(&self.buffer) {
+            Ok(blocks) => self.tower_costs = blocks,
+            Err(e) => self.table_problems.push(("craft", e)),
+        }
+
+        let (params, _, problems) = read_weapon_params(&self.buffer);
+        self.weapon_params = params;
+        self.table_problems.extend(problems.into_iter().map(|e| ("weapon", e)));
+
+        let (arena, _, problems) = read_arena(&self.buffer);
+        self.arena = arena;
+        self.table_problems.extend(problems.into_iter().map(|e| ("arena", e)));
+    }
+
+    /// Empties the in-place tables and clears their modified flags (file closed, or reloaded after a save).
+    pub fn clear_inplace_tables(&mut self) {
+        self.table_problems.clear();
+        self.gr_menus.clear();
+        self.beginner_quests.clear();
+        self.crowns.clear();
+        self.skill_effects.clear();
+        self.caravan = Default::default();
+        self.road = Default::default();
+        self.special_weapon_forging.clear();
+        self.armor_premium_forging.clear();
+        self.transmog_forging_2.clear();
+        self.combine_shop.clear();
+        self.tower_jewels.clear();
+        self.sigil_tower_entries.clear();
+        self.tower_costs.clear();
+        self.weapon_params = Default::default();
+        self.arena = Default::default();
+
+        self.gr_menus_modified = false;
+        self.beginner_quests_modified = false;
+        self.crowns_modified = false;
+        self.skill_effects_modified = false;
+        self.caravan_modified = false;
+        self.road_modified = false;
+        self.craft_more_modified = false;
+        self.weapon_params_modified = false;
+        self.arena_modified = false;
+
+        self.selected_gr_menu = 0;
+        self.gr_menu_page = 0;
+        self.crowns_page = 0;
+        self.crowns_selected = None;
+        self.skill_effects_page = 0;
+        self.caravan_selected = None;
+        self.caravan_group = 0;
+        self.caravan_page = 0;
+        self.road_page = 0;
+        self.road_selected = None;
+        self.craft_more_page = 0;
+        self.craft_more_selected = None;
+        self.weapon_params_page = 0;
+        self.weapon_params_selected = 0;
+        self.arena_selected = 0;
     }
 }

@@ -61,7 +61,13 @@ pub fn load_mhfjmp_bin<P: AsRef<Path>>(path: P) -> io::Result<(Vec<MenuEntry>, V
     let menu_entry_count = 24;
     let _menu_entry_size = 56;
     let mut menu_entries = Vec::with_capacity(menu_entry_count);
-    
+
+    if num_areas as u64 * 12 > file_size || num_strings as u64 * 4 > file_size {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, format!(
+            "num_areas = {num_areas} / num_strings = {num_strings} do not fit in the {file_size}-byte file"
+        )));
+    }
+
     file.seek(SeekFrom::Start(menu_entries_ptr as u64))?;
     
     for _ in 0..menu_entry_count {
@@ -296,6 +302,21 @@ pub fn load_mhfjmp_bin_from_reader_with_log<R: Read + Seek>(reader: &mut R) -> i
     let _menu_entry_size = 56;
     let mut menu_entries = Vec::with_capacity(menu_entry_count);
 
+    // Counts are read from the file: refuse the ones that cannot fit in it instead of reserving
+    // gigabytes for a corrupt (or not-a-mhfjmp) file.
+    if num_areas as u64 * 12 > file_size {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, format!(
+            "num_areas = {num_areas} (offset 0x8) needs {} bytes of area headers but the file is {file_size} bytes",
+            num_areas as u64 * 12
+        )));
+    }
+    if num_strings as u64 * 4 > file_size {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, format!(
+            "num_strings = {num_strings} (offset 0x10) needs {} bytes of string pointers but the file is {file_size} bytes",
+            num_strings as u64 * 4
+        )));
+    }
+
     if menu_entries_ptr as u64 >= file_size {
         return Err(io::Error::new(io::ErrorKind::InvalidData, format!("menu_entries_ptr out of bounds: {menu_entries_ptr} >= {file_size}")));
     }
@@ -347,6 +368,11 @@ pub fn load_mhfjmp_bin_from_reader_with_log<R: Read + Seek>(reader: &mut R) -> i
             let cur = reader.seek(SeekFrom::Current(0))?;
             if p_entry_data as u64 >= file_size {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, format!("p_entry_data out of bounds: {p_entry_data} >= {file_size}")));
+            }
+            if p_entry_data as u64 + len_entry_data as u64 * 4 > file_size {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, format!(
+                    "area {i}: {len_entry_data} entries of 4 bytes at 0x{p_entry_data:X} run past the end of the {file_size}-byte file"
+                )));
             }
             reader.seek(SeekFrom::Start(p_entry_data as u64))?;
             for _ in 0..len_entry_data {

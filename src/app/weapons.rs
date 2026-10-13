@@ -280,7 +280,7 @@ impl MhfdatApp {
                     let element_id = weapon.element_id;
                     let slots = weapon.slots;
                     let weapon_type = weapon.weapon_type;
-                    let weapon_name = self.melee_weapon_names.get(*i).cloned().unwrap_or_default();
+                    let weapon_name: &str = self.melee_weapon_names.get(*i).map(String::as_str).unwrap_or("");
 
                     // Dummy weapon detection
                     let is_dummy = model_id == 0x05AD
@@ -340,7 +340,7 @@ impl MhfdatApp {
                         if weapon.zenith_skill != zenith_skill_id { return false; }
                     }
 
-                    if !query.is_empty() && !weapon_name.to_lowercase().contains(&query) {
+                    if !query.is_empty() && !crate::utils::text::contains_ci(weapon_name, &query) {
                         return false;
                     }
 
@@ -352,17 +352,9 @@ impl MhfdatApp {
             let entries_per_page = 15;
             let total_pages = (filtered_weapons.len() + entries_per_page - 1) / entries_per_page;
             let current_page = self.melee_weapons_page as usize;
-            let start_idx = current_page * entries_per_page;
-            let end_idx = (start_idx + entries_per_page).min(filtered_weapons.len());
+            let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, filtered_weapons.len());
 
-            // Weapon list
-            egui::CollapsingHeader::new(format!("Weapon List (showing {}-{} of {})", 
-                if filtered_weapons.is_empty() { 0 } else { start_idx + 1 }, 
-                end_idx, 
-                filtered_weapons.len()))
-                .default_open(true)
-                .show(ui, |ui| {
-                    MhfdatApp::list_scroll(ui, "weapon_list_scroll", |ui| {
+            MhfdatApp::entity_list(ui, "weapon_list_scroll", "Weapon", start_idx, end_idx, filtered_weapons.len(), |ui| {
                             egui::Grid::new("weapon_list_grid")
                                 .striped(true)
                                 .show(ui, |ui| {
@@ -411,7 +403,6 @@ impl MhfdatApp {
                                         ui.end_row();
                                     }
                                 });
-                        });
                 });
 
             // Pagination controls
@@ -583,7 +574,7 @@ impl MhfdatApp {
                     let element_id = weapon.element_id;
                     let slots = weapon.slots;
                     let weapon_type = weapon.weapon_type;
-                    let weapon_name = self.ranged_weapon_names.get(*i).cloned().unwrap_or_default();
+                    let weapon_name: &str = self.ranged_weapon_names.get(*i).map(String::as_str).unwrap_or("");
 
                     // Dummy weapon detection using the pattern
                     let is_dummy = model_id == 0x00E0
@@ -629,7 +620,7 @@ impl MhfdatApp {
                         if weapon.zenith_skill != zenith_skill_id { return false; }
                     }
 
-                    if !query.is_empty() && !weapon_name.to_lowercase().contains(&query) {
+                    if !query.is_empty() && !crate::utils::text::contains_ci(weapon_name, &query) {
                         return false;
                     }
 
@@ -641,17 +632,9 @@ impl MhfdatApp {
             let entries_per_page = 15;
             let total_pages = (filtered_weapons.len() + entries_per_page - 1) / entries_per_page;
             let current_page = self.ranged_weapons_page as usize;
-            let start_idx = current_page * entries_per_page;
-            let end_idx = (start_idx + entries_per_page).min(filtered_weapons.len());
+            let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, filtered_weapons.len());
 
-            // Weapon list
-            egui::CollapsingHeader::new(format!("Weapon List (showing {}-{} of {})", 
-                if filtered_weapons.is_empty() { 0 } else { start_idx + 1 }, 
-                end_idx, 
-                filtered_weapons.len()))
-                .default_open(true)
-                .show(ui, |ui| {
-                    MhfdatApp::list_scroll(ui, "ranged_weapon_list_scroll", |ui| {
+            MhfdatApp::entity_list(ui, "ranged_weapon_list_scroll", "Weapon", start_idx, end_idx, filtered_weapons.len(), |ui| {
                             egui::Grid::new("ranged_weapon_list_grid")
                                 .striped(true)
                                 .show(ui, |ui| {
@@ -700,7 +683,6 @@ impl MhfdatApp {
                                         ui.end_row();
                                     }
                                 });
-                        });
                 });
 
             // Pagination controls
@@ -1145,7 +1127,6 @@ impl MhfdatApp {
                 ui.checkbox(&mut equip_type.random_weapon, "Random Weapon");
                 ui.checkbox(&mut equip_type.ravi, "Ravi");
                 ui.checkbox(&mut equip_type.g50, "G50");
-                ui.checkbox(&mut equip_type.unk_7, "Unknown_7");
             });
             ui.label(format!("Preview: {}", equip_type.to_string()));
         });
@@ -1594,7 +1575,8 @@ impl MhfdatApp {
 
     // ===== G50 Melee Upgrades =====
     pub fn show_g50_melee_list(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        let count = self.g50_melee_weapon_upgrades.len();
+        MhfdatApp::section_header(ui, &format!("G50 Melee Upgrades (found: {count})"), |ui| {
             if ui.button("Add New").clicked() {
                 self.g50_melee_weapon_upgrades.push(crate::model::mhfdat::G50WUpgrade::default());
                 self.g50_melee_weapon_upgrades_modified = true;
@@ -1613,15 +1595,23 @@ impl MhfdatApp {
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(data) = std::fs::read_to_string("g50_melee_upgrades.json") {
-                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::G50WUpgrade>>(&data) {
-                        self.g50_melee_weapon_upgrades = imported;
-                        self.g50_melee_weapon_upgrades_modified = true;
-                        self.g50_melee_count_limiter = self.g50_melee_weapon_upgrades.len() as u16;
-                        self.g50_melee_count_limiter_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file()
+                {
+                    if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::G50WUpgrade>>(&data) {
+                            self.g50_melee_weapon_upgrades = imported;
+                            self.g50_melee_weapon_upgrades_modified = true;
+                            self.g50_melee_count_limiter = self.g50_melee_weapon_upgrades.len() as u16;
+                            self.g50_melee_count_limiter_modified = true;
+                        }
                     }
                 }
             }
+        });
+
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.g50_melee_search);
         });
@@ -1635,17 +1625,9 @@ impl MhfdatApp {
             .filter(|(_, name)| search.is_empty() || name.to_lowercase().contains(&search))
             .collect();
 
-        let total = filtered.len();
-        let page_size = 15;
-        let total_pages = (total + page_size - 1) / page_size;
-        let page = (self.g50_melee_page as usize).min(total_pages.saturating_sub(1));
-        
-        MhfdatApp::pagination_controls(ui, &mut self.g50_melee_page, total_pages);
+        let (start, end, total_pages) = crate::app::list_window(&mut self.g50_melee_page, filtered.len());
 
-        let start = page * page_size;
-        let end = (start + page_size).min(total);
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "g50_melee_scroll", "Upgrade", start, end, filtered.len(), |ui| {
             egui::Grid::new("g50_melee_grid").striped(true).show(ui, |ui| {
                 ui.label("ID"); ui.label("Weapon ID"); ui.label("Level1"); ui.label("Level2"); ui.label("Succ Rate"); ui.label("Zenny"); ui.end_row();
                 
@@ -1657,7 +1639,8 @@ impl MhfdatApp {
                     let succ_rate = entry.full_succ_rate;
                     let zenny = entry.zenny_cost;
                     
-                    if ui.selectable_label(false, format!("{}", i)).clicked() {
+                    let selected = self.selected_g50_melee_index == Some(i);
+                    if ui.selectable_label(selected, format!("{}", i)).clicked() {
                         self.selected_g50_melee_index = Some(i);
                         self.view_mode.insert("g50_melee".to_string(), ViewMode::Details);
                     }
@@ -1670,6 +1653,7 @@ impl MhfdatApp {
                 }
             });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.g50_melee_page, total_pages);
     }
 
     pub fn show_g50_melee_details(&mut self, ui: &mut egui::Ui) {
@@ -1677,8 +1661,10 @@ impl MhfdatApp {
             self.view_mode.insert("g50_melee".to_string(), ViewMode::List);
             return;
         }
-        
+
         if let Some(idx) = self.selected_g50_melee_index {
+            ui.heading(format!("Edit G50 Melee Upgrade #{idx}"));
+            ui.separator();
             if idx < self.g50_melee_weapon_upgrades.len() {
                 let entry = self.g50_melee_weapon_upgrades[idx].clone();
                 let mut weapon_id = entry.weapon_id;
@@ -1750,7 +1736,8 @@ impl MhfdatApp {
 
     // ===== G50 Ranged Upgrades =====
     pub fn show_g50_ranged_list(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        let count = self.g50_ranged_weapon_upgrades.len();
+        MhfdatApp::section_header(ui, &format!("G50 Ranged Upgrades (found: {count})"), |ui| {
             if ui.button("Add New").clicked() {
                 self.g50_ranged_weapon_upgrades.push(crate::model::mhfdat::G50WUpgrade::default());
                 self.g50_ranged_weapon_upgrades_modified = true;
@@ -1769,15 +1756,23 @@ impl MhfdatApp {
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(data) = std::fs::read_to_string("g50_ranged_upgrades.json") {
-                    if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::G50WUpgrade>>(&data) {
-                        self.g50_ranged_weapon_upgrades = imported;
-                        self.g50_ranged_weapon_upgrades_modified = true;
-                        self.g50_ranged_count_limiter = self.g50_ranged_weapon_upgrades.len() as u16;
-                        self.g50_ranged_count_limiter_modified = true;
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file()
+                {
+                    if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(imported) = serde_json::from_str::<Vec<crate::model::mhfdat::G50WUpgrade>>(&data) {
+                            self.g50_ranged_weapon_upgrades = imported;
+                            self.g50_ranged_weapon_upgrades_modified = true;
+                            self.g50_ranged_count_limiter = self.g50_ranged_weapon_upgrades.len() as u16;
+                            self.g50_ranged_count_limiter_modified = true;
+                        }
                     }
                 }
             }
+        });
+
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.g50_ranged_search);
         });
@@ -1791,17 +1786,9 @@ impl MhfdatApp {
             .filter(|(_, name)| search.is_empty() || name.to_lowercase().contains(&search))
             .collect();
 
-        let total = filtered.len();
-        let page_size = 15;
-        let total_pages = (total + page_size - 1) / page_size;
-        let page = (self.g50_ranged_page as usize).min(total_pages.saturating_sub(1));
-        
-        MhfdatApp::pagination_controls(ui, &mut self.g50_ranged_page, total_pages);
+        let (start, end, total_pages) = crate::app::list_window(&mut self.g50_ranged_page, filtered.len());
 
-        let start = page * page_size;
-        let end = (start + page_size).min(total);
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "g50_ranged_scroll", "Upgrade", start, end, filtered.len(), |ui| {
             egui::Grid::new("g50_ranged_grid").striped(true).show(ui, |ui| {
                 ui.label("ID"); ui.label("Weapon ID"); ui.label("Level1"); ui.label("Level2"); ui.label("Succ Rate"); ui.label("Zenny"); ui.end_row();
                 
@@ -1813,7 +1800,8 @@ impl MhfdatApp {
                     let succ_rate = entry.full_succ_rate;
                     let zenny = entry.zenny_cost;
                     
-                    if ui.selectable_label(false, format!("{}", i)).clicked() {
+                    let selected = self.selected_g50_ranged_index == Some(i);
+                    if ui.selectable_label(selected, format!("{}", i)).clicked() {
                         self.selected_g50_ranged_index = Some(i);
                         self.view_mode.insert("g50_ranged".to_string(), ViewMode::Details);
                     }
@@ -1826,6 +1814,7 @@ impl MhfdatApp {
                 }
             });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.g50_ranged_page, total_pages);
     }
 
     pub fn show_g50_ranged_details(&mut self, ui: &mut egui::Ui) {
@@ -1833,8 +1822,10 @@ impl MhfdatApp {
             self.view_mode.insert("g50_ranged".to_string(), ViewMode::List);
             return;
         }
-        
+
         if let Some(idx) = self.selected_g50_ranged_index {
+            ui.heading(format!("Edit G50 Ranged Upgrade #{idx}"));
+            ui.separator();
             if idx < self.g50_ranged_weapon_upgrades.len() {
                 let entry = self.g50_ranged_weapon_upgrades[idx].clone();
                 let mut weapon_id = entry.weapon_id;
@@ -1977,23 +1968,8 @@ impl MhfdatApp {
     }
 
     pub fn show_g50_tower_list(&mut self, ui: &mut egui::Ui) {
-        // Weapon type selector
-        ui.horizontal(|ui| {
-            ui.label("Weapon Type:");
-            egui::ComboBox::from_id_source("g50_tower_type")
-                .selected_text(Self::get_g50_tower_type_name(self.selected_g50_tower_type))
-                .show_ui(ui, |ui| {
-                    for i in 0..14 {
-                        if ui.selectable_label(self.selected_g50_tower_type == i, Self::get_g50_tower_type_name(i)).clicked() {
-                            self.selected_g50_tower_type = i;
-                            self.g50_tower_page = 0;
-                            self.selected_g50_tower_weapon = None;
-                        }
-                    }
-                });
-            ui.separator();
-            ui.checkbox(&mut self.g50_tower_filter_unnamed, "Show only unnamed");
-            ui.separator();
+        let count = self.g50_tower_params[self.selected_g50_tower_type].weapons.len();
+        MhfdatApp::section_header(ui, &format!("G50 Tower Params (found: {count})"), |ui| {
             if ui.button("Export to JSON").clicked() {
                 if let Ok(Some(path)) = native_dialog::FileDialog::new()
                     .add_filter("JSON", &["json"])
@@ -2006,13 +1982,34 @@ impl MhfdatApp {
                 }
             }
             if ui.button("Import from JSON").clicked() {
-                if let Ok(data) = std::fs::read_to_string("g50_tower_params.json") {
-                    if let Ok(imported) = serde_json::from_str::<[crate::model::mhfdat::G50WeaponTypeData; 14]>(&data) {
-                        self.g50_tower_params = imported;
-                        self.g50_tower_params_modified = [true; 14];
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file()
+                {
+                    if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(imported) = serde_json::from_str::<[crate::model::mhfdat::G50WeaponTypeData; 14]>(&data) {
+                            self.g50_tower_params = imported;
+                            self.g50_tower_params_modified = [true; 14];
+                        }
                     }
                 }
             }
+        });
+
+        MhfdatApp::responsive_row(ui, |ui| {
+            ui.label("Weapon Type:");
+            egui::ComboBox::from_id_source("g50_tower_type")
+                .selected_text(Self::get_g50_tower_type_name(self.selected_g50_tower_type))
+                .show_ui(ui, |ui| {
+                    for i in 0..14 {
+                        if ui.selectable_label(self.selected_g50_tower_type == i, Self::get_g50_tower_type_name(i)).clicked() {
+                            self.selected_g50_tower_type = i;
+                            self.g50_tower_page = 0;
+                            self.selected_g50_tower_weapon = None;
+                        }
+                    }
+                });
+            ui.checkbox(&mut self.g50_tower_filter_unnamed, "Show only unnamed");
         });
 
         let weapon_type_data = &self.g50_tower_params[self.selected_g50_tower_type];
@@ -2034,24 +2031,15 @@ impl MhfdatApp {
             all_weapon_infos.iter().collect()
         };
         
-        let total = filtered.len();
-        let page_size = 15;
-        let total_pages = (total + page_size - 1) / page_size;
-        let page = (self.g50_tower_page as usize).min(total_pages.saturating_sub(1));
+        let (start, end, total_pages) = crate::app::list_window(&mut self.g50_tower_page, filtered.len());
 
-        ui.label(format!("Total weapons: {} (50 levels each)", total));
-        MhfdatApp::pagination_controls(ui, &mut self.g50_tower_page, total_pages);
-        ui.separator();
-
-        let start = page * page_size;
-        let end = (start + page_size).min(total);
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "g50_tower_scroll", "Weapon", start, end, filtered.len(), |ui| {
             egui::Grid::new("g50_tower_grid").striped(true).show(ui, |ui| {
                 ui.label("ID"); ui.label("Weapon Name"); ui.label("Levels"); ui.end_row();
                 
                 for &&(w, levels_count, ref weapon_name) in &filtered[start..end] {
-                    if ui.selectable_label(false, format!("{}", w)).clicked() {
+                    let selected = self.selected_g50_tower_weapon == Some(w);
+                    if ui.selectable_label(selected, format!("{}", w)).clicked() {
                         self.selected_g50_tower_weapon = Some(w);
                         self.selected_g50_tower_level = None;
                         self.view_mode.insert("g50_tower".to_string(), ViewMode::Details);
@@ -2062,6 +2050,7 @@ impl MhfdatApp {
                 }
             });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.g50_tower_page, total_pages);
     }
 
     pub fn show_g50_tower_details(&mut self, ui: &mut egui::Ui) {
@@ -2111,7 +2100,6 @@ impl MhfdatApp {
                             ui.label("Ail Damage:"); if ui.add(egui::DragValue::new(&mut ail_damage)).changed() { changed = true; } ui.end_row();
                             ui.label("Defense:"); if ui.add(egui::DragValue::new(&mut defense)).changed() { changed = true; } ui.end_row();
                             ui.label("Chance Rate:"); if ui.add(egui::DragValue::new(&mut chance_rate)).changed() { changed = true; } ui.end_row();
-                            ui.label("Unknown 0D:"); if ui.add(egui::DragValue::new(&mut unk_0d)).changed() { changed = true; } ui.end_row();
                             ui.label("Upgrade Path:"); if ui.add(egui::DragValue::new(&mut upgrade_path)).changed() { changed = true; } ui.end_row();
                         });
 
@@ -2150,12 +2138,13 @@ impl MhfdatApp {
                     
                     ui.label(format!("{} - {}", Self::get_g50_tower_type_name(type_idx), weapon_name));
                     ui.separator();
-                    
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+
+                    let level_count = weapon.levels.len();
+                    MhfdatApp::entity_list(ui, "g50_tower_levels_scroll", "Level", 0, level_count, level_count, |ui| {
                         egui::Grid::new("g50_tower_levels").striped(true).show(ui, |ui| {
                             ui.label("Level"); ui.label("Raw"); ui.label("Element"); ui.label("Ailment"); ui.end_row();
                             
-                            for l in 0..weapon.levels.len() {
+                            for l in 0..level_count {
                                 let entry_ptr = &weapon.levels[l] as *const _;
                                 let entry: crate::model::mhfdat::TowerG50WeaponParams = unsafe { std::ptr::read_unaligned(entry_ptr) };
                                 let weapon_raw = entry.weapon_raw;
@@ -2164,7 +2153,8 @@ impl MhfdatApp {
                                 let ailment_id = entry.ailment_id;
                                 let ail_damage = entry.ail_damage;
                                 
-                                if ui.selectable_label(false, format!("{}", l)).clicked() {
+                                let selected = self.selected_g50_tower_level == Some(l);
+                                if ui.selectable_label(selected, format!("{}", l)).clicked() {
                                     self.selected_g50_tower_level = Some(l);
                                 }
                                 ui.label(format!("{}", weapon_raw));

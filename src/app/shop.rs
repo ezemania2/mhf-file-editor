@@ -2,7 +2,7 @@ use super::*;
 use egui;
 
 impl MhfdatApp {
-    fn get_armor_name(&self, equip_type: u8, equip_id: u16) -> String {
+    pub(in crate::app) fn get_armor_name(&self, equip_type: u8, equip_id: u16) -> String {
         match equip_type {
             0x02 => self.head_armor_names.get(equip_id as usize).cloned().unwrap_or_default(),
             0x03 => self.body_armor_names.get(equip_id as usize).cloned().unwrap_or_default(),
@@ -13,7 +13,7 @@ impl MhfdatApp {
         }
     }
 
-    fn get_item_name(&self, item_id: u16) -> String {
+    pub(in crate::app) fn get_item_name(&self, item_id: u16) -> String {
         if item_id == 0 {
             "None".to_string()
         } else {
@@ -35,6 +35,18 @@ impl MhfdatApp {
             if ui.selectable_label(matches!(self.workshop_category, super::WorkshopCategory::Deco), "Deco").clicked() {
                 self.workshop_category = super::WorkshopCategory::Deco;
                 self.view_mode.insert("shop".to_string(), ViewMode::List);
+            }
+            if ui.selectable_label(matches!(self.workshop_category, super::WorkshopCategory::Combine), "Combine").clicked() {
+                self.workshop_category = super::WorkshopCategory::Combine;
+                self.view_mode.insert("shop".to_string(), ViewMode::List);
+                self.craft_more_page = 0;
+                self.craft_more_selected = None;
+            }
+            if ui.selectable_label(matches!(self.workshop_category, super::WorkshopCategory::TowerSeals), "Tower Seals").clicked() {
+                self.workshop_category = super::WorkshopCategory::TowerSeals;
+                self.view_mode.insert("shop".to_string(), ViewMode::List);
+                self.craft_more_page = 0;
+                self.craft_more_selected = None;
             }
         });
         ui.separator();
@@ -58,6 +70,24 @@ impl MhfdatApp {
                     if ui.selectable_label(matches!(self.weapon_shop_tab, super::WeaponShopTab::ForgingTower), "Tower Weapons Forging").clicked() {
                         self.weapon_shop_tab = super::WeaponShopTab::ForgingTower;
                         self.view_mode.insert("shop".to_string(), ViewMode::List);
+                    }
+                    if ui.selectable_label(matches!(self.weapon_shop_tab, super::WeaponShopTab::Special), "Special Forging").clicked() {
+                        self.weapon_shop_tab = super::WeaponShopTab::Special;
+                        self.view_mode.insert("shop".to_string(), ViewMode::List);
+                        self.craft_more_page = 0;
+                        self.craft_more_selected = None;
+                    }
+                    if ui.selectable_label(matches!(self.weapon_shop_tab, super::WeaponShopTab::TowerJewels), "Tower Jewels").clicked() {
+                        self.weapon_shop_tab = super::WeaponShopTab::TowerJewels;
+                        self.view_mode.insert("shop".to_string(), ViewMode::List);
+                        self.craft_more_page = 0;
+                        self.craft_more_selected = None;
+                    }
+                    if ui.selectable_label(matches!(self.weapon_shop_tab, super::WeaponShopTab::TowerCosts), "Tower Upgrade Costs").clicked() {
+                        self.weapon_shop_tab = super::WeaponShopTab::TowerCosts;
+                        self.view_mode.insert("shop".to_string(), ViewMode::List);
+                        self.craft_more_page = 0;
+                        self.craft_more_selected = None;
                     }
                 });
                 ui.separator();
@@ -99,6 +129,18 @@ impl MhfdatApp {
                             ViewMode::Details => self.show_tower_weapon_forging_details(ui),
                         }
                     }
+                    super::WeaponShopTab::Special => {
+                        self.show_table_problems(ui, "craft");
+                        self.show_fixed_forging(ui, 0);
+                    }
+                    super::WeaponShopTab::TowerJewels => {
+                        self.show_table_problems(ui, "craft");
+                        self.show_tower_jewels(ui);
+                    }
+                    super::WeaponShopTab::TowerCosts => {
+                        self.show_table_problems(ui, "craft");
+                        self.show_tower_costs(ui);
+                    }
                 }
             }
             super::WorkshopCategory::ArmorShops => {
@@ -123,6 +165,12 @@ impl MhfdatApp {
                     if ui.selectable_label(matches!(self.armor_shop_tab, super::ArmorShopTab::ForgingTower), "Tower Armor Forging").clicked() {
                         self.armor_shop_tab = super::ArmorShopTab::ForgingTower;
                         self.view_mode.insert("shop".to_string(), ViewMode::List);
+                    }
+                    if ui.selectable_label(matches!(self.armor_shop_tab, super::ArmorShopTab::Premium), "Premium Forging").clicked() {
+                        self.armor_shop_tab = super::ArmorShopTab::Premium;
+                        self.view_mode.insert("shop".to_string(), ViewMode::List);
+                        self.craft_more_page = 0;
+                        self.craft_more_selected = None;
                     }
                 });
                 ui.separator();
@@ -173,10 +221,22 @@ impl MhfdatApp {
                             ViewMode::Details => self.show_tower_armor_forging_details(ui),
                         }
                     }
+                    super::ArmorShopTab::Premium => {
+                        self.show_table_problems(ui, "craft");
+                        self.show_fixed_forging(ui, 1);
+                    }
                 }
             }
             super::WorkshopCategory::Deco => {
                 self.show_deco_shop(ui);
+            }
+            super::WorkshopCategory::Combine => {
+                self.show_table_problems(ui, "craft");
+                self.show_combine_shop(ui);
+            }
+            super::WorkshopCategory::TowerSeals => {
+                self.show_table_problems(ui, "craft");
+                self.show_tower_seals(ui);
             }
         }
     }
@@ -215,6 +275,45 @@ impl MhfdatApp {
         }
 
         MhfdatApp::section_header(ui, "Deco Shop", |ui| {
+            if ui.button("Add New").clicked() {
+                let new_entry = crate::model::mhfdat::DecoShop::default();
+                let new_index = match self.shop_page {
+                    0 => {
+                        self.deco_shop_hr_entries.push(new_entry);
+                        self.deco_shop_hr_modified = true;
+                        self.deco_shop_hr_entries.len() - 1
+                    }
+                    1 => {
+                        self.deco_shop_gr_entries.push(new_entry);
+                        self.deco_shop_gr_modified = true;
+                        self.deco_shop_gr_entries.len() - 1
+                    }
+                    2 => {
+                        self.cuff_shop_entries.push(new_entry);
+                        self.cuff_shop_modified = true;
+                        self.cuff_shop_entries.len() - 1
+                    }
+                    3 => {
+                        self.cuff_gr_shop_entries.push(new_entry);
+                        self.cuff_gr_shop_modified = true;
+                        self.cuff_gr_shop_entries.len() - 1
+                    }
+                    _ => 0,
+                };
+                self.selected_deco_shop_index = Some(new_index);
+                self.view_mode.insert("deco_shop".to_string(), ViewMode::Details);
+                let total_items = match self.shop_page {
+                    0 => self.deco_shop_hr_entries.len(),
+                    1 => self.deco_shop_gr_entries.len(),
+                    2 => self.cuff_shop_entries.len(),
+                    3 => self.cuff_gr_shop_entries.len(),
+                    _ => 0,
+                };
+                let total_pages = (total_items + crate::app::LIST_PAGE_SIZE - 1) / crate::app::LIST_PAGE_SIZE;
+                if total_pages > 0 {
+                    self.deco_shop_page = (total_pages - 1) as u32;
+                }
+            }
             if ui.button("Export current list to JSON").clicked() {
                 let (default_name, data): (&str, &Vec<crate::model::mhfdat::DecoShop>) = match self.shop_page {
                     0 => ("deco_shop_hr.json", &self.deco_shop_hr_entries),
@@ -268,71 +367,9 @@ impl MhfdatApp {
         // Route by view mode
         match self.view_mode.get("deco_shop").cloned().unwrap_or(ViewMode::List) {
             ViewMode::List => {
-                // Search
-                ui.horizontal(|ui| {
+                MhfdatApp::responsive_row(ui, |ui| {
                     ui.label("Search:");
                     ui.text_edit_singleline(&mut self.deco_shop_search);
-                    if ui.button("Export current list to JSON").clicked() {
-                        let (default_name, data): (&str, &Vec<crate::model::mhfdat::DecoShop>) = match self.shop_page {
-                            0 => ("deco_shop_hr.json", &self.deco_shop_hr_entries),
-                            1 => ("deco_shop_gr.json", &self.deco_shop_gr_entries),
-                            2 => ("cuff_shop.json", &self.cuff_shop_entries),
-                            3 => ("cuff_gr_shop.json", &self.cuff_gr_shop_entries),
-                            _ => ("deco_shop_hr.json", &self.deco_shop_hr_entries),
-                        };
-                        if let Ok(Some(path)) = native_dialog::FileDialog::new()
-                            .add_filter("JSON", &["json"])
-                            .set_filename(default_name)
-                            .show_save_single_file() 
-                        {
-                            if let Ok(text) = MhfdatApp::export_indexed_json(data) {
-                                let _ = std::fs::write(path.to_str().unwrap_or(default_name), text);
-                            }
-                        }
-                    }
-                });
-
-                // Add new entry to current subcategory
-                ui.horizontal(|ui| {
-                    if ui.button("Add New").clicked() {
-                        let new_entry = crate::model::mhfdat::DecoShop::default();
-                        let new_index = match self.shop_page {
-                            0 => { 
-                                self.deco_shop_hr_entries.push(new_entry); 
-                                self.deco_shop_hr_modified = true;
-                                self.deco_shop_hr_entries.len() - 1 
-                            }
-                            1 => { 
-                                self.deco_shop_gr_entries.push(new_entry); 
-                                self.deco_shop_gr_modified = true;
-                                self.deco_shop_gr_entries.len() - 1 
-                            }
-                            2 => { 
-                                self.cuff_shop_entries.push(new_entry); 
-                                self.cuff_shop_modified = true;
-                                self.cuff_shop_entries.len() - 1 
-                            }
-                            3 => { 
-                                self.cuff_gr_shop_entries.push(new_entry); 
-                                self.cuff_gr_shop_modified = true;
-                                self.cuff_gr_shop_entries.len() - 1 
-                            }
-                            _ => 0,
-                        };
-                        self.selected_deco_shop_index = Some(new_index);
-                        self.view_mode.insert("deco_shop".to_string(), ViewMode::Details);
-                        // Move to the last page to show the new item
-                        let total_items = match self.shop_page {
-                            0 => self.deco_shop_hr_entries.len(),
-                            1 => self.deco_shop_gr_entries.len(),
-                            2 => self.cuff_shop_entries.len(),
-                            3 => self.cuff_gr_shop_entries.len(),
-                            _ => 0,
-                        };
-                        let per_page = 20usize;
-                        let total_pages = (total_items + per_page - 1) / per_page;
-                        if total_pages > 0 { self.deco_shop_page = (total_pages - 1) as u32; }
-                    }
                 });
 
         // Choose source by sub-category (clone to avoid borrowing self during UI/mutations)
@@ -362,17 +399,9 @@ impl MhfdatApp {
                 .collect()
         };
 
-        // Pagination (20 rows/page)
-        let per_page = 20usize;
-        let total = entries.len();
-        let total_pages = (total + per_page - 1) / per_page;
-        let current = (self.deco_shop_page as usize).min(total_pages.saturating_sub(1));
-        if current != self.deco_shop_page as usize { self.deco_shop_page = current as u32; }
-        MhfdatApp::pagination_controls(ui, &mut self.deco_shop_page, total_pages);
-        let start = current * per_page;
-        let end = (start + per_page).min(total);
+        let (start, end, total_pages) = crate::app::list_window(&mut self.deco_shop_page, entries.len());
 
-        MhfdatApp::list_scroll(ui, "deco_shop_grid_scroll", |ui| {
+        MhfdatApp::entity_list(ui, "deco_shop_grid_scroll", "Entry", start, end, entries.len(), |ui| {
             egui::Grid::new("deco_shop_grid").striped(true).show(ui, |ui| {
                 ui.label("Idx"); ui.label("Deco Name"); ui.label("Cat");
                 ui.label("Mat1"); ui.label("Qty1");
@@ -405,6 +434,7 @@ impl MhfdatApp {
                 }
             });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.deco_shop_page, total_pages);
             }
             ViewMode::Details => {
                 // Back to list
@@ -542,7 +572,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_armor_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -565,29 +595,6 @@ impl MhfdatApp {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
 
-            if ui.button("Add New Transmog").clicked() {
-                self.transmog_entries.push(ShopEntry {
-                    equip_type: 0x02, // Default to Head
-                    equip_id: 0,
-                    material_id1: 0,
-                    material_amnt1: 0,
-                    material_id2: 0,
-                    material_amnt2: 0,
-                    material_id3: 0,
-                    material_amnt3: 0,
-                    material_id4: 0,
-                    material_amnt4: 0,
-                    hr_req: 0,
-                    ..Default::default()
-                });
-                self.transmog_modified = true;
-                self.selected_transmog_index = Some(self.transmog_entries.len() - 1);
-                // Initialiser view_mode si nécessaire
-                if !self.view_mode.contains_key("shop") {
-                    self.view_mode.insert("shop".to_string(), ViewMode::List);
-                }
-                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
-            }
         });
 
         // Get filtered entries
@@ -611,14 +618,13 @@ impl MhfdatApp {
         let entries_per_page = 15;
         let total_pages = (filtered_entries.len() + entries_per_page - 1) / entries_per_page;
         let current_page = self.shop_page as usize;
-        let start_idx = current_page * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(filtered_entries.len());
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, filtered_entries.len());
 
         let mut selected_idx = None;
         let mut should_switch_view = false;
 
         // Transmog list
-        MhfdatApp::list_scroll(ui, "transmog_shop_list_scroll", |ui| {
+        MhfdatApp::entity_list(ui, "transmog_shop_list_scroll", "Entry", start_idx, end_idx, filtered_entries.len(), |ui| {
                 egui::Grid::new("transmog_shop_list_grid")
                     .striped(true)
                     .show(ui, |ui| {
@@ -907,7 +913,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_weapon_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -924,28 +930,6 @@ impl MhfdatApp {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
 
-            if ui.button("Add New").clicked() {
-                self.weapon_forging_entries.push(ShopEntry {
-                    equip_type: 0x06,
-                    equip_id: 0,
-                    material_id1: 0,
-                    material_amnt1: 0,
-                    material_id2: 0,
-                    material_amnt2: 0,
-                    material_id3: 0,
-                    material_amnt3: 0,
-                    material_id4: 0,
-                    material_amnt4: 0,
-                    hr_req: 0,
-                    ..Default::default()
-                });
-                self.weapon_forging_modified = true;
-                self.selected_weapon_forging_index = Some(self.weapon_forging_entries.len() - 1);
-                if !self.view_mode.contains_key("shop") {
-                    self.view_mode.insert("shop".to_string(), ViewMode::List);
-                }
-                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
-            }
         });
 
         // Get filtered entries
@@ -971,8 +955,7 @@ impl MhfdatApp {
         let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
         let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
         self.shop_page = current_page;
-        let start_idx = (current_page as usize) * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(total_entries);
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, total_entries);
 
         // Display paginated entries in table format
         let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
@@ -990,8 +973,7 @@ impl MhfdatApp {
              entry.material_id4, entry.material_amnt4, entry.hr_req)
         }).collect();
 
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "weapon_forging_table_scroll", "Entry", start_idx, end_idx, total_entries, |ui| {
             egui::Grid::new("weapon_forging_table")
                 .striped(true)
                 .num_columns(12)
@@ -1013,7 +995,8 @@ impl MhfdatApp {
 
                     // Data rows
                     for (idx, weapon_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
-                        if ui.button(idx.to_string()).clicked() {
+                        let selected = self.selected_weapon_forging_index == Some(*idx);
+                            if ui.selectable_label(selected, idx.to_string()).clicked() {
                             self.selected_weapon_forging_index = Some(*idx);
                             *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
                         }
@@ -1195,7 +1178,7 @@ impl MhfdatApp {
         }
     }
 
-    fn get_weapon_name(&self, equip_type: u8, equip_id: u16) -> String {
+    pub(in crate::app) fn get_weapon_name(&self, equip_type: u8, equip_id: u16) -> String {
         match equip_type {
             0x06 => self.melee_weapon_names.get(equip_id as usize).cloned().unwrap_or_else(|| format!("Melee #{}", equip_id)),
             0x07 => self.ranged_weapon_names.get(equip_id as usize).cloned().unwrap_or_else(|| format!("Ranged #{}", equip_id)),
@@ -1262,7 +1245,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_armor_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -1285,28 +1268,6 @@ impl MhfdatApp {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
 
-            if ui.button("Add New").clicked() {
-                self.armor_forging_entries.push(ShopEntry {
-                    equip_type: 0x02,
-                    equip_id: 0,
-                    material_id1: 0,
-                    material_amnt1: 0,
-                    material_id2: 0,
-                    material_amnt2: 0,
-                    material_id3: 0,
-                    material_amnt3: 0,
-                    material_id4: 0,
-                    material_amnt4: 0,
-                    hr_req: 0,
-                    ..Default::default()
-                });
-                self.armor_forging_modified = true;
-                self.selected_armor_forging_index = Some(self.armor_forging_entries.len() - 1);
-                if !self.view_mode.contains_key("shop") {
-                    self.view_mode.insert("shop".to_string(), ViewMode::List);
-                }
-                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
-            }
         });
 
         // Get filtered entries
@@ -1332,8 +1293,7 @@ impl MhfdatApp {
         let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
         let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
         self.shop_page = current_page;
-        let start_idx = (current_page as usize) * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(total_entries);
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, total_entries);
 
         // Display paginated entries in table format
         let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
@@ -1354,8 +1314,7 @@ impl MhfdatApp {
              entry.material_id4, entry.material_amnt4, entry.hr_req)
         }).collect();
 
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "armor_forging_table_scroll", "Entry", start_idx, end_idx, total_entries, |ui| {
             egui::Grid::new("armor_forging_table")
                 .striped(true)
                 .num_columns(12)
@@ -1377,7 +1336,8 @@ impl MhfdatApp {
 
                     // Data rows
                     for (idx, armor_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
-                        if ui.button(idx.to_string()).clicked() {
+                        let selected = self.selected_armor_forging_index == Some(*idx);
+                            if ui.selectable_label(selected, idx.to_string()).clicked() {
                             self.selected_armor_forging_index = Some(*idx);
                             *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
                         }
@@ -1626,7 +1586,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_weapon_gr_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -1643,28 +1603,6 @@ impl MhfdatApp {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
 
-            if ui.button("Add New").clicked() {
-                self.weapon_forging_gr_entries.push(ShopEntry {
-                    equip_type: 0x06,
-                    equip_id: 0,
-                    material_id1: 0,
-                    material_amnt1: 0,
-                    material_id2: 0,
-                    material_amnt2: 0,
-                    material_id3: 0,
-                    material_amnt3: 0,
-                    material_id4: 0,
-                    material_amnt4: 0,
-                    hr_req: 0,
-                    ..Default::default()
-                });
-                self.weapon_forging_gr_modified = true;
-                self.selected_weapon_forging_gr_index = Some(self.weapon_forging_gr_entries.len() - 1);
-                if !self.view_mode.contains_key("shop") {
-                    self.view_mode.insert("shop".to_string(), ViewMode::List);
-                }
-                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
-            }
         });
 
         // Get filtered entries
@@ -1690,8 +1628,7 @@ impl MhfdatApp {
         let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
         let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
         self.shop_page = current_page;
-        let start_idx = (current_page as usize) * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(total_entries);
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, total_entries);
 
         // Display paginated entries in table format
         let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
@@ -1709,8 +1646,7 @@ impl MhfdatApp {
              entry.material_id4, entry.material_amnt4, entry.hr_req)
         }).collect();
 
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "weapon_forging_gr_table_scroll", "Entry", start_idx, end_idx, total_entries, |ui| {
             egui::Grid::new("weapon_forging_gr_table")
                 .striped(true)
                 .num_columns(12)
@@ -1732,7 +1668,8 @@ impl MhfdatApp {
 
                     // Data rows
                     for (idx, weapon_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
-                        if ui.button(idx.to_string()).clicked() {
+                        let selected = self.selected_weapon_forging_gr_index == Some(*idx);
+                            if ui.selectable_label(selected, idx.to_string()).clicked() {
                             self.selected_weapon_forging_gr_index = Some(*idx);
                             *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
                         }
@@ -1975,7 +1912,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_armor_gr_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -1998,28 +1935,6 @@ impl MhfdatApp {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
 
-            if ui.button("Add New").clicked() {
-                self.armor_forging_gr_entries.push(ShopEntry {
-                    equip_type: 0x02,
-                    equip_id: 0,
-                    material_id1: 0,
-                    material_amnt1: 0,
-                    material_id2: 0,
-                    material_amnt2: 0,
-                    material_id3: 0,
-                    material_amnt3: 0,
-                    material_id4: 0,
-                    material_amnt4: 0,
-                    hr_req: 0,
-                    ..Default::default()
-                });
-                self.armor_forging_gr_modified = true;
-                self.selected_armor_forging_gr_index = Some(self.armor_forging_gr_entries.len() - 1);
-                if !self.view_mode.contains_key("shop") {
-                    self.view_mode.insert("shop".to_string(), ViewMode::List);
-                }
-                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
-            }
         });
 
         // Get filtered entries
@@ -2045,8 +1960,7 @@ impl MhfdatApp {
         let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
         let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
         self.shop_page = current_page;
-        let start_idx = (current_page as usize) * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(total_entries);
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, total_entries);
 
         // Display paginated entries in table format
         let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
@@ -2067,8 +1981,7 @@ impl MhfdatApp {
              entry.material_id4, entry.material_amnt4, entry.hr_req)
         }).collect();
 
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "armor_forging_gr_table_scroll", "Entry", start_idx, end_idx, total_entries, |ui| {
             egui::Grid::new("armor_forging_gr_table")
                 .striped(true)
                 .num_columns(12)
@@ -2090,7 +2003,8 @@ impl MhfdatApp {
 
                     // Data rows
                     for (idx, armor_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
-                        if ui.button(idx.to_string()).clicked() {
+                        let selected = self.selected_armor_forging_gr_index == Some(*idx);
+                            if ui.selectable_label(selected, idx.to_string()).clicked() {
                             self.selected_armor_forging_gr_index = Some(*idx);
                             *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
                         }
@@ -2339,7 +2253,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_weapon_zenith_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -2356,28 +2270,6 @@ impl MhfdatApp {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
 
-            if ui.button("Add New").clicked() {
-                self.weapon_forging_zenith_entries.push(ShopEntry {
-                    equip_type: 0x06,
-                    equip_id: 0,
-                    material_id1: 0,
-                    material_amnt1: 0,
-                    material_id2: 0,
-                    material_amnt2: 0,
-                    material_id3: 0,
-                    material_amnt3: 0,
-                    material_id4: 0,
-                    material_amnt4: 0,
-                    hr_req: 0,
-                    ..Default::default()
-                });
-                self.weapon_forging_zenith_modified = true;
-                self.selected_weapon_forging_zenith_index = Some(self.weapon_forging_zenith_entries.len() - 1);
-                if !self.view_mode.contains_key("shop") {
-                    self.view_mode.insert("shop".to_string(), ViewMode::List);
-                }
-                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
-            }
         });
 
         // Get filtered entries
@@ -2403,8 +2295,7 @@ impl MhfdatApp {
         let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
         let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
         self.shop_page = current_page;
-        let start_idx = (current_page as usize) * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(total_entries);
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, total_entries);
 
         // Display paginated entries in table format
         let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
@@ -2422,8 +2313,7 @@ impl MhfdatApp {
              entry.material_id4, entry.material_amnt4, entry.hr_req)
         }).collect();
 
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "weapon_forging_zenith_table_scroll", "Entry", start_idx, end_idx, total_entries, |ui| {
             egui::Grid::new("weapon_forging_zenith_table")
                 .striped(true)
                 .num_columns(12)
@@ -2445,7 +2335,8 @@ impl MhfdatApp {
 
                     // Data rows
                     for (idx, weapon_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
-                        if ui.button(idx.to_string()).clicked() {
+                        let selected = self.selected_weapon_forging_zenith_index == Some(*idx);
+                            if ui.selectable_label(selected, idx.to_string()).clicked() {
                             self.selected_weapon_forging_zenith_index = Some(*idx);
                             *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
                         }
@@ -2688,7 +2579,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_armor_zenith_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -2711,28 +2602,6 @@ impl MhfdatApp {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
 
-            if ui.button("Add New").clicked() {
-                self.armor_forging_zenith_entries.push(ShopEntry {
-                    equip_type: 0x02,
-                    equip_id: 0,
-                    material_id1: 0,
-                    material_amnt1: 0,
-                    material_id2: 0,
-                    material_amnt2: 0,
-                    material_id3: 0,
-                    material_amnt3: 0,
-                    material_id4: 0,
-                    material_amnt4: 0,
-                    hr_req: 0,
-                    ..Default::default()
-                });
-                self.armor_forging_zenith_modified = true;
-                self.selected_armor_forging_zenith_index = Some(self.armor_forging_zenith_entries.len() - 1);
-                if !self.view_mode.contains_key("shop") {
-                    self.view_mode.insert("shop".to_string(), ViewMode::List);
-                }
-                *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
-            }
         });
 
         // Get filtered entries
@@ -2758,8 +2627,7 @@ impl MhfdatApp {
         let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
         let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
         self.shop_page = current_page;
-        let start_idx = (current_page as usize) * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(total_entries);
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, total_entries);
 
         // Display paginated entries in table format
         let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
@@ -2780,8 +2648,7 @@ impl MhfdatApp {
              entry.material_id4, entry.material_amnt4, entry.hr_req)
         }).collect();
 
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "armor_forging_zenith_table_scroll", "Entry", start_idx, end_idx, total_entries, |ui| {
             egui::Grid::new("armor_forging_zenith_table")
                 .striped(true)
                 .num_columns(12)
@@ -2803,7 +2670,8 @@ impl MhfdatApp {
 
                     // Data rows
                     for (idx, armor_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
-                        if ui.button(idx.to_string()).clicked() {
+                        let selected = self.selected_armor_forging_zenith_index == Some(*idx);
+                            if ui.selectable_label(selected, idx.to_string()).clicked() {
                             self.selected_armor_forging_zenith_index = Some(*idx);
                             *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
                         }
@@ -3052,7 +2920,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_weapon_tower_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -3093,8 +2961,7 @@ impl MhfdatApp {
         let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
         let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
         self.shop_page = current_page;
-        let start_idx = (current_page as usize) * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(total_entries);
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, total_entries);
 
         // Display paginated entries in table format
         let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
@@ -3112,8 +2979,7 @@ impl MhfdatApp {
              entry.material_id4, entry.material_amnt4, entry.hr_req)
         }).collect();
 
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "tower_weapon_forging_table_scroll", "Entry", start_idx, end_idx, total_entries, |ui| {
             egui::Grid::new("tower_weapon_forging_table")
                 .striped(true)
                 .num_columns(12)
@@ -3135,7 +3001,8 @@ impl MhfdatApp {
 
                     // Data rows
                     for (idx, weapon_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
-                        if ui.button(idx.to_string()).clicked() {
+                        let selected = self.selected_tower_weapon_forging_index == Some(*idx);
+                            if ui.selectable_label(selected, idx.to_string()).clicked() {
                             self.selected_tower_weapon_forging_index = Some(*idx);
                             *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
                         }
@@ -3368,7 +3235,7 @@ impl MhfdatApp {
         });
 
         // Search and filters
-        ui.horizontal_wrapped(|ui| {
+        MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Type:");
             egui::ComboBox::from_id_source("shop_armor_tower_type_filter_combo")
                 .selected_text(match self.shop_equip_type_filter {
@@ -3415,8 +3282,7 @@ impl MhfdatApp {
         let total_pages = if total_entries == 0 { 0 } else { ((total_entries - 1) / entries_per_page) + 1 };
         let current_page = self.shop_page.min((total_pages.saturating_sub(1)) as u32);
         self.shop_page = current_page;
-        let start_idx = (current_page as usize) * entries_per_page;
-        let end_idx = (start_idx + entries_per_page).min(total_entries);
+        let (start_idx, end_idx) = crate::app::page_range(current_page as usize, entries_per_page, total_entries);
 
         // Display paginated entries in table format
         let page_entries: Vec<(usize, &ShopEntry)> = filtered_entries[start_idx..end_idx].to_vec();
@@ -3437,8 +3303,7 @@ impl MhfdatApp {
              entry.material_id4, entry.material_amnt4, entry.hr_req)
         }).collect();
 
-        ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "tower_armor_forging_table_scroll", "Entry", start_idx, end_idx, total_entries, |ui| {
             egui::Grid::new("tower_armor_forging_table")
                 .striped(true)
                 .num_columns(12)
@@ -3460,7 +3325,8 @@ impl MhfdatApp {
 
                     // Data rows
                     for (idx, armor_name, type_name, mat1, amt1, mat2, amt2, mat3, amt3, mat4, amt4, hr_req) in &table_data {
-                        if ui.button(idx.to_string()).clicked() {
+                        let selected = self.selected_tower_armor_forging_index == Some(*idx);
+                            if ui.selectable_label(selected, idx.to_string()).clicked() {
                             self.selected_tower_armor_forging_index = Some(*idx);
                             *self.view_mode.get_mut("shop").unwrap() = ViewMode::Details;
                         }

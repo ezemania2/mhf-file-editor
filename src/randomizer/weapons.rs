@@ -38,7 +38,7 @@ pub fn randomize_melee_buffer_with_options(buf: &mut Vec<u8>, rng: &mut ChaCha8R
         let at = MELEE_WEAPONS_PTR as usize;
         if buf.len() >= at + 4 {
             let mut off = u32::from_le_bytes([buf[at], buf[at+1], buf[at+2], buf[at+3]]);
-            if (off as usize) >= buf.len() && off >= 0x0180_0000 { off -= 0x0180_0000; }
+            if (off as usize) >= buf.len() { return Err(format!("pointer 0x{:X} is outside the {}-byte file", off, buf.len())); }
             off
         } else {
             // Fallback to computed offsets
@@ -79,7 +79,7 @@ pub fn randomize_melee_buffer_with_options(buf: &mut Vec<u8>, rng: &mut ChaCha8R
         
         // sharpness id/max
         if options.randomize_sharpness {
-            w.sharpness_id = rng.gen_range(0u8..=128u8);
+            w.sharpness_id = rng.gen_range(0u8..=127u8); // 128 entries per type: 0..=127
             w.sharpness_max = rng.gen_range(0u8..=4u8);
         }
         
@@ -122,7 +122,7 @@ pub fn randomize_ranged_buffer_with_options(buf: &mut Vec<u8>, rng: &mut ChaCha8
         let at = RANGED_WEAPONS_PTR as usize;
         if buf.len() >= at + 4 {
             let mut off = u32::from_le_bytes([buf[at], buf[at+1], buf[at+2], buf[at+3]]);
-            if (off as usize) >= buf.len() && off >= 0x0180_0000 { off -= 0x0180_0000; }
+            if (off as usize) >= buf.len() { return Err(format!("pointer 0x{:X} is outside the {}-byte file", off, buf.len())); }
             off
         } else {
             read_mhfdat_offsets(buf).ok_or("Offsets not found")?.1

@@ -22,9 +22,13 @@ pub struct SharpnessItem {
 }
 
 impl SharpnessItem {
-    pub fn total(&self) -> u16 {
-        self.red + self.orange + self.yellow + self.green + 
-        self.blue + self.white + self.purple + self.sky_blue
+    /// Sum of the eight bands. u32: eight u16 can add up past 65535 (u16 would wrap or panic).
+    pub fn total(&self) -> u32 {
+        let (r, o, y, g, b, w, p, s) = (
+            self.red, self.orange, self.yellow, self.green,
+            self.blue, self.white, self.purple, self.sky_blue,
+        );
+        [r, o, y, g, b, w, p, s].iter().map(|&v| v as u32).sum()
     }
 }
 
@@ -218,7 +222,7 @@ impl MhfdatMeleeWeapon {
     
     /// Set the weapon type from a structured bitfield
     pub fn set_weapon_type(&mut self, weapon_type: WeaponType) {
-        self.weapon_type = weapon_type.to_u32();
+        self.weapon_type = weapon_type.merge_into(self.weapon_type);
     }
     
     /// Get a human-readable string of equipment type flags
@@ -291,7 +295,7 @@ impl MhfdatRangedWeapon {
     
     /// Set the weapon type from a structured bitfield
     pub fn set_weapon_type(&mut self, weapon_type: WeaponType) {
-        self.weapon_type = weapon_type.to_u32();
+        self.weapon_type = weapon_type.merge_into(self.weapon_type);
     }
     
     /// Get the bullet types as a structured bitfield
@@ -1466,4 +1470,367 @@ pub struct SigilSkillProbability {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SigilSkillProbabilities {
     pub probabilities: [SigilSkillProbability; 8],
+}
+// ---------------------------------------------------------------------------------------------------------
+// Tables edited in place (crowns, skill effects, GR menus, Caravan, Hunting Road, extra crafting, weapon
+// parameters, arena). Every byte of a row is kept (unknown bytes as `unk...` integers named after their
+// offset), so a table that is loaded and written back is identical to what was read.
+// ---------------------------------------------------------------------------------------------------------
+
+/// A list reached through a pointer: where it was, and whether another pointer already led to the same bytes.
+/// Only the first pointer to a list owns it; an alias is shown but never written (two copies would overwrite
+/// each other).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PointerBlock<T> {
+    pub name: String,
+    /// File offset the pointer held; 0 = null pointer (nothing to edit).
+    pub offset: u32,
+    pub alias_of: Option<usize>,
+    pub rows: Vec<T>,
+}
+
+/// Monster crown thresholds (mhfdat+0x130, 0x0E bytes, count = important_nums+0x22). docs/reverse/monster_size.md 1.3
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CrownRow {
+    pub unk00: u8,
+    pub monster_id: u8,
+    pub silver_threshold: i16,
+    pub gold_threshold: i16,
+    pub mini_threshold: i16,
+    pub unk08: i16,
+    pub unk0a: u16,
+    pub unk0c: u8,
+    pub monster_id_2: u8,
+}
+
+/// Skill effect / cargo record (mhfdat+0x594, 0x1C bytes). docs/reverse/skill_cargo.md
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SkillEffect {
+    pub skill_id: u32,
+    pub effect_type: u32,
+    pub effect_id: u32,
+    pub value: i32,
+    pub range_min: i32,
+    pub range_max: i32,
+    pub unused18: i32,
+}
+
+/// One Caravan voyage leg: quest id and three 64-byte Shift-JIS texts.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct VoyageLeg {
+    pub quest_id: i32,
+    pub map: Vec<u8>,
+    pub time: Vec<u8>,
+    pub target: Vec<u8>,
+}
+
+/// Caravan voyage route (mhfdat+0x22C, 0xA1C bytes). docs/reverse/caravan_routes.md
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct VoyageRoute {
+    pub fee: u32,
+    pub reward_money: u32,
+    pub reward_cp: u32,
+    pub reward_item: u16,
+    pub reward_item_qty: u16,
+    pub reputation: u16,
+    pub unk12: u16,
+    pub hr_to_post: u16,
+    pub hr_to_join: u16,
+    pub cp_bonus: f32,
+    pub monster_hp: f32,
+    pub monster_atk: f32,
+    pub monster_def: f32,
+    pub final_trial: u16,
+    pub unk2a: u16,
+    pub title: Vec<u8>,
+    pub success: Vec<u8>,
+    pub failure: Vec<u8>,
+    pub legs: Vec<VoyageLeg>,
+}
+
+/// One Caravan level: 12 indexes into the voyage routes, -1 = empty (mhfdat+0x230, 15 levels).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct VoyageLevel {
+    pub routes: [i32; 12],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RankingLeg {
+    pub quest_id: i32,
+    pub map_ptr: u32,
+    pub time_ptr: u32,
+    pub target_ptr: u32,
+}
+
+/// Caravan ranking route (0x10C bytes, in groups behind the 16 offsets at mhfdat+0x91C).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RankingRoute {
+    pub title_ptr: u32,
+    pub success_ptr: u32,
+    pub failure_ptr: u32,
+    pub route_number: u16,
+    pub group_number: u16,
+    pub fee: i32,
+    pub reward_money: i32,
+    pub reward_cp: i32,
+    pub reward_item: u16,
+    pub unk1e: u16,
+    pub unk20: u16,
+    pub reward_item_qty: u16,
+    pub unk24: u32,
+    pub rank_type: u16,
+    pub hr_to_post: u16,
+    pub hr_to_join: u16,
+    pub unk2e: u16,
+    pub cp_bonus_carve: f32,
+    pub cp_bonus_gather: f32,
+    pub hunter_title: i32,
+    pub extra_mission: i32,
+    pub monster_hp: f32,
+    pub monster_atk: f32,
+    pub monster_def: f32,
+    pub legs: Vec<RankingLeg>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Caravan {
+    pub voyage: Vec<VoyageRoute>,
+    pub levels: Vec<VoyageLevel>,
+    /// 16 group slots; a null slot has no rows.
+    pub ranking: Vec<PointerBlock<RankingRoute>>,
+}
+
+/// Hunting Road points of one monster (mhfdat+0xB20, 16 bytes). docs/reverse/hunting_road.md 5
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RoadMonsterPoint {
+    pub monster_id: u16,
+    pub flags: u16,
+    pub points: [u16; 5],
+    pub unk0e: u16,
+}
+
+/// Hunting Road Felyne shop row (mhfdat+0xB10, 8 bytes).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RoadCatItem {
+    pub item_id: u16,
+    pub unk02: u32,
+    pub unk06: u16,
+}
+
+/// Hunting Road fallback shop row (specialShops -> ptRoadShop, 16 bytes; the sources give no field list).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RoadShopRow {
+    pub unk00: u16,
+    pub unk02: u16,
+    pub unk04: u32,
+    pub unk08: u8,
+    pub unk09: u8,
+    pub unk0a: u8,
+    pub unk0b: u8,
+    pub unk0c: u32,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RoadSkillPrereq {
+    pub skill_id: u16,
+    pub level: u16,
+}
+
+/// Road skill definition (mhfdat+0x930, 0x28 bytes). road_skills.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RoadSkillDef {
+    pub skill_id: u16,
+    pub level: u16,
+    pub category: u16,
+    pub desc_id: u16,
+    pub sort_key: u16,
+    pub unk0a: u16,
+    pub cost: u32,
+    pub road_rank_req: u16,
+    pub road_points: u16,
+    pub icon_id: u16,
+    pub prereqs: [RoadSkillPrereq; 4],
+    pub unk26: u16,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RoadData {
+    pub points: Vec<RoadMonsterPoint>,
+    pub cat_shop: Vec<RoadCatItem>,
+    pub shop: Vec<RoadShopRow>,
+    pub skills: Vec<RoadSkillDef>,
+    /// header 0x928 -> +0x8C4: raw dwords, length not documented (a window of 16 is read)
+    pub weight_window: Vec<u32>,
+}
+
+/// One recipe of the combine shop: item quantity range and three ingredients.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ComboRecipe {
+    pub min: u8,
+    pub max: u8,
+    pub item_ids: [u16; 3],
+    pub item_qtys: [u16; 3],
+}
+
+/// Combine shop row (mhfdat+0xBAC, 0x30 bytes). shop.hexpat ComboShop
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ComboShopRow {
+    pub item_id: u16,
+    pub combo_fee: u16,
+    pub recipe_no: u16,
+    pub recipes: [ComboRecipe; 3],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TowerJewelMat {
+    pub item: u16,
+    pub qty: u16,
+    pub unk04: u32,
+}
+
+/// Tower jewel upgrade recipe (mhfdat+0x938, 0x20 bytes).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TowerJewelRecipe {
+    pub weapon_id: u16,
+    pub level_min: u16,
+    pub level_max: u16,
+    pub stat_id: u8,
+    pub equip_type: u8,
+    pub mats: [TowerJewelMat; 3],
+}
+
+/// Weapon action descriptor / motion values (mhfdat+0x63C and +0x74C, 0x88 bytes). weapon_action_descriptors.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ActionDescriptor {
+    pub valid: u8,
+    pub unk01: [u8; 3],
+    pub primary_mv: [u16; 12],
+    pub element_magnitude: [u8; 12],
+    pub attr28: [u8; 12],
+    pub attr34: [u8; 12],
+    pub scale: [f32; 12],
+    pub secondary_mv: [u16; 12],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct HornMelody {
+    pub song_id: u8,
+    pub notes: [u8; 4],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CoatingRow {
+    pub delta_coating: i16,
+    pub unused: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TowerModifierRow {
+    pub delta_tower: i16,
+    pub unused: [u8; 6],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RastaNpc {
+    pub companion_type: u8,
+    pub visual: [u8; 3],
+    pub unk4: u8,
+    pub unk5: u8,
+    pub unk06: [u8; 2],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RastaWeaponOption {
+    pub companion_type: u8,
+    pub weapon_type: u8,
+    pub level_min: u16,
+    pub level_max: u16,
+    pub weapon_id: u16,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RastaArmorSet {
+    pub companion_type: u8,
+    pub subtype: u8,
+    pub level_min: u16,
+    pub level_max: u16,
+    pub slot2_id: u16,
+    pub slot3_id: u16,
+    pub slot4_id: u16,
+    pub slot5_id: u16,
+    pub slot0_id: u16,
+}
+
+/// Weapon parameter tables that have no tab of their own.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct WeaponParams {
+    /// mhfdat+0xA0: 4 bytes per action (count 0x34 is provisional in the pattern)
+    pub thresholds: Vec<[u8; 4]>,
+    pub coating: Vec<CoatingRow>,
+    pub tower_modifiers: Vec<TowerModifierRow>,
+    pub melodies: Vec<HornMelody>,
+    pub gl_shell_types: [u8; 3],
+    pub gl_param_pairs: Vec<[u8; 2]>,
+    pub sa_phials: [i16; 5],
+    pub motion_primary: Vec<ActionDescriptor>,
+    pub motion_alt: Vec<ActionDescriptor>,
+    pub rasta_npcs: Vec<RastaNpc>,
+    pub rasta_weapons: Vec<RastaWeaponOption>,
+    pub rasta_armors: Vec<RastaArmorSet>,
+}
+
+/// Arena / tutorial `{u16 quantity, u16 id}` entry (the -1 terminator is not part of the list).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ItemBlock {
+    pub quantity: u16,
+    pub id: u16,
+}
+
+/// One arena equipment block (20 bytes). arena.hexpat DefBlock
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DefBlock {
+    pub weapon_class: u16,
+    pub weapon_id: u16,
+    pub unk04: u16,
+    pub head: u16,
+    pub chest: u16,
+    pub arms: u16,
+    pub waist: u16,
+    pub legs: u16,
+    pub set_idx: u16,
+    pub multi: u16,
+}
+
+/// Tutorial / sleep-learning equipment set (20 bytes). tutorial_equip_sets.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TutorialSet {
+    pub weapon_equip_type: u8,
+    pub unk01: u8,
+    pub weapon_id: u16,
+    pub weapon_level: u16,
+    pub head: u16,
+    pub chest: u16,
+    pub arms: u16,
+    pub waist: u16,
+    pub legs: u16,
+    pub unk10: [u8; 4],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Arena {
+    pub items: Vec<PointerBlock<ItemBlock>>,
+    pub equipment: Vec<PointerBlock<DefBlock>>,
+    pub stage_ids_0: Vec<u16>,
+    pub stage_ids_1: Vec<u16>,
+    pub ammo: Vec<PointerBlock<ItemBlock>>,
+    pub tutorial: Vec<PointerBlock<TutorialSet>>,
+}
+
+/// One step of a tower weapon upgrade cost table (mhfdat+0x93C, 24 bytes): ten (ok, cost) pairs, then four bow bytes.
+/// Pair order: raw, gunner, affinity, element, seal 7, seal 5, seal 6, extra 5/6, extra C, extra B.
+/// docs: tower_weapon_upgrade_standalone.hexpat TowerUpgradeStep
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TowerUpgradeStep {
+    pub ok_cost: [[u8; 2]; 10],
+    pub bow: [u8; 4],
 }

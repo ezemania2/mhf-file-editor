@@ -24,6 +24,7 @@ bitflags = "2.9.1"
 rand = "0.8"
 rand_chacha = "0.3"
 chrono = "0.4.44"
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.48"
@@ -33,5 +34,7 @@ features = ["Win32_System_WindowsProgramming"]
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = 'abort'
+# unwind (not abort): core::packing::guarded() turns a panic inside rsfrontier-core's ECD/JPK
+# decoders into an on-screen error instead of killing the editor.
+panic = 'unwind'
 strip = true

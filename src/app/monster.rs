@@ -17,6 +17,10 @@ impl MhfdatApp {
             if ui.selectable_label(self.monster_tab == MonsterTab::MonsterDescriptions, "Monster Descriptions").clicked() {
                 self.monster_tab = MonsterTab::MonsterDescriptions;
             }
+            if ui.selectable_label(self.monster_tab == MonsterTab::Crowns, "Crowns").clicked() {
+                self.monster_tab = MonsterTab::Crowns;
+                self.view_mode.insert("crowns".to_string(), ViewMode::List);
+            }
         });
         ui.separator();
         
@@ -72,6 +76,9 @@ impl MhfdatApp {
                     }
                 }
             }
+            MonsterTab::Crowns => {
+                self.show_crowns_tab(ui);
+            }
         }
     }
     
@@ -114,22 +121,13 @@ impl MhfdatApp {
         });
         
         if table_count == 0 {
-            ui.label("No carve parts loaded.");
+            ui.colored_label(egui::Color32::YELLOW, "Warning: No carve parts found!");
             return;
         }
-        
-        // List of carve tables
-        ui.heading("Carve Tables");
-        
-        let tables_page_size = 50usize;
-        let tables_total_pages = (table_count + tables_page_size - 1) / tables_page_size;
-        let tables_page = self.carve_parts_tables_page.min(tables_total_pages.saturating_sub(1) as u32);
-        self.carve_parts_tables_page = tables_page;
-        
-        let tables_start = (tables_page as usize) * tables_page_size;
-        let tables_end = (tables_start + tables_page_size).min(table_count);
-        
-        MhfdatApp::list_scroll(ui, "carve_parts_tables_scroll", |ui| {
+
+        let (tables_start, tables_end, tables_total_pages) = crate::app::list_window(&mut self.carve_parts_tables_page, table_count);
+
+        MhfdatApp::entity_list(ui, "carve_parts_tables_scroll", "Carve Table", tables_start, tables_end, table_count, |ui| {
             egui::Grid::new("carve_parts_tables_grid")
                 .striped(true)
                 .num_columns(3)
@@ -174,10 +172,8 @@ impl MhfdatApp {
         
         let total = table.carves.len();
         
-        ui.heading(format!("Carve Table {} ({} carves)", table_idx, total));
+        ui.heading(format!("Edit Carve Table #{table_idx}"));
         ui.separator();
-        
-        // Add carve button
         if ui.button("Add Carve").clicked() {
             table.carves.push(CarveDrop {
                 percentage: 0,
@@ -185,17 +181,10 @@ impl MhfdatApp {
             });
             self.carve_parts_modified = true;
         }
-        ui.separator();
-        
-        let page_size = 50usize;
-        let total_pages = (total + page_size - 1) / page_size;
-        let page = self.carve_parts_page.min(total_pages.saturating_sub(1) as u32);
-        self.carve_parts_page = page;
-        
-        let start = (page as usize) * page_size;
-        let end = (start + page_size).min(total);
-        
-        MhfdatApp::list_scroll(ui, "carve_parts_details_scroll", |ui| {
+
+        let (start, end, total_pages) = crate::app::list_window(&mut self.carve_parts_page, total);
+
+        MhfdatApp::entity_list(ui, "carve_parts_details_scroll", "Carve", start, end, total, |ui| {
             egui::Grid::new("carve_parts_details_grid")
                 .striped(true)
                 .num_columns(3)
@@ -275,22 +264,13 @@ impl MhfdatApp {
         });
         
         if table_count == 0 {
-            ui.label("No part break parts loaded.");
+            ui.colored_label(egui::Color32::YELLOW, "Warning: No part break drops found!");
             return;
         }
-        
-        // List of part break tables
-        ui.heading("Part Break Tables");
-        
-        let tables_page_size = 50usize;
-        let tables_total_pages = (table_count + tables_page_size - 1) / tables_page_size;
-        let tables_page = self.part_break_parts_tables_page.min(tables_total_pages.saturating_sub(1) as u32);
-        self.part_break_parts_tables_page = tables_page;
-        
-        let tables_start = (tables_page as usize) * tables_page_size;
-        let tables_end = (tables_start + tables_page_size).min(table_count);
-        
-        MhfdatApp::list_scroll(ui, "part_break_parts_tables_scroll", |ui| {
+
+        let (tables_start, tables_end, tables_total_pages) = crate::app::list_window(&mut self.part_break_parts_tables_page, table_count);
+
+        MhfdatApp::entity_list(ui, "part_break_parts_tables_scroll", "Part Break Table", tables_start, tables_end, table_count, |ui| {
             egui::Grid::new("part_break_parts_tables_grid")
                 .striped(true)
                 .num_columns(3)
@@ -335,10 +315,8 @@ impl MhfdatApp {
         
         let total = table.break_drops.len();
         
-        ui.heading(format!("Part Break Table {} ({} drops)", table_idx, total));
+        ui.heading(format!("Edit Part Break Table #{table_idx}"));
         ui.separator();
-        
-        // Add drop button
         if ui.button("Add Drop").clicked() {
             table.break_drops.push(PartBreakDrop {
                 percentage: 0,
@@ -347,17 +325,10 @@ impl MhfdatApp {
             });
             self.part_break_parts_modified = true;
         }
-        ui.separator();
-        
-        let page_size = 50usize;
-        let total_pages = (total + page_size - 1) / page_size;
-        let page = self.part_break_parts_page.min(total_pages.saturating_sub(1) as u32);
-        self.part_break_parts_page = page;
-        
-        let start = (page as usize) * page_size;
-        let end = (start + page_size).min(total);
-        
-        MhfdatApp::list_scroll(ui, "part_break_parts_details_scroll", |ui| {
+
+        let (start, end, total_pages) = crate::app::list_window(&mut self.part_break_parts_page, total);
+
+        MhfdatApp::entity_list(ui, "part_break_parts_details_scroll", "Drop", start, end, total, |ui| {
             egui::Grid::new("part_break_parts_details_grid")
                 .striped(true)
                 .num_columns(4)
@@ -445,21 +416,13 @@ impl MhfdatApp {
         });
         
         if desc_count == 0 {
-            ui.label("No monster descriptions loaded.");
+            ui.colored_label(egui::Color32::YELLOW, "Warning: No monster descriptions found!");
             return;
         }
-        
-        ui.heading("Monster Descriptions");
-        
-        let page_size = 15usize;
-        let total_pages = (desc_count + page_size - 1) / page_size;
-        let page = self.monster_descriptions_page.min(total_pages.saturating_sub(1) as u32);
-        self.monster_descriptions_page = page;
-        
-        let start = (page as usize) * page_size;
-        let end = (start + page_size).min(desc_count);
-        
-        MhfdatApp::list_scroll(ui, "monster_descriptions_list_scroll", |ui| {
+
+        let (start, end, total_pages) = crate::app::list_window(&mut self.monster_descriptions_page, desc_count);
+
+        MhfdatApp::entity_list(ui, "monster_descriptions_list_scroll", "Description", start, end, desc_count, |ui| {
             egui::Grid::new("monster_descriptions_list_grid")
                 .striped(true)
                 .num_columns(2)
@@ -503,7 +466,7 @@ impl MhfdatApp {
         
         let idx = self.selected_monster_description_index.unwrap_or(0);
         
-        ui.heading(format!("Monster Description #{}", idx));
+        ui.heading(format!("Edit Monster Description #{idx}"));
         ui.separator();
         
         // Ensure we have valid data for this index

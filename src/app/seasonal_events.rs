@@ -1,6 +1,5 @@
 use super::*;
 
-const PAGE_SIZE: usize = 20;
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
 fn format_timestamp(ts: u32) -> String {
@@ -39,7 +38,7 @@ impl MhfdatApp {
     }
 
     fn show_seasonal_events_list(&mut self, ui: &mut egui::Ui) {
-        MhfdatApp::section_header(ui, "Seasonal Event Timing", |ui| {
+        MhfdatApp::section_header(ui, &format!("Seasonal Event Timing (found: {})", self.seasonal_events.len()), |ui| {
             if ui.button("Export to JSON").clicked() {
                 if let Ok(Some(path)) = native_dialog::FileDialog::new()
                     .add_filter("JSON", &["json"])
@@ -79,23 +78,14 @@ impl MhfdatApp {
                 }
             }
         });
-        ui.separator();
 
         let total = self.seasonal_events.len();
         if total == 0 {
-            ui.label("No seasonal event data loaded.");
+            ui.colored_label(egui::Color32::YELLOW, "Warning: No seasonal events found!");
             return;
         }
 
-        let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-
-        ui.label(format!("Total events: {}", total));
-        MhfdatApp::pagination_controls(ui, &mut self.seasonal_events_page, total_pages);
-        ui.separator();
-
-        let page = (self.seasonal_events_page as usize).min(total_pages.saturating_sub(1));
-        let start = page * PAGE_SIZE;
-        let end = (start + PAGE_SIZE).min(total);
+        let (start, end, total_pages) = crate::app::list_window(&mut self.seasonal_events_page, total);
 
         let display_data: Vec<_> = self.seasonal_events[start..end]
             .iter()
@@ -106,10 +96,7 @@ impl MhfdatApp {
             })
             .collect();
 
-        let scroll_height = ui.available_height() - 10.0;
-        egui::ScrollArea::vertical()
-            .max_height(scroll_height)
-            .show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "seasonal_events_scroll", "Event", start, end, total, |ui| {
                 egui::Grid::new("seasonal_events_grid")
                     .striped(true)
                     .show(ui, |ui| {
@@ -133,6 +120,7 @@ impl MhfdatApp {
                         }
                     });
             });
+        MhfdatApp::pagination_controls(ui, &mut self.seasonal_events_page, total_pages);
     }
 
     fn show_seasonal_events_details(&mut self, ui: &mut egui::Ui) {

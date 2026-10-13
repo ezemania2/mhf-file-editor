@@ -1,6 +1,5 @@
 use super::*;
 
-const PAGE_SIZE: usize = 15;
 const MAX_SHARPNESS: u16 = 400;
 
 // Sharpness colors with their RGB values
@@ -26,53 +25,9 @@ impl MhfdatApp {
         if !self.view_mode.contains_key("sharpness") {
             self.view_mode.insert("sharpness".to_string(), ViewMode::List);
         }
-
-        ui.horizontal(|ui| {
-            ui.heading("Sharpness Editor");
-            if ui.button("Export to JSON").clicked() {
-                if let Ok(Some(path)) = native_dialog::FileDialog::new()
-                    .add_filter("JSON", &["json"])
-                    .set_filename("sharpness.json")
-                    .show_save_single_file() 
-                {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.sharpness) {
-                        let _ = std::fs::write(path.to_str().unwrap_or("sharpness.json"), json);
-                    }
-                }
-            }
-            if ui.button("Import from JSON").clicked() {
-                if let Ok(Some(path)) = native_dialog::FileDialog::new()
-                    .add_filter("JSON", &["json"])
-                    .show_open_single_file() 
-                {
-                    if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
-                        if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::SharpnessCollection>(&data) {
-                            self.sharpness = imported;
-                            self.sharpness_modified = [true; 11];
-                        }
-                    }
-                }
-            }
-        });
-        ui.separator();
-
         if self.selected_sharpness_weapon_type >= 11 {
             self.selected_sharpness_weapon_type = 0;
         }
-
-        ui.horizontal(|ui| {
-            ui.label("Weapon Type:");
-            egui::ComboBox::from_label("")
-                .selected_text(WEAPON_TYPES[self.selected_sharpness_weapon_type])
-                .show_ui(ui, |ui| {
-                    for (i, name) in WEAPON_TYPES.iter().enumerate() {
-                        ui.selectable_value(&mut self.selected_sharpness_weapon_type, i, *name);
-                    }
-                });
-        });
-
-        ui.separator();
-
         match self.view_mode.get("sharpness").unwrap_or(&ViewMode::List) {
             ViewMode::List => self.show_sharpness_list(ui),
             ViewMode::Details => self.show_sharpness_details_view(ui),
@@ -115,21 +70,51 @@ impl MhfdatApp {
 
     fn show_sharpness_list(&mut self, ui: &mut egui::Ui) {
         let total = self.get_sharpness_data(self.selected_sharpness_weapon_type).len();
-        
+        MhfdatApp::section_header(ui, &format!("Sharpness (found: {total})"), |ui| {
+            if ui.button("Export to JSON").clicked() {
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_filename("sharpness.json")
+                    .show_save_single_file()
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.sharpness) {
+                        let _ = std::fs::write(path.to_str().unwrap_or("sharpness.json"), json);
+                    }
+                }
+            }
+            if ui.button("Import from JSON").clicked() {
+                if let Ok(Some(path)) = native_dialog::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .show_open_single_file()
+                {
+                    if let Ok(data) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+                        if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::SharpnessCollection>(&data) {
+                            self.sharpness = imported;
+                            self.sharpness_modified = [true; 11];
+                        }
+                    }
+                }
+            }
+        });
+        MhfdatApp::responsive_row(ui, |ui| {
+            ui.label("Weapon Type:");
+            egui::ComboBox::from_id_source("sharpness_weapon_type")
+                .selected_text(WEAPON_TYPES[self.selected_sharpness_weapon_type])
+                .show_ui(ui, |ui| {
+                    for (i, name) in WEAPON_TYPES.iter().enumerate() {
+                        if ui.selectable_value(&mut self.selected_sharpness_weapon_type, i, *name).changed() {
+                            self.sharpness_page = 0;
+                        }
+                    }
+                });
+        });
+
         if total == 0 {
-            ui.label("No sharpness data loaded for this weapon type.");
+            ui.colored_label(egui::Color32::YELLOW, "Warning: No sharpness data found for this weapon type!");
             return;
         }
 
-        let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-        let page = (self.sharpness_page as usize).min(total_pages.saturating_sub(1));
-
-        ui.label(format!("Total sharpness entries: {}", total));
-        MhfdatApp::pagination_controls(ui, &mut self.sharpness_page, total_pages);
-        ui.separator();
-
-        let start = page * PAGE_SIZE;
-        let end = (start + PAGE_SIZE).min(total);
+        let (start, end, total_pages) = crate::app::list_window(&mut self.sharpness_page, total);
 
         let display_data: Vec<_> = {
             let data = self.get_sharpness_data(self.selected_sharpness_weapon_type);
@@ -139,7 +124,7 @@ impl MhfdatApp {
             }).collect()
         };
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        MhfdatApp::entity_list(ui, "sharpness_list_scroll", "Sharpness", start, end, total, |ui| {
             egui::Grid::new("sharpness_list_grid").striped(true).show(ui, |ui| {
                 ui.label("ID");
                 ui.label("Preview");
@@ -156,6 +141,7 @@ impl MhfdatApp {
                 }
             });
         });
+        MhfdatApp::pagination_controls(ui, &mut self.sharpness_page, total_pages);
     }
 
     fn show_sharpness_details_view(&mut self, ui: &mut egui::Ui) {
@@ -176,6 +162,8 @@ impl MhfdatApp {
             ui.label("Selected ID is out of range.");
             return;
         }
+        ui.heading(format!("Edit Sharpness #{id} ({})", WEAPON_TYPES[weapon_type]));
+        ui.separator();
 
         let (segments, mut values, total) = {
             let item = &self.get_sharpness_data(weapon_type)[id];
