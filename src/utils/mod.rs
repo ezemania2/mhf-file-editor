@@ -10,3 +10,4 @@ pub mod sigil_skills_name;
 pub mod maps;
 pub mod theme;
 pub mod text;
+pub mod monsters;

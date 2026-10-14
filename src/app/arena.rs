@@ -53,7 +53,18 @@ fn show_item_blocks(ui: &mut egui::Ui, id: &str, blocks: &mut Vec<PointerBlock<I
     if !block_note(ui, blocks, sel) {
         return;
     }
-    ui.label("A list ends on a quantity of -1 (0xFFFF); the end marker stays where it is.");
+    ui.label("A list ends on a quantity of -1 (0xFFFF), which is written after the last item.");
+    ui.horizontal(|ui| {
+        if ui.button("Add item").clicked() {
+            let row = blocks[sel].rows.last().cloned().unwrap_or(ItemBlock { quantity: 1, id: 0 });
+            blocks[sel].rows.push(row);
+            *changed = true;
+        }
+        if MhfdatApp::delete_last_button(ui, blocks[sel].rows.len(), None) {
+            blocks[sel].rows.pop();
+            *changed = true;
+        }
+    });
     egui::Grid::new((id, sel)).striped(true).show(ui, |ui| {
         for h in ["Idx", "Quantity", "Item ID", ""] {
             ui.label(h);
@@ -61,7 +72,7 @@ fn show_item_blocks(ui: &mut egui::Ui, id: &str, blocks: &mut Vec<PointerBlock<I
         ui.end_row();
         for (i, it) in blocks[sel].rows.iter_mut().enumerate() {
             ui.label(i.to_string());
-            *changed |= ui.add(egui::DragValue::new(&mut it.quantity)).changed();
+            *changed |= ui.add(egui::DragValue::new(&mut it.quantity).clamp_range(0..=0xFFFE)).changed();
             *changed |= ui.add(egui::DragValue::new(&mut it.id)).changed();
             ui.label(MhfdatApp::item_label(names, it.id));
             ui.end_row();
@@ -71,7 +82,8 @@ fn show_item_blocks(ui: &mut egui::Ui, id: &str, blocks: &mut Vec<PointerBlock<I
 
 impl MhfdatApp {
     /// Arena tables: item lists (header 0x144), equipment (0x148), ammo lists (0x158), stage ids (0x154 / 0x14C) and the
-    /// tutorial / sleep-learning equipment sets (0x15C). Edited in place; lists cannot grow or shrink.
+    /// tutorial / sleep-learning equipment sets (0x15C). The item and ammo lists can grow (the list is moved to the end of the
+    /// file on save); the other tables keep their size.
     pub fn show_arena_tab(&mut self, ui: &mut egui::Ui) {
         self.show_table_problems(ui, "arena");
         ui.horizontal(|ui| {
@@ -123,6 +135,7 @@ impl MhfdatApp {
         }
         let total = if items { self.arena.items.len() } else { self.arena.ammo.len() };
         MhfdatApp::section_header(ui, &format!("{title} (found: {total})"), |_| {});
+        ui.label("Open a list to add items to it or remove its last one. The number of lists is fixed.");
         if total == 0 {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No list loaded!");
             return;

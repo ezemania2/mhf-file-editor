@@ -3,7 +3,7 @@ use super::{MhfdatApp, QuestTab, ViewMode};
 use crate::model::mhfdat::QuestItem;
 
 const HR_RANKS: &[&str] = &["HR1", "HR2", "HR3", "HR4", "HR5", "HR6"];
-const GR_RANKS: &[&str] = &["G1", "G2", "G3", "G4", "G5", "G6", "G7"];
+const GR_RANKS: &[&str] = &["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10"];
 
 impl MhfdatApp {
     pub fn show_quests_tab(&mut self, ui: &mut egui::Ui) {
@@ -11,7 +11,6 @@ impl MhfdatApp {
             for (tab, label) in [
                 (QuestTab::HR, "HR Quests"),
                 (QuestTab::GR, "GR Quests"),
-                (QuestTab::GRMenus, "GR menus G1-G10"),
                 (QuestTab::Beginner, "Beginner quests"),
             ] {
                 if ui.selectable_label(self.quest_tab == tab, label).clicked() {
@@ -19,7 +18,6 @@ impl MhfdatApp {
                     self.selected_quest_index = None;
                     self.selected_quest_rank = 0;
                     self.quest_page = 0;
-                    self.back_category_list("gr_menu");
                     self.back_category_list("beginner");
                 }
             }
@@ -54,7 +52,7 @@ impl MhfdatApp {
                     .add_filter("JSON", &["json"])
                     .show_save_single_file()
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(&self.gr_quests) {
+                    if let Ok(json) = serde_json::to_string_pretty(&self.gr_quests_json()) {
                         let _ = std::fs::write(path, json);
                     }
                 }
@@ -66,8 +64,7 @@ impl MhfdatApp {
                 {
                     if let Ok(data) = std::fs::read_to_string(&path) {
                         if let Ok(imported) = serde_json::from_str::<crate::model::mhfdat::GRQuests>(&data) {
-                            self.gr_quests = imported;
-                            self.gr_quests_modified = true;
+                            self.import_gr_quests_json(imported);
                         }
                     }
                 }
@@ -76,10 +73,9 @@ impl MhfdatApp {
         ui.separator();
 
         self.show_table_problems(ui, "quests");
-        match self.quest_tab {
-            QuestTab::GRMenus => return self.show_gr_menus(ui),
-            QuestTab::Beginner => return self.show_beginner_quests(ui),
-            QuestTab::HR | QuestTab::GR => {}
+        if self.quest_tab == QuestTab::Beginner {
+            self.show_beginner_quests(ui);
+            return;
         }
 
         let is_hr = self.quest_tab == QuestTab::HR;
@@ -96,6 +92,48 @@ impl MhfdatApp {
         format!("{}_quests_{}", if is_hr { "hr" } else { "gr" }, self.selected_quest_rank)
     }
 
+    /// The GR lists as the JSON of the old GR tab (G1 to G7, plus G8 to G10).
+    fn gr_quests_json(&self) -> crate::model::mhfdat::GRQuests {
+        let rows = |i: usize| self.gr_rows(i).cloned().unwrap_or_default();
+        crate::model::mhfdat::GRQuests {
+            g1: rows(0), g2: rows(1), g3: rows(2), g4: rows(3), g5: rows(4), g6: rows(5), g7: rows(6),
+            g8: rows(7), g9: rows(8), g10: rows(9),
+        }
+    }
+
+    fn import_gr_quests_json(&mut self, imported: crate::model::mhfdat::GRQuests) {
+        let lists = [imported.g1, imported.g2, imported.g3, imported.g4, imported.g5, imported.g6, imported.g7, imported.g8, imported.g9, imported.g10];
+        for (i, list) in lists.into_iter().enumerate() {
+            // an empty list in the file leaves the list of the game alone; a list that has no place in this file is skipped
+            if list.is_empty() {
+                continue;
+            }
+            if let Some(rows) = self.gr_rows_mut(i) {
+                *rows = list;
+                self.gr_menus_modified = true;
+            }
+        }
+    }
+
+    /// Index of the block that owns the quests of GR list `rank` (a list that shares its pointer with an earlier one is
+    /// edited there).
+    fn gr_owner(&self, rank: usize) -> Option<usize> {
+        let b = self.gr_menus.get(rank)?;
+        if b.offset == 0 {
+            return None;
+        }
+        Some(b.alias_of.unwrap_or(rank))
+    }
+
+    fn gr_rows(&self, rank: usize) -> Option<&Vec<QuestItem>> {
+        self.gr_owner(rank).map(|i| &self.gr_menus[i].rows)
+    }
+
+    fn gr_rows_mut(&mut self, rank: usize) -> Option<&mut Vec<QuestItem>> {
+        let i = self.gr_owner(rank)?;
+        Some(&mut self.gr_menus[i].rows)
+    }
+
     fn get_quests(&self, is_hr: bool, rank: usize) -> Option<&Vec<QuestItem>> {
         if is_hr {
             match rank {
@@ -108,16 +146,7 @@ impl MhfdatApp {
                 _ => None,
             }
         } else {
-            match rank {
-                0 => Some(&self.gr_quests.g1),
-                1 => Some(&self.gr_quests.g2),
-                2 => Some(&self.gr_quests.g3),
-                3 => Some(&self.gr_quests.g4),
-                4 => Some(&self.gr_quests.g5),
-                5 => Some(&self.gr_quests.g6),
-                6 => Some(&self.gr_quests.g7),
-                _ => None,
-            }
+            self.gr_rows(rank)
         }
     }
 
@@ -133,16 +162,7 @@ impl MhfdatApp {
                 _ => None,
             }
         } else {
-            match rank {
-                0 => Some(&mut self.gr_quests.g1),
-                1 => Some(&mut self.gr_quests.g2),
-                2 => Some(&mut self.gr_quests.g3),
-                3 => Some(&mut self.gr_quests.g4),
-                4 => Some(&mut self.gr_quests.g5),
-                5 => Some(&mut self.gr_quests.g6),
-                6 => Some(&mut self.gr_quests.g7),
-                _ => None,
-            }
+            self.gr_rows_mut(rank)
         }
     }
 
@@ -150,12 +170,12 @@ impl MhfdatApp {
         if is_hr {
             self.hr_quests_modified = true;
         } else {
-            self.gr_quests_modified = true;
+            self.gr_menus_modified = true;
         }
     }
 
     fn show_quest_rank_selector(&mut self, ui: &mut egui::Ui, ranks: &[&str]) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             for (i, name) in ranks.iter().enumerate() {
                 if ui.selectable_label(self.selected_quest_rank == i, *name).clicked() {
                     self.selected_quest_rank = i;
@@ -168,29 +188,35 @@ impl MhfdatApp {
     }
 
     fn show_quest_list(&mut self, ui: &mut egui::Ui, is_hr: bool) {
-        let total = self.get_quests(is_hr, self.selected_quest_rank)
-            .map(|q| q.len())
-            .unwrap_or(0);
-        
-        if total == 0 {
-            ui.colored_label(egui::Color32::YELLOW, "Warning: No quests found!");
-            return;
-        }
+        let rank = self.selected_quest_rank;
+        let rank_name = if is_hr { HR_RANKS } else { GR_RANKS };
+        let rank_label = rank_name.get(rank).copied().unwrap_or("?");
+        let usable = self.get_quests(is_hr, rank).is_some();
+        let total = self.get_quests(is_hr, rank).map(|q| q.len()).unwrap_or(0);
 
         let (start, end, total_pages) = crate::app::list_window(&mut self.quest_page, total);
-        let rank_name = if is_hr { HR_RANKS } else { GR_RANKS };
-        let rank_label = rank_name.get(self.selected_quest_rank).copied().unwrap_or("?");
         MhfdatApp::section_header(ui, &format!("{rank_label} Quests (found: {total})"), |ui| {
-            if ui.button("Add New").clicked() {
-                if let Some(list) = self.get_quests_mut(is_hr, self.selected_quest_rank) {
+            if ui.add_enabled(usable, egui::Button::new("Add New")).on_disabled_hover_text("This list has no place in this file").clicked() {
+                if let Some(list) = self.get_quests_mut(is_hr, rank) {
                     list.push(QuestItem::default());
+                    let last = list.len() - 1;
+                    self.selected_quest_index = Some(last);
+                    self.view_mode.insert(self.quest_view_key(is_hr), ViewMode::Details);
                 }
                 self.set_quests_modified(is_hr);
             }
         });
+        if !usable {
+            ui.colored_label(egui::Color32::YELLOW, "This list is not in the file (null or unreadable pointer).");
+            return;
+        }
+        if total == 0 {
+            ui.colored_label(egui::Color32::YELLOW, "This list is empty: Add New creates its first quest.");
+            return;
+        }
 
         let view_key = self.quest_view_key(is_hr);
-        let quest_data: Vec<_> = self.get_quests(is_hr, self.selected_quest_rank)
+        let quest_data: Vec<_> = self.get_quests(is_hr, rank)
             .map(|q| q.iter().skip(start).take(end - start)
                 .map(|quest| (quest.quest_id, quest.quest_number, quest.key_quest, quest.urgent_quest))
                 .collect())
@@ -239,8 +265,26 @@ impl MhfdatApp {
             Some(i) => i,
             None => return,
         };
+        let rank = self.selected_quest_rank;
+        let len = self.get_quests(is_hr, rank).map(|q| q.len()).unwrap_or(0);
 
-        let quest = match self.get_quests_mut(is_hr, self.selected_quest_rank).and_then(|q| q.get_mut(idx)) {
+        // only the last quest of a list can go: the others would shift
+        let is_last = idx + 1 == len;
+        if ui
+            .add_enabled(is_last, egui::Button::new("Delete this quest"))
+            .on_disabled_hover_text("Only the last quest of a list can be deleted: the others would move")
+            .clicked()
+        {
+            if let Some(list) = self.get_quests_mut(is_hr, rank) {
+                list.pop();
+            }
+            self.set_quests_modified(is_hr);
+            self.view_mode.insert(view_key, ViewMode::List);
+            self.selected_quest_index = None;
+            return;
+        }
+
+        let quest = match self.get_quests_mut(is_hr, rank).and_then(|q| q.get_mut(idx)) {
             Some(q) => q,
             None => return,
         };
@@ -249,6 +293,7 @@ impl MhfdatApp {
         let mut quest_number = quest.quest_number;
         let mut key_quest = quest.key_quest;
         let mut urgent_quest = quest.urgent_quest;
+        let mut unknown = quest.unknown;
         let mut changed = false;
 
         egui::Grid::new("quest_details_grid").show(ui, |ui| {
@@ -267,161 +312,58 @@ impl MhfdatApp {
             ui.label("Urgent Quest:");
             changed |= ui.add(egui::DragValue::new(&mut urgent_quest).clamp_range(0..=1)).changed();
             ui.end_row();
+
+            ui.label("Unknown:");
+            changed |= ui.add(egui::DragValue::new(&mut unknown)).changed();
+            ui.end_row();
         });
+        if quest_id == 0 {
+            ui.colored_label(egui::Color32::YELLOW, "A quest id of 0 ends the list: set an id before saving.");
+        }
 
         if changed {
             quest.quest_id = quest_id;
             quest.quest_number = quest_number;
             quest.key_quest = key_quest;
             quest.urgent_quest = urgent_quest;
+            quest.unknown = unknown;
             self.set_quests_modified(is_hr);
         }
     }
-}
 
-impl MhfdatApp {
-    /// The GR quest menus G1-G6 and G8-G10 (header slots 0x6C8..0x6DC and 0x740..0x748), each an 8-byte QuestItem
-    /// list that is rewritten where it is: no quest can be added or removed, so nothing after the list is touched.
-    fn show_gr_menus(&mut self, ui: &mut egui::Ui) {
-        if self.category_details("gr_menu") {
-            self.show_gr_menu_details(ui);
-            return;
-        }
-        if self.gr_menus.is_empty() {
-            ui.colored_label(egui::Color32::YELLOW, "Warning: No GR menu could be read!");
-            return;
-        }
-        ui.horizontal_wrapped(|ui| {
-            for i in 0..self.gr_menus.len() {
-                let label = format!("{} ({})", self.gr_menus[i].name, self.gr_menus[i].rows.len());
-                if ui.selectable_label(self.selected_gr_menu == i, label).clicked() {
-                    self.selected_gr_menu = i;
-                    self.gr_menu_page = 0;
-                    self.back_category_list("gr_menu");
-                }
-            }
-        });
-        let sel = self.selected_gr_menu.min(self.gr_menus.len() - 1);
-        let (offset, alias_of, total) = {
-            let b = &self.gr_menus[sel];
-            (b.offset, b.alias_of, b.rows.len())
-        };
-        MhfdatApp::section_header(ui, &format!("{} (found: {total})", self.gr_menus[sel].name), |_| {});
-        if offset == 0 {
-            ui.label("This menu has no quest list in this file.");
-            return;
-        }
-        if let Some(first) = alias_of {
-            ui.label(format!("Same list as {}: edit it there.", self.gr_menus[first].name));
-            return;
-        }
-        if total == 0 {
-            ui.colored_label(egui::Color32::YELLOW, "Warning: Empty list!");
-            return;
-        }
-        let (start, end, total_pages) = crate::app::list_window(&mut self.gr_menu_page, total);
-        let rows: Vec<(usize, u16, u16, u8, u8)> = (start..end).map(|idx| {
-            let q = &self.gr_menus[sel].rows[idx];
-            (idx, q.quest_id, q.quest_number, q.key_quest, q.urgent_quest)
-        }).collect();
-        MhfdatApp::entity_list(ui, "gr_menu_scroll", "Quest", start, end, total, |ui| {
-            egui::Grid::new("gr_menu_grid").striped(true).show(ui, |ui| {
-                for h in ["ID", "Quest ID", "Quest number", "Key", "Urgent"] {
-                    ui.label(h);
-                }
-                ui.end_row();
-                for (idx, quest_id, quest_number, key_quest, urgent_quest) in &rows {
-                    if ui.selectable_label(self.selected_quest_index == Some(*idx), idx.to_string()).clicked() {
-                        self.selected_quest_index = Some(*idx);
-                        self.open_category_details("gr_menu");
-                    }
-                    ui.label(quest_id.to_string());
-                    ui.label(quest_number.to_string());
-                    ui.label(if *key_quest != 0 { "Yes" } else { "No" });
-                    ui.label(if *urgent_quest != 0 { "Yes" } else { "No" });
-                    ui.end_row();
-                }
-            });
-        });
-        MhfdatApp::pagination_controls(ui, &mut self.gr_menu_page, total_pages);
-    }
-
-    fn show_gr_menu_details(&mut self, ui: &mut egui::Ui) {
-        if ui.button("← Back to List").clicked() {
-            self.back_category_list("gr_menu");
-            return;
-        }
-        if self.gr_menus.is_empty() {
-            ui.label("No GR menu could be read.");
-            return;
-        }
-        let menu = self.selected_gr_menu.min(self.gr_menus.len() - 1);
-        let Some(idx) = self.selected_quest_index.filter(|&i| i < self.gr_menus[menu].rows.len()) else {
-            ui.label("No quest selected");
-            return;
-        };
-        ui.heading(format!("Edit {} quest #{idx}", self.gr_menus[menu].name));
-        ui.separator();
-        let q = &mut self.gr_menus[menu].rows[idx];
-        let mut changed = false;
-        ui.horizontal(|ui| { ui.label("Quest ID:"); packed_drag!(ui, q.quest_id, changed); });
-        ui.horizontal(|ui| { ui.label("Quest number:"); packed_drag!(ui, q.quest_number, changed); });
-        ui.horizontal(|ui| {
-            ui.label("Key quest:");
-            let mut key = q.key_quest != 0;
-            if ui.checkbox(&mut key, "").changed() { q.key_quest = u8::from(key); changed = true; }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Urgent:");
-            let mut urgent = q.urgent_quest != 0;
-            if ui.checkbox(&mut urgent, "").changed() { q.urgent_quest = u8::from(urgent); changed = true; }
-        });
-        if changed { self.gr_menus_modified = true; }
-    }
-
+    /// Beginner quest ids (header 0x1B8, u16 each, count = important_nums + 0x3C). Quests can be added at the end.
     fn show_beginner_quests(&mut self, ui: &mut egui::Ui) {
-        if self.category_details("beginner") {
-            if ui.button("← Back to List").clicked() {
-                self.back_category_list("beginner");
-                return;
-            }
-            let Some(idx) = self.selected_quest_index.filter(|&i| i < self.beginner_quests.len()) else {
-                ui.label("No quest selected");
-                return;
-            };
-            ui.heading(format!("Edit Beginner quest #{idx}"));
-            ui.separator();
-            let mut changed = false;
-            ui.horizontal(|ui| {
-                ui.label("Quest ID:");
-                changed |= ui.add(egui::DragValue::new(&mut self.beginner_quests[idx])).changed();
-            });
-            if changed { self.beginner_quests_modified = true; }
-            return;
-        }
         let total = self.beginner_quests.len();
-        MhfdatApp::section_header(ui, &format!("Beginner quests (found: {total})"), |_| {});
-        if total == 0 {
+        MhfdatApp::section_header(ui, &format!("Beginner quests (found: {total})"), |ui| {
+            if ui.button("Add New").clicked() {
+                let id = self.beginner_quests.last().copied().unwrap_or(0);
+                self.beginner_quests.push(id);
+                self.beginner_quests_modified = true;
+            }
+            if ui.add_enabled(total > 0, egui::Button::new("Delete last")).clicked() {
+                self.beginner_quests.pop();
+                self.beginner_quests_modified = true;
+            }
+        });
+        if self.beginner_quests.is_empty() {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No beginner quest ids found!");
             return;
         }
-        let (start, end, total_pages) = crate::app::list_window(&mut self.quest_page, total);
-        let rows: Vec<(usize, u16)> = (start..end).map(|idx| (idx, self.beginner_quests[idx])).collect();
-        MhfdatApp::entity_list(ui, "beginner_quests_scroll", "Quest", start, end, total, |ui| {
+        let mut changed = false;
+        egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("beginner_quests_grid").striped(true).show(ui, |ui| {
                 ui.label("ID");
                 ui.label("Quest ID");
                 ui.end_row();
-                for (idx, quest_id) in &rows {
-                    if ui.selectable_label(self.selected_quest_index == Some(*idx), idx.to_string()).clicked() {
-                        self.selected_quest_index = Some(*idx);
-                        self.open_category_details("beginner");
-                    }
-                    ui.label(quest_id.to_string());
+                for (idx, id) in self.beginner_quests.iter_mut().enumerate() {
+                    ui.label(idx.to_string());
+                    changed |= ui.add(egui::DragValue::new(id)).changed();
                     ui.end_row();
                 }
             });
         });
-        MhfdatApp::pagination_controls(ui, &mut self.quest_page, total_pages);
+        if changed {
+            self.beginner_quests_modified = true;
+        }
     }
 }

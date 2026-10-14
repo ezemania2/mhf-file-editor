@@ -15,7 +15,8 @@ fn effect_type_name(t: u32) -> &'static str {
 
 impl MhfdatApp {
     /// Skill effect / cargo records (header 0x594, 0x1C bytes, count = u16 at +2 of the block behind header 0x988).
-    /// Rows are edited where they are: no row can be added or removed.
+    /// Rows can be added and deleted. The client builds its per-skill index from the table, so the rows of one skill have
+    /// to stay together: a new row goes at the end of the run of its skill, and the save refuses a split run.
     pub fn show_skill_effects_tab(&mut self, ui: &mut egui::Ui) {
         self.show_table_problems(ui, "skills");
         if self.category_details("skill_effects") {
@@ -27,7 +28,22 @@ impl MhfdatApp {
 
     fn show_skill_effect_list(&mut self, ui: &mut egui::Ui) {
         let total = self.skill_effects.len();
-        MhfdatApp::section_header(ui, &format!("Skill effects (found: {total})"), |_| {});
+        MhfdatApp::section_header(ui, &format!("Skill effects (found: {total})"), |ui| {
+            ui.label("Skill ID:");
+            ui.add(egui::DragValue::new(&mut self.skill_effects_new_skill).clamp_range(0..=crate::core::mhfdat::SKILL_ID_COUNT - 1));
+            if ui.button("Add New").on_hover_text("Adds a row to this skill, after the rows it already has").clicked() {
+                let skill_id = self.skill_effects_new_skill;
+                // after the last row of the skill when it has some (a copy of that row), otherwise at the end of the table
+                let (at, row) = match self.skill_effects.iter().rposition(|e| e.skill_id == skill_id) {
+                    Some(last) => (last + 1, self.skill_effects[last].clone()),
+                    None => (total, crate::model::mhfdat::SkillEffect { skill_id, effect_type: 5, ..Default::default() }),
+                };
+                self.skill_effects.insert(at, row);
+                self.skill_effects_modified = true;
+                self.skill_effects_selected = Some(at);
+                self.open_category_details("skill_effects");
+            }
+        });
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             if ui.text_edit_singleline(&mut self.skill_effects_search).changed() {
@@ -82,6 +98,13 @@ impl MhfdatApp {
             return;
         };
         ui.heading(format!("Edit Skill effect #{idx}"));
+        if ui.button("Delete this row").clicked() {
+            self.skill_effects.remove(idx);
+            self.skill_effects_modified = true;
+            self.skill_effects_selected = None;
+            self.back_category_list("skill_effects");
+            return;
+        }
         ui.separator();
         let row = &mut self.skill_effects[idx];
         let mut changed = false;

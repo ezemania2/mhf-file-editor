@@ -1,82 +1,6 @@
 use super::*;
 
 impl MhfdatApp {
-    /// More Crafting keeps only Transmog 2. The other crafting tables live on the Shop tab.
-    pub fn show_craft_more_tab(&mut self, ui: &mut egui::Ui) {
-        self.show_table_problems(ui, "craft");
-        ui.horizontal_wrapped(|ui| {
-            let _ = ui.selectable_label(true, "Transmog 2");
-        });
-        ui.separator();
-        self.show_forging_rows(ui, 2);
-    }
-
-    fn craft_window(&mut self, total: usize) -> (usize, usize, usize) {
-        crate::app::list_window(&mut self.craft_more_page, total)
-    }
-
-    pub(in crate::app) fn show_forging_rows(&mut self, ui: &mut egui::Ui, which: usize) {
-        let total = match which {
-            0 => self.special_weapon_forging.len(),
-            1 => self.armor_premium_forging.len(),
-            _ => self.transmog_forging_2.len(),
-        };
-        if total == 0 {
-            ui.label("No rows loaded.");
-            return;
-        }
-        ui.label(format!("{total} rows (the terminator row after them is not touched)"));
-        let (start, end, total_pages) = self.craft_window(total);
-        let rows = match which {
-            0 => &mut self.special_weapon_forging,
-            1 => &mut self.armor_premium_forging,
-            _ => &mut self.transmog_forging_2,
-        };
-        let mut changed = false;
-        egui::ScrollArea::both().show(ui, |ui| {
-            egui::Grid::new(("forging_rows_grid", which)).striped(true).show(ui, |ui| {
-                for h in [
-                    "Idx", "Equip type", "Purchasable", "Equip ID", "Item 1", "Qty", "Item 2", "Qty", "Item 3", "Qty", "Item 4", "Qty",
-                    "HR req", "Preview", "Footer",
-                ] {
-                    ui.label(h);
-                }
-                ui.end_row();
-                for idx in start..end {
-                    let e = &mut rows[idx];
-                    ui.label(idx.to_string());
-                    packed_drag!(ui, e.equip_type, changed);
-                    let mut buyable = e.purchaseable != 0;
-                    if ui.checkbox(&mut buyable, "").changed() {
-                        e.purchaseable = buyable as u8;
-                        changed = true;
-                    }
-                    packed_drag!(ui, e.equip_id, changed);
-                    for k in 0..4 {
-                        match k {
-                            0 => { packed_drag!(ui, e.material_id1, changed); packed_drag!(ui, e.material_amnt1, changed); }
-                            1 => { packed_drag!(ui, e.material_id2, changed); packed_drag!(ui, e.material_amnt2, changed); }
-                            2 => { packed_drag!(ui, e.material_id3, changed); packed_drag!(ui, e.material_amnt3, changed); }
-                            _ => { packed_drag!(ui, e.material_id4, changed); packed_drag!(ui, e.material_amnt4, changed); }
-                        }
-                    }
-                    packed_drag!(ui, e.hr_req, changed);
-                    let mut preview = e.preview_able;
-                    if ui.checkbox(&mut preview, "").changed() {
-                        e.preview_able = preview;
-                        changed = true;
-                    }
-                    packed_drag!(ui, e.footer, changed);
-                    ui.end_row();
-                }
-            });
-        });
-        MhfdatApp::pagination_controls(ui, &mut self.craft_more_page, total_pages);
-        if changed {
-            self.craft_more_modified = true;
-        }
-    }
-
     fn shop_list_is_details(&self) -> bool {
         matches!(self.view_mode.get("shop"), Some(ViewMode::Details))
     }
@@ -90,7 +14,7 @@ impl MhfdatApp {
         self.view_mode.insert("shop".to_string(), ViewMode::List);
     }
 
-    /// Special (0) and premium (1) forging. Transmog 2 stays on `show_forging_rows`.
+    /// Special (0) and premium (1) forging.
     pub(in crate::app) fn show_fixed_forging(&mut self, ui: &mut egui::Ui, which: usize) {
         if self.shop_list_is_details() {
             self.show_fixed_forging_details(ui, which);
@@ -110,7 +34,20 @@ impl MhfdatApp {
     fn show_fixed_forging_list(&mut self, ui: &mut egui::Ui, which: usize) {
         let title = if which == 0 { "Special Forging" } else { "Premium Forging" };
         let total = self.forging_len(which);
-        MhfdatApp::section_header(ui, &format!("{title} (found: {total})"), |_| {});
+        MhfdatApp::section_header(ui, &format!("{title} (found: {total})"), |ui| {
+            if ui.add_enabled(total > 0, egui::Button::new("Add New")).on_disabled_hover_text("The table is empty: nothing to copy the new row from").clicked() {
+                let rows = if which == 0 { &mut self.special_weapon_forging } else { &mut self.armor_premium_forging };
+                let row = rows[total - 1].clone();
+                rows.push(row);
+                self.craft_more_modified = true;
+                self.open_shop_details(total);
+            }
+            if MhfdatApp::delete_last_button(ui, total, None) {
+                let rows = if which == 0 { &mut self.special_weapon_forging } else { &mut self.armor_premium_forging };
+                rows.pop();
+                self.craft_more_modified = true;
+            }
+        });
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
@@ -184,6 +121,7 @@ impl MhfdatApp {
         ui.horizontal(|ui| {
             ui.label("Equip type:");
             packed_drag!(ui, entry.equip_type, changed);
+            ui.label("(255 ends the table)");
         });
         ui.horizontal(|ui| {
             ui.label("Equip ID:");
@@ -235,7 +173,18 @@ impl MhfdatApp {
 
     fn show_combine_list(&mut self, ui: &mut egui::Ui) {
         let total = self.combine_shop.len();
-        MhfdatApp::section_header(ui, &format!("Combine shop (found: {total})"), |_| {});
+        MhfdatApp::section_header(ui, &format!("Combine shop (found: {total})"), |ui| {
+            if ui.add_enabled(total > 0, egui::Button::new("Add New")).on_disabled_hover_text("The table is empty: nothing to copy the new row from").clicked() {
+                let row = self.combine_shop[total - 1].clone();
+                self.combine_shop.push(row);
+                self.craft_more_modified = true;
+                self.open_shop_details(total);
+            }
+            if MhfdatApp::delete_last_button(ui, total, None) {
+                self.combine_shop.pop();
+                self.craft_more_modified = true;
+            }
+        });
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
@@ -294,23 +243,26 @@ impl MhfdatApp {
         let names = &self.item_names;
         let r = &mut self.combine_shop[sel];
         let mut changed = false;
-        egui::Grid::new("combine_details").num_columns(2).show(ui, |ui| {
-            changed |= MhfdatApp::num_row(ui, &format!("Item ID {}", MhfdatApp::item_label(names, r.item_id)), &mut r.item_id);
-            changed |= MhfdatApp::num_row(ui, "Combo fee", &mut r.combo_fee);
-            changed |= MhfdatApp::num_row(ui, "Recipe no.", &mut r.recipe_no);
-        });
-        for (i, rec) in r.recipes.iter_mut().enumerate() {
-            egui::CollapsingHeader::new(format!("Recipe {i}")).id_source(("combine_recipe", sel, i)).default_open(true).show(ui, |ui| {
-                egui::Grid::new(("combine_recipe_grid", sel, i)).num_columns(2).show(ui, |ui| {
-                    changed |= MhfdatApp::num_row(ui, "Min", &mut rec.min);
-                    changed |= MhfdatApp::num_row(ui, "Max", &mut rec.max);
-                    for k in 0..3 {
-                        changed |= MhfdatApp::num_row(ui, &format!("Ingredient {k} {}", MhfdatApp::item_label(names, rec.item_ids[k])), &mut rec.item_ids[k]);
-                        changed |= MhfdatApp::num_row(ui, &format!("Ingredient {k} quantity"), &mut rec.item_qtys[k]);
-                    }
-                });
+        // three open recipes are taller than a small window: the page scrolls
+        egui::ScrollArea::vertical().id_source("combine_details_scroll").show(ui, |ui| {
+            egui::Grid::new("combine_details").num_columns(2).show(ui, |ui| {
+                changed |= MhfdatApp::num_row(ui, &format!("Item ID {}", MhfdatApp::item_label(names, r.item_id)), &mut r.item_id);
+                changed |= MhfdatApp::num_row(ui, "Combo fee", &mut r.combo_fee);
+                changed |= MhfdatApp::num_row(ui, "Recipe no.", &mut r.recipe_no);
             });
-        }
+            for (i, rec) in r.recipes.iter_mut().enumerate() {
+                egui::CollapsingHeader::new(format!("Recipe {i}")).id_source(("combine_recipe", sel, i)).default_open(true).show(ui, |ui| {
+                    egui::Grid::new(("combine_recipe_grid", sel, i)).num_columns(2).show(ui, |ui| {
+                        changed |= MhfdatApp::num_row(ui, "Min", &mut rec.min);
+                        changed |= MhfdatApp::num_row(ui, "Max", &mut rec.max);
+                        for k in 0..3 {
+                            changed |= MhfdatApp::num_row(ui, &format!("Ingredient {k} {}", MhfdatApp::item_label(names, rec.item_ids[k])), &mut rec.item_ids[k]);
+                            changed |= MhfdatApp::num_row(ui, &format!("Ingredient {k} quantity"), &mut rec.item_qtys[k]);
+                        }
+                    });
+                });
+            }
+        });
         if changed {
             self.craft_more_modified = true;
         }
@@ -326,7 +278,18 @@ impl MhfdatApp {
 
     fn show_tower_jewel_list(&mut self, ui: &mut egui::Ui) {
         let total = self.tower_jewels.len();
-        MhfdatApp::section_header(ui, &format!("Tower jewel recipes (found: {total})"), |_| {});
+        MhfdatApp::section_header(ui, &format!("Tower jewel recipes (found: {total})"), |ui| {
+            if ui.add_enabled(total > 0, egui::Button::new("Add New")).on_disabled_hover_text("The table is empty: nothing to copy the new recipe from").clicked() {
+                let row = self.tower_jewels[total - 1].clone();
+                self.tower_jewels.push(row);
+                self.craft_more_modified = true;
+                self.open_shop_details(total);
+            }
+            if MhfdatApp::delete_last_button(ui, total, None) {
+                self.tower_jewels.pop();
+                self.craft_more_modified = true;
+            }
+        });
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
@@ -417,7 +380,18 @@ impl MhfdatApp {
 
     fn show_tower_seal_list(&mut self, ui: &mut egui::Ui) {
         let total = self.sigil_tower_entries.len();
-        MhfdatApp::section_header(ui, &format!("Tower seals (found: {total})"), |_| {});
+        MhfdatApp::section_header(ui, &format!("Tower seals (found: {total})"), |ui| {
+            if ui.add_enabled(total > 0, egui::Button::new("Add New")).on_disabled_hover_text("The table is empty: nothing to copy the new seal from").clicked() {
+                let row = self.sigil_tower_entries[total - 1].clone();
+                self.sigil_tower_entries.push(row);
+                self.craft_more_modified = true;
+                self.open_shop_details(total);
+            }
+            if MhfdatApp::delete_last_button(ui, total, None) {
+                self.sigil_tower_entries.pop();
+                self.craft_more_modified = true;
+            }
+        });
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);

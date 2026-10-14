@@ -2,7 +2,8 @@ use super::*;
 
 impl MhfdatApp {
     /// Monster crown thresholds (header 0x130, 14 bytes per monster, count = important_nums + 0x22).
-    /// docs/reverse/monster_size.md 1.3. Rows are edited where they are: no row can be added or removed.
+    /// docs/reverse/monster_size.md 1.3. The count is shared with the monster descriptions (Monsters tab): adding or
+    /// deleting a monster here does both.
     pub fn show_crowns_tab(&mut self, ui: &mut egui::Ui) {
         self.show_table_problems(ui, "crowns");
         if !self.view_mode.contains_key("crowns") {
@@ -16,7 +17,18 @@ impl MhfdatApp {
 
     fn show_crowns_list(&mut self, ui: &mut egui::Ui) {
         let total = self.crowns.len();
-        MhfdatApp::section_header(ui, &format!("Monster crowns (found: {total})"), |_| {});
+        MhfdatApp::section_header(ui, &format!("Monster crowns (found: {total})"), |ui| {
+            if ui.button("Add New").on_hover_text("Adds a monster: a crown row and an empty description").clicked() {
+                self.add_monster_entry();
+                if self.crowns.len() > total {
+                    self.crowns_selected = Some(total);
+                    self.view_mode.insert("crowns".to_string(), ViewMode::Details);
+                }
+            }
+            if MhfdatApp::delete_last_button(ui, total, None) {
+                self.remove_last_monster_entry();
+            }
+        });
         ui.label("Thresholds as stored (the community size tables show them divided by 100). Silver is awarded from silver + 2, gold from gold + 4, mini at or under mini + 6. -1 = no crowns.");
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");

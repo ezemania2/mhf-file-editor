@@ -1388,6 +1388,12 @@ pub struct GRQuests {
     pub g5: Vec<QuestItem>,
     pub g6: Vec<QuestItem>,
     pub g7: Vec<QuestItem>,
+    #[serde(default)]
+    pub g8: Vec<QuestItem>,
+    #[serde(default)]
+    pub g9: Vec<QuestItem>,
+    #[serde(default)]
+    pub g10: Vec<QuestItem>,
 }
 
 // Armor Stat Pointers structure (6 u32 pointers: 24 bytes total)
@@ -1485,6 +1491,9 @@ pub struct PointerBlock<T> {
     pub name: String,
     /// File offset the pointer held; 0 = null pointer (nothing to edit).
     pub offset: u32,
+    /// File offset of the u32 that holds this pointer (a cell of a pointer array, or a root blob): it is what a
+    /// list that changes length has to repoint.
+    pub cell: u32,
     pub alias_of: Option<usize>,
     pub rows: Vec<T>,
 }
@@ -1592,21 +1601,66 @@ pub struct RankingRoute {
     pub legs: Vec<RankingLeg>,
 }
 
+/// Caravan gem skill (mhfdat+0xF0, 0x30 bytes). The bytes the game functions never read are kept as they are.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct HunterGemSkill {
+    pub skill_id: i16,
+    /// Only the low byte is read by the game (hunterPearl_lookup_gem_level); the high byte is kept.
+    pub gem_level: i16,
+    pub unread04: [u8; 4],
+    /// Caravan points needed on each of the eight player counters.
+    pub thresholds: [u16; 8],
+    pub unread18: [u8; 24],
+}
+
+/// One 8-byte row of the Caravan tier table (mhfdat+0x234). The game reads, for tier `t`, the u16 at `t * 8 + 4`
+/// (point cap), the byte at `t * 8 + 6` (percent) and the byte at `t * 8 + 0xF`, which is the last byte of the *next*
+/// row: `prev_tier_unlock` of row `t + 1` is the unlock requirement of tier `t`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CaravanTierRow {
+    pub unread00: [u8; 4],
+    pub pts_cap: u16,
+    pub percent: u8,
+    pub prev_tier_unlock: u8,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Caravan {
     pub voyage: Vec<VoyageRoute>,
     pub levels: Vec<VoyageLevel>,
     /// 16 group slots; a null slot has no rows.
     pub ranking: Vec<PointerBlock<RankingRoute>>,
+    /// Gem skills (0xF0), without the terminating entry.
+    pub gem_skills: Vec<HunterGemSkill>,
+    /// The 0x30 bytes of the terminating entry (skill id -1), written back as they were.
+    pub gem_terminator: Vec<u8>,
+    /// One s16 skill id list per tier (0xF4), without the -1 that ends each list.
+    pub gem_lists: Vec<PointerBlock<i16>>,
+    /// CARAVAN_TIER_COUNT rows plus the row that carries the +0x0F byte of the last tier (0x234).
+    pub gem_tiers: Vec<CaravanTierRow>,
 }
 
-/// Hunting Road points of one monster (mhfdat+0xB20, 16 bytes). docs/reverse/hunting_road.md 5
+impl Caravan {
+    /// Unlock requirement of tier `t` (byte at `t * 8 + 0xF`, in the next row).
+    pub fn tier_unlock(&self, t: usize) -> u8 {
+        self.gem_tiers.get(t + 1).map_or(0, |r| r.prev_tier_unlock)
+    }
+
+    pub fn set_tier_unlock(&mut self, t: usize, v: u8) {
+        if let Some(r) = self.gem_tiers.get_mut(t + 1) {
+            r.prev_tier_unlock = v;
+        }
+    }
+}
+
+/// Hunting Road points of one monster (mhfdat+0xB20, 16 bytes = 8 x u16): monster id, flags, then the base points and
+/// the points of levels 1 to 5. The count is the u16 at +8 of the block behind header 0xB04.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RoadMonsterPoint {
     pub monster_id: u16,
     pub flags: u16,
-    pub points: [u16; 5],
-    pub unk0e: u16,
+    /// `points[0]` = base points, `points[1..=5]` = level 1 to 5.
+    pub points: [u16; 6],
 }
 
 /// Hunting Road Felyne shop row (mhfdat+0xB10, 8 bytes).
@@ -1615,19 +1669,6 @@ pub struct RoadCatItem {
     pub item_id: u16,
     pub unk02: u32,
     pub unk06: u16,
-}
-
-/// Hunting Road fallback shop row (specialShops -> ptRoadShop, 16 bytes; the sources give no field list).
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RoadShopRow {
-    pub unk00: u16,
-    pub unk02: u16,
-    pub unk04: u32,
-    pub unk08: u8,
-    pub unk09: u8,
-    pub unk0a: u8,
-    pub unk0b: u8,
-    pub unk0c: u32,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1657,10 +1698,7 @@ pub struct RoadSkillDef {
 pub struct RoadData {
     pub points: Vec<RoadMonsterPoint>,
     pub cat_shop: Vec<RoadCatItem>,
-    pub shop: Vec<RoadShopRow>,
     pub skills: Vec<RoadSkillDef>,
-    /// header 0x928 -> +0x8C4: raw dwords, length not documented (a window of 16 is read)
-    pub weight_window: Vec<u32>,
 }
 
 /// One recipe of the combine shop: item quantity range and three ingredients.
@@ -1699,84 +1737,10 @@ pub struct TowerJewelRecipe {
     pub mats: [TowerJewelMat; 3],
 }
 
-/// Weapon action descriptor / motion values (mhfdat+0x63C and +0x74C, 0x88 bytes). weapon_action_descriptors.hexpat
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ActionDescriptor {
-    pub valid: u8,
-    pub unk01: [u8; 3],
-    pub primary_mv: [u16; 12],
-    pub element_magnitude: [u8; 12],
-    pub attr28: [u8; 12],
-    pub attr34: [u8; 12],
-    pub scale: [f32; 12],
-    pub secondary_mv: [u16; 12],
-}
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct HornMelody {
     pub song_id: u8,
     pub notes: [u8; 4],
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct CoatingRow {
-    pub delta_coating: i16,
-    pub unused: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct TowerModifierRow {
-    pub delta_tower: i16,
-    pub unused: [u8; 6],
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RastaNpc {
-    pub companion_type: u8,
-    pub visual: [u8; 3],
-    pub unk4: u8,
-    pub unk5: u8,
-    pub unk06: [u8; 2],
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RastaWeaponOption {
-    pub companion_type: u8,
-    pub weapon_type: u8,
-    pub level_min: u16,
-    pub level_max: u16,
-    pub weapon_id: u16,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RastaArmorSet {
-    pub companion_type: u8,
-    pub subtype: u8,
-    pub level_min: u16,
-    pub level_max: u16,
-    pub slot2_id: u16,
-    pub slot3_id: u16,
-    pub slot4_id: u16,
-    pub slot5_id: u16,
-    pub slot0_id: u16,
-}
-
-/// Weapon parameter tables that have no tab of their own.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct WeaponParams {
-    /// mhfdat+0xA0: 4 bytes per action (count 0x34 is provisional in the pattern)
-    pub thresholds: Vec<[u8; 4]>,
-    pub coating: Vec<CoatingRow>,
-    pub tower_modifiers: Vec<TowerModifierRow>,
-    pub melodies: Vec<HornMelody>,
-    pub gl_shell_types: [u8; 3],
-    pub gl_param_pairs: Vec<[u8; 2]>,
-    pub sa_phials: [i16; 5],
-    pub motion_primary: Vec<ActionDescriptor>,
-    pub motion_alt: Vec<ActionDescriptor>,
-    pub rasta_npcs: Vec<RastaNpc>,
-    pub rasta_weapons: Vec<RastaWeaponOption>,
-    pub rasta_armors: Vec<RastaArmorSet>,
 }
 
 /// Arena / tutorial `{u16 quantity, u16 id}` entry (the -1 terminator is not part of the list).

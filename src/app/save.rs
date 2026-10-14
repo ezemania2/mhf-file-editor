@@ -7,11 +7,11 @@ use crate::core::mhfdat::{
     write_mw_upgrades_block, write_rw_upgrades_block, write_deco_shop_block, write_automatic_skills_block,
     write_armor_names, write_armor_descriptions, write_item_names, write_item_descriptions, write_sharpness_data_block, write_bullet_sets_block,
     write_deco_ids_block, write_monster_descriptions_block,
-    InPlacePatch, read_crowns, crowns_patch, read_skill_effects, skill_effects_patch, read_gr_menus, gr_menus_patches,
-    read_beginner_quests, beginner_quests_patch, read_caravan, caravan_patches, read_road, road_patches,
-    read_forging_rows, forging_rows_patch, read_combine_shop, combine_shop_patch, read_tower_jewels, tower_jewels_patch,
-    read_tower_seals, tower_seals_patch, read_tower_costs, tower_costs_patches,
-    read_weapon_params, weapon_params_patches, read_arena, arena_patches,
+    Plan, read_crowns, crowns_plan, read_skill_effects, skill_effects_plan, read_gr_menus, gr_menus_plan,
+    read_beginner_quests, beginner_quests_plan, read_caravan, caravan_plan, read_road, road_plan,
+    read_forging_rows, forging_rows_plan, read_combine_shop, combine_shop_plan, read_tower_jewels, tower_jewels_plan,
+    read_tower_seals, tower_seals_plan, read_tower_costs, tower_costs_plan,
+    read_horn_melodies, horn_melodies_plan, read_arena, arena_plan,
 };
 use crate::model::mhfdat_pointers::{
     MELEE_WEAPONS_PTR, RANGED_WEAPONS_PTR,
@@ -25,7 +25,7 @@ use crate::model::mhfdat_pointers::{
     MELEE_WEAPON_UPGRADE_PATH_PTR, RANGED_WEAPON_UPGRADE_PATH_PTR,
     AUTOMATIC_SKILLS_TABLE_PTR, DECO_ID_PTR, ARMOR_UPGRADE_MATS_PTR, ARMOR_STAT_ARRAY_PTR, ARMOR_NAME_ARRAY_PTR, ARMOR_WEAPON_NAMES_ARRAY_PTR,
     MOSNTERS_DESCRIPTION_PTR, ARMOR_DESC_PTR,
-    SPECIAL_WEAPON_FORGING_PTR, ARMOR_PREMIUM_FORGING_PTR, TRANSMOG_FORGING_2_PTR,
+    SPECIAL_WEAPON_FORGING_PTR, ARMOR_PREMIUM_FORGING_PTR,
 };
 use crate::model::mhfdat::{ArmorStatPointers, ArmorNamePointers, ArmorWeaponNamePointers};
 use std::ptr;
@@ -76,7 +76,6 @@ impl MhfdatApp {
         all_offsets.push(self.original_item_descriptions_offset);
         all_offsets.push(self.original_armor_descriptions_offset);
         all_offsets.push(self.original_hr_quests_offset);
-        all_offsets.push(self.original_gr_quests_offset);
         all_offsets.push(self.original_g50_melee_weapon_upgrades_offset);
         all_offsets.push(self.original_g50_ranged_weapon_upgrades_offset);
         all_offsets.push(self.original_armor_upgrade_mats_offset);
@@ -173,7 +172,7 @@ impl MhfdatApp {
         self.refresh_equipment_counts_from_entries();
 
         // Everything that can be refused is refused here, before a single byte is written.
-        let patches = self.table_patches()?;
+        let plan = self.table_plan()?;
 
         // Work on a copy and replace the original only when the whole save went through, so a failure
         // half-way never leaves a half-written mhfdat behind.
@@ -182,11 +181,28 @@ impl MhfdatApp {
         let written = (|| -> std::io::Result<()> {
             let file = std::fs::OpenOptions::new().read(true).write(true).open(&tmp)?;
             self.save_modified_data_to_writer(file)?;
-            if !patches.is_empty() {
-                let mut file = std::fs::OpenOptions::new().write(true).open(&tmp)?;
-                for patch in &patches {
+            if !plan.patches.is_empty() || !plan.moves.is_empty() {
+                let mut file = std::fs::OpenOptions::new().read(true).write(true).open(&tmp)?;
+                for patch in &plan.patches {
                     file.seek(SeekFrom::Start(patch.offset))?;
                     file.write_all(&patch.bytes)?;
+                }
+                // A table whose number of rows changed is written again at the end of the file (aligned to 0x10), then
+                // every pointer to it and its count are updated. The old copy stays where it was.
+                for m in &plan.moves {
+                    let end = file.seek(SeekFrom::End(0))?;
+                    let pad = (0x10 - end % 0x10) % 0x10;
+                    file.write_all(&vec![0u8; pad as usize])?;
+                    let at = (end + pad) as u32;
+                    file.write_all(&m.bytes)?;
+                    for cell in &m.pointers_at {
+                        file.seek(SeekFrom::Start(*cell))?;
+                        file.write_all(&at.to_le_bytes())?;
+                    }
+                    if let Some((count_at, n)) = m.count {
+                        file.seek(SeekFrom::Start(count_at))?;
+                        file.write_all(&n.to_le_bytes())?;
+                    }
                 }
             }
             Ok(())
@@ -207,92 +223,128 @@ impl MhfdatApp {
         Ok(())
     }
 
-    /// The bytes to write over the tables that are edited in place (crowns, skill effects, GR menus, Caravan,
-    /// Hunting Road, extra crafting, weapon parameters, arena). Nothing moves: every patch lands on the table's
-    /// current bytes, so one that would not fit (a table that grew, or that leaves the file) is refused here, before
-    /// anything is written. The table positions come from the file as it is on disk, not from the edited copy.
-    fn table_patches(&self) -> std::io::Result<Vec<InPlacePatch>> {
+    /// What the save does for the tables of the editor that have their own header slot: bytes to write over a table where
+    /// it is (same number of rows), and tables to write again at the end of the file (another number of rows). Anything
+    /// that does not fit (a table that cannot change length, a pointer outside the file, two tables on the same bytes) is
+    /// refused here, before anything is written. Positions come from the file as it is on disk, not from the edited copy.
+    fn table_plan(&self) -> std::io::Result<Plan> {
         let bad = |e: String| std::io::Error::new(std::io::ErrorKind::InvalidData, e);
         let buf = &self.buffer;
-        let mut out: Vec<InPlacePatch> = Vec::new();
+        let mut plan = Plan::default();
+
+        // HR quests keep the old save (the tiers are written again) but a row with quest id 0 would end its tier
+        if self.hr_quests_modified {
+            let tiers = [
+                ("HR1", &self.hr_quests.one_star), ("HR2", &self.hr_quests.two_stars), ("HR3", &self.hr_quests.three_stars),
+                ("HR4", &self.hr_quests.four_stars), ("HR5", &self.hr_quests.five_stars), ("HR6", &self.hr_quests.six_stars),
+            ];
+            for (name, list) in tiers {
+                if let Some(i) = list.iter().position(|q| q.quest_id == 0) {
+                    return Err(bad(format!("HR quests {name}: row {i} has quest id 0, which ends the tier. Set a quest id first")));
+                }
+            }
+        }
+
+        // the crowns and the monster descriptions are counted by the same number (important_nums + 0x22)
+        if self.crowns_modified || self.monster_descriptions_count_modified {
+            let original = read_crowns(buf).map(|(_, rows)| rows.len()).unwrap_or(self.crowns.len());
+            let changed = self.crowns.len() != original || self.monster_descriptions_count_modified;
+            if changed && !self.crowns.is_empty() && self.crowns.len() != self.monster_descriptions.len() {
+                return Err(bad(format!(
+                    "The crown table has {} rows but there are {} monster descriptions. They share one counter (important_nums + 0x22), so both must have the same number of monsters",
+                    self.crowns.len(), self.monster_descriptions.len()
+                )));
+            }
+        }
 
         if self.crowns_modified {
             let (off, rows) = read_crowns(buf).map_err(bad)?;
-            out.extend(crowns_patch(Some(off), rows.len(), &self.crowns).map_err(bad)?);
+            plan.extend(crowns_plan(Some(off), rows.len(), &self.crowns).map_err(bad)?);
         }
         if self.skill_effects_modified {
             let (off, rows) = read_skill_effects(buf).map_err(bad)?;
-            out.extend(skill_effects_patch(Some(off), rows.len(), &self.skill_effects).map_err(bad)?);
+            plan.extend(skill_effects_plan(buf, Some(off), rows.len(), &self.skill_effects).map_err(bad)?);
         }
         if self.gr_menus_modified {
             let (menus, _) = read_gr_menus(buf);
             let rows: Vec<usize> = menus.iter().map(|m| m.rows.len()).collect();
-            out.extend(gr_menus_patches(&self.gr_menus, &rows).map_err(bad)?);
+            plan.extend(gr_menus_plan(buf, &self.gr_menus, &rows).map_err(bad)?);
         }
         if self.beginner_quests_modified {
             let (off, rows) = read_beginner_quests(buf).map_err(bad)?;
-            out.extend(beginner_quests_patch(Some(off), rows.len(), &self.beginner_quests).map_err(bad)?);
+            plan.extend(beginner_quests_plan(buf, Some(off), rows.len(), &self.beginner_quests).map_err(bad)?);
         }
         if self.caravan_modified {
             let (orig, offsets, _) = read_caravan(buf);
-            let ranking: Vec<usize> = orig.ranking.iter().map(|g| g.rows.len()).collect();
-            out.extend(caravan_patches(&self.caravan, &offsets, orig.voyage.len(), &ranking).map_err(bad)?);
+            plan.extend(caravan_plan(buf, &self.caravan, &orig, &offsets).map_err(bad)?);
         }
         if self.road_modified {
             let (orig, offsets, _) = read_road(buf);
-            let rows = [orig.points.len(), orig.cat_shop.len(), orig.shop.len(), orig.skills.len(), orig.weight_window.len()];
-            out.extend(road_patches(&self.road, &offsets, rows).map_err(bad)?);
+            let rows = [orig.points.len(), orig.cat_shop.len(), orig.skills.len()];
+            plan.extend(road_plan(buf, &self.road, &offsets, rows).map_err(bad)?);
         }
         if self.craft_more_modified {
-            for (slot, name, table, rows) in [
-                (SPECIAL_WEAPON_FORGING_PTR, "special weapon forging", "special weapon forging", &self.special_weapon_forging),
-                (ARMOR_PREMIUM_FORGING_PTR, "armor premium forging", "armor premium forging", &self.armor_premium_forging),
-                (TRANSMOG_FORGING_2_PTR, "second transmog forging", "second transmog forging", &self.transmog_forging_2),
+            for (slot, name, rows) in [
+                (SPECIAL_WEAPON_FORGING_PTR, "special weapon forging", &self.special_weapon_forging),
+                (ARMOR_PREMIUM_FORGING_PTR, "armor premium forging", &self.armor_premium_forging),
             ] {
                 let (off, orig) = read_forging_rows(buf, name, slot).map_err(bad)?;
-                out.extend(forging_rows_patch(table, Some(off), orig.len(), rows).map_err(bad)?);
+                plan.extend(forging_rows_plan(buf, name, slot, Some(off), orig.len(), rows).map_err(bad)?);
             }
             let (off, orig) = read_combine_shop(buf).map_err(bad)?;
-            out.extend(combine_shop_patch(Some(off), orig.len(), &self.combine_shop).map_err(bad)?);
+            plan.extend(combine_shop_plan(Some(off), orig.len(), &self.combine_shop).map_err(bad)?);
             let (off, orig) = read_tower_jewels(buf).map_err(bad)?;
-            out.extend(tower_jewels_patch(Some(off), orig.len(), &self.tower_jewels).map_err(bad)?);
+            plan.extend(tower_jewels_plan(buf, Some(off), orig.len(), &self.tower_jewels).map_err(bad)?);
             let (off, orig) = read_tower_seals(buf).map_err(bad)?;
-            out.extend(tower_seals_patch(Some(off), orig.len(), &self.sigil_tower_entries).map_err(bad)?);
+            plan.extend(tower_seals_plan(Some(off), orig.len(), &self.sigil_tower_entries).map_err(bad)?);
             let orig = read_tower_costs(buf).map_err(bad)?;
             let rows: Vec<usize> = orig.iter().map(|b| b.rows.len()).collect();
-            out.extend(tower_costs_patches(&self.tower_costs, &rows).map_err(bad)?);
+            plan.extend(tower_costs_plan(&self.tower_costs, &rows).map_err(bad)?);
         }
-        if self.weapon_params_modified {
-            let (orig, offsets, _) = read_weapon_params(buf);
-            let rows = [
-                orig.thresholds.len(), orig.coating.len(), orig.tower_modifiers.len(), orig.melodies.len(),
-                orig.gl_param_pairs.len(), orig.motion_primary.len(), orig.motion_alt.len(),
-                orig.rasta_npcs.len(), orig.rasta_weapons.len(), orig.rasta_armors.len(),
-            ];
-            out.extend(weapon_params_patches(&self.weapon_params, &offsets, &rows).map_err(bad)?);
+        if self.horn_melodies_modified {
+            let (off, rows) = read_horn_melodies(buf).map_err(bad)?;
+            plan.extend(horn_melodies_plan(buf, Some(off), rows.len(), &self.horn_melodies).map_err(bad)?);
         }
         if self.arena_modified {
             let (orig, offsets, _) = read_arena(buf);
             let items: Vec<usize> = orig.items.iter().map(|b| b.rows.len()).collect();
             let ammo: Vec<usize> = orig.ammo.iter().map(|b| b.rows.len()).collect();
             let tutorial: Vec<usize> = orig.tutorial.iter().map(|b| b.rows.len()).collect();
-            out.extend(arena_patches(&self.arena, &offsets, &items, &ammo, &tutorial).map_err(bad)?);
+            plan.extend(arena_plan(buf, &self.arena, &offsets, &items, &ammo, &tutorial).map_err(bad)?);
         }
 
-        // What is identical to the file is not rewritten (a table that was opened and not changed stays byte for byte).
+        // Everything that is written over the file must be inside it.
         let len = buf.len() as u64;
-        for p in &out {
-            if p.offset.checked_add(p.bytes.len() as u64).map_or(true, |end| end > len) {
-                return Err(bad(format!(
-                    "{}: {} bytes at offset 0x{:X} do not fit in the {}-byte file; nothing was saved",
-                    p.table, p.bytes.len(), p.offset, len
-                )));
+        let inside = |what: &str, at: u64, size: u64| -> std::io::Result<()> {
+            if at.checked_add(size).map_or(true, |end| end > len) {
+                return Err(bad(format!("{what}: {size} bytes at offset 0x{at:X} do not fit in the {len}-byte file; nothing was saved")));
+            }
+            Ok(())
+        };
+        for p in &plan.patches {
+            inside(&p.table, p.offset, p.bytes.len() as u64)?;
+        }
+        for m in &plan.moves {
+            for cell in &m.pointers_at {
+                inside(&m.table, *cell, 4)?;
+            }
+            if let Some((at, _)) = m.count {
+                inside(&m.table, at, 2)?;
             }
         }
-        out.retain(|p| buf.get(p.offset as usize..p.offset as usize + p.bytes.len()) != Some(&p.bytes[..]));
+        // What is identical to the file is not rewritten (a table that was opened and not changed stays byte for byte).
+        plan.patches.retain(|p| buf.get(p.offset as usize..p.offset as usize + p.bytes.len()) != Some(&p.bytes[..]));
 
-        // Two tables must never claim the same bytes.
-        let mut spans: Vec<(u64, u64, &str)> = out.iter().map(|p| (p.offset, p.offset + p.bytes.len() as u64, p.table.as_str())).collect();
+        // Two tables must never claim the same bytes (pointer cells and counts of the moved tables included).
+        let mut spans: Vec<(u64, u64, String)> = plan.patches.iter().map(|p| (p.offset, p.offset + p.bytes.len() as u64, p.table.clone())).collect();
+        for m in &plan.moves {
+            for cell in &m.pointers_at {
+                spans.push((*cell, *cell + 4, format!("{} (pointer)", m.table)));
+            }
+            if let Some((at, _)) = m.count {
+                spans.push((at, at + 2, format!("{} (count)", m.table)));
+            }
+        }
         spans.sort();
         for w in spans.windows(2) {
             if w[1].0 < w[0].1 {
@@ -302,7 +354,7 @@ impl MhfdatApp {
                 )));
             }
         }
-        Ok(out)
+        Ok(plan)
     }
 
     /// Called once the file on disk has been rewritten: the in-place tables are read again from it.
@@ -362,7 +414,6 @@ impl MhfdatApp {
         sync!(ITEM_DESC_PTR => self.original_item_descriptions_offset);
         sync!(ARMOR_DESC_PTR => self.original_armor_descriptions_offset);
         sync!(HR_QUEST_LIST_PTR => self.original_hr_quests_offset);
-        sync!(GR_QUEST_LIST_PTR => self.original_gr_quests_offset);
         sync!(G50_MELEE_WEAPON_UPGRADE_PTR => self.original_g50_melee_weapon_upgrades_offset);
         sync!(G50_RANGED_WEAPON_UPGRADE_PTR => self.original_g50_ranged_weapon_upgrades_offset);
         sync!(ARMOR_UPGRADE_MATS_PTR => self.original_armor_upgrade_mats_offset);
@@ -439,7 +490,6 @@ impl MhfdatApp {
         self.sharpness_modified = [false; 11];
         self.bullet_sets_modified = false;
         self.hr_quests_modified = false;
-        self.gr_quests_modified = false;
         self.g50_melee_weapon_upgrades_modified = false;
         self.g50_ranged_weapon_upgrades_modified = false;
         self.g50_melee_count_limiter_modified = false;
@@ -828,7 +878,7 @@ impl MhfdatApp {
         };
 
         // 12c) HR Quests data block - write only if modified
-        use crate::core::mhfdat::{write_hr_quests_block, write_gr_quests_block};
+        use crate::core::mhfdat::write_hr_quests_block;
         let (hr_quests_offset, hr_offsets) = if self.hr_quests_modified {
             let base_offset = writer.seek(SeekFrom::End(0))? as u32;
             let (block, rel_offsets) = write_hr_quests_block(&self.hr_quests)?;
@@ -845,16 +895,6 @@ impl MhfdatApp {
             (base_offset, abs_offsets)
         } else {
             (self.original_hr_quests_offset.unwrap_or(0), [0u32; 6])
-        };
-
-        // 12d) GR Quests data block - write only if modified
-        let gr_quests_offset = if self.gr_quests_modified {
-            let offset = writer.seek(SeekFrom::End(0))? as u32;
-            let block = write_gr_quests_block(&self.gr_quests, offset)?;
-            writer.write_all(&block)?;
-            offset
-        } else {
-            self.original_gr_quests_offset.unwrap_or(0)
         };
 
         // 12e) G50 Melee Weapon Upgrades - write only if modified
@@ -1465,14 +1505,6 @@ impl MhfdatApp {
                 writer.write_all(&off.to_le_bytes())?;
             }
             writer.seek(SeekFrom::End(0))?;
-        }
-
-        // Update GR quests pointer if modified
-        // GR_QUEST_LIST_PTR contains the address of G7 data directly
-        if self.gr_quests_modified {
-            use crate::model::mhfdat_pointers::GR_QUEST_LIST_PTR;
-            writer.seek(SeekFrom::Start(GR_QUEST_LIST_PTR as u64))?;
-            writer.write_all(&gr_quests_offset.to_le_bytes())?;
         }
 
         // Update G50 Melee Weapon Upgrades pointer and limiter if modified

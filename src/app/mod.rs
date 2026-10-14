@@ -29,7 +29,7 @@ pub mod skill_effects;
 pub mod caravan;
 pub mod road;
 pub mod craft_more;
-pub mod weapon_params;
+pub mod horn_melodies;
 pub mod arena;
 
 pub use mhfjmp::MhfjmpApp;
@@ -43,7 +43,7 @@ use crate::model::mhfdat::{
     MhfdatMeleeWeapon, MhfdatRangedWeapon, MeleeWeaponExport, RangedWeaponExport, 
     ArmorExport, MhfdatItem, ItemExport, ShopEntry, DecoShop, SigilTowerTable, G50WUpgrade,
     MWUpgradePath, RWUpgradePath, EvoUpgrade, AutomaticSkill,
-    MhfdatEquipment, EquipmentCounts, SharpnessCollection, HRQuests, GRQuests
+    MhfdatEquipment, EquipmentCounts, SharpnessCollection, HRQuests
 };
 use crate::utils::weapon_patterns::{class_name, CLASS_ID_LIST, element_name, ELEMENT_ID_LIST, ailment_name, AILMENT_ID_LIST, equip_type_name, EQUIP_TYPE_LIST, weapon_type_name, WEAPON_TYPE_LIST, zenith_skill_name, ZENITH_SKILL_LIST, recoil, RECOIL_LIST, reload, RELOAD_LIST};
 use crate::core::mhfdat::{
@@ -121,8 +121,6 @@ pub enum MainTab {
     SkillEffects,
     Caravan,
     HuntingRoad,
-    CraftMore,
-    WeaponParams,
     Arena,
 }
 
@@ -151,7 +149,6 @@ impl Default for WorkshopCategory {
 pub enum QuestTab {
     HR,
     GR,
-    GRMenus,
     Beginner,
 }
 
@@ -201,6 +198,7 @@ pub enum WeaponTab {
     G50Melee,
     G50Ranged,
     G50Tower,
+    HornMelodies,
 }
 
 impl Default for WeaponTab {
@@ -517,11 +515,8 @@ pub struct MhfdatApp {
     
     // Quests
     pub hr_quests: HRQuests,
-    pub gr_quests: GRQuests,
     pub hr_quests_modified: bool,
-    pub gr_quests_modified: bool,
     pub original_hr_quests_offset: Option<u32>,
-    pub original_gr_quests_offset: Option<u32>,
     pub quest_tab: QuestTab,
     pub selected_quest_index: Option<usize>,
     pub selected_quest_rank: usize, // 0-5 for HR, 0-6 for GR
@@ -533,8 +528,6 @@ pub struct MhfdatApp {
     pub table_problems: Vec<(&'static str, String)>,
     pub gr_menus: Vec<crate::model::mhfdat::PointerBlock<crate::model::mhfdat::QuestItem>>,
     pub gr_menus_modified: bool,
-    pub selected_gr_menu: usize,
-    pub gr_menu_page: u32,
     pub beginner_quests: Vec<u16>,
     pub beginner_quests_modified: bool,
     pub crowns: Vec<crate::model::mhfdat::CrownRow>,
@@ -545,6 +538,8 @@ pub struct MhfdatApp {
     pub skill_effects_modified: bool,
     pub skill_effects_page: u32,
     pub skill_effects_selected: Option<usize>,
+    /// Skill id typed next to the "Add New" of the skill effect list.
+    pub skill_effects_new_skill: u32,
     pub skill_effects_search: String,
     pub caravan: crate::model::mhfdat::Caravan,
     pub caravan_modified: bool,
@@ -552,26 +547,28 @@ pub struct MhfdatApp {
     pub caravan_selected: Option<usize>,
     pub caravan_group: usize,
     pub caravan_page: u32,
+    pub gem_skills_search: String,
+    /// Gem list details: "Add skill" also puts the skill in the lists of the later tiers.
+    pub gem_list_later_tiers: bool,
     pub road: crate::model::mhfdat::RoadData,
     pub road_modified: bool,
     pub road_tab: road::RoadTab,
     pub road_page: u32,
     pub road_selected: Option<usize>,
+    pub road_search: String,
     pub special_weapon_forging: Vec<ShopEntry>,
     pub armor_premium_forging: Vec<ShopEntry>,
-    pub transmog_forging_2: Vec<ShopEntry>,
     pub combine_shop: Vec<crate::model::mhfdat::ComboShopRow>,
     pub tower_jewels: Vec<crate::model::mhfdat::TowerJewelRecipe>,
     pub tower_costs: Vec<crate::model::mhfdat::PointerBlock<crate::model::mhfdat::TowerUpgradeStep>>,
     pub craft_more_modified: bool,
     pub craft_more_page: u32,
     pub craft_more_selected: Option<usize>,
-    pub weapon_params: crate::model::mhfdat::WeaponParams,
-    pub weapon_params_modified: bool,
-    pub weapon_params_tab: weapon_params::WeaponParamsTab,
-    pub weapon_params_page: u32,
-    pub weapon_params_selected: usize,
-    pub weapon_params_group: usize,
+    pub horn_melodies: Vec<crate::model::mhfdat::HornMelody>,
+    pub horn_melodies_modified: bool,
+    pub horn_melodies_page: u32,
+    pub horn_melodies_selected: Option<usize>,
+    pub horn_melodies_search: String,
     pub arena: crate::model::mhfdat::Arena,
     pub arena_modified: bool,
     pub arena_tab: arena::ArenaTab,
@@ -894,11 +891,8 @@ impl Default for MhfdatApp {
             
             // Quests
             hr_quests: HRQuests::default(),
-            gr_quests: GRQuests::default(),
             hr_quests_modified: false,
-            gr_quests_modified: false,
             original_hr_quests_offset: None,
-            original_gr_quests_offset: None,
             quest_tab: QuestTab::default(),
             selected_quest_index: None,
             selected_quest_rank: 0,
@@ -907,8 +901,6 @@ impl Default for MhfdatApp {
             table_problems: Vec::new(),
             gr_menus: Vec::new(),
             gr_menus_modified: false,
-            selected_gr_menu: 0,
-            gr_menu_page: 0,
             beginner_quests: Vec::new(),
             beginner_quests_modified: false,
             crowns: Vec::new(),
@@ -919,6 +911,7 @@ impl Default for MhfdatApp {
             skill_effects_modified: false,
             skill_effects_page: 0,
             skill_effects_selected: None,
+            skill_effects_new_skill: 0,
             skill_effects_search: String::new(),
             caravan: Default::default(),
             caravan_modified: false,
@@ -926,26 +919,27 @@ impl Default for MhfdatApp {
             caravan_selected: None,
             caravan_group: 0,
             caravan_page: 0,
+            gem_skills_search: String::new(),
+            gem_list_later_tiers: false,
             road: Default::default(),
             road_modified: false,
             road_tab: Default::default(),
             road_page: 0,
             road_selected: None,
+            road_search: String::new(),
             special_weapon_forging: Vec::new(),
             armor_premium_forging: Vec::new(),
-            transmog_forging_2: Vec::new(),
             combine_shop: Vec::new(),
             tower_jewels: Vec::new(),
             tower_costs: Vec::new(),
             craft_more_modified: false,
             craft_more_page: 0,
             craft_more_selected: None,
-            weapon_params: Default::default(),
-            weapon_params_modified: false,
-            weapon_params_tab: Default::default(),
-            weapon_params_page: 0,
-            weapon_params_selected: 0,
-            weapon_params_group: 0,
+            horn_melodies: Vec::new(),
+            horn_melodies_modified: false,
+            horn_melodies_page: 0,
+            horn_melodies_selected: None,
+            horn_melodies_search: String::new(),
             arena: Default::default(),
             arena_modified: false,
             arena_tab: Default::default(),
@@ -1570,8 +1564,6 @@ impl MhfdatApp {
                     (MainTab::SkillEffects, "Skill Effects"),
                     (MainTab::Caravan, "Caravan"),
                     (MainTab::HuntingRoad, "Hunting Road"),
-                    (MainTab::CraftMore, "More Crafting"),
-                    (MainTab::WeaponParams, "Weapon Params"),
                     (MainTab::Arena, "Arena"),
                 ] {
                     if ui.selectable_label(self.main_tab == tab, label).clicked() {
@@ -1619,8 +1611,6 @@ impl MhfdatApp {
                 MainTab::SkillEffects => self.show_skill_effects_tab(ui),
                 MainTab::Caravan => self.show_caravan_tab(ui),
                 MainTab::HuntingRoad => self.show_road_tab(ui),
-                MainTab::CraftMore => self.show_craft_more_tab(ui),
-                MainTab::WeaponParams => self.show_weapon_params_tab(ui),
                 MainTab::Arena => self.show_arena_tab(ui),
             }
 
@@ -1660,22 +1650,24 @@ impl MhfdatApp {
         changed
     }
 
-    /// A word of flags: one check box per named bit, the bits without a name are listed as bit N.
+    /// A word of flags: one check box per bit (16 in two rows of 8; the bits without a name are listed as bit N).
+    /// Not for use inside a `Grid`: a wrapping layout in a grid cell swallows everything drawn after the grid.
     pub fn bits_row(ui: &mut egui::Ui, label: &str, value: &mut u16, names: &[&str]) -> bool {
         let mut changed = false;
         ui.label(label);
-        ui.horizontal_wrapped(|ui| {
-            for bit in 0..16 {
-                let mut on = *value & (1 << bit) != 0;
-                let name = names.get(bit).copied().filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| format!("bit {bit}"));
-                if ui.checkbox(&mut on, name).changed() {
-                    *value = (*value & !(1 << bit)) | ((on as u16) << bit);
-                    changed = true;
+        for half in 0..2usize {
+            ui.horizontal(|ui| {
+                for bit in half * 8..half * 8 + 8 {
+                    let mut on = *value & (1 << bit) != 0;
+                    let name = names.get(bit).copied().filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| format!("bit {bit}"));
+                    if ui.checkbox(&mut on, name).changed() {
+                        *value = (*value & !(1 << bit)) | ((on as u16) << bit);
+                        changed = true;
+                    }
                 }
-            }
-            ui.label(format!("= 0x{:04X}", *value));
-        });
-        ui.end_row();
+            });
+        }
+        ui.label(format!("= 0x{:04X}", *value));
         changed
     }
 
@@ -1710,7 +1702,7 @@ impl MhfdatApp {
         ui.label(label);
         let mut changed = false;
         ui.vertical(|ui| {
-            if ui.add(egui::TextEdit::singleline(&mut text).desired_width(320.0)).changed() {
+            if ui.add(egui::TextEdit::singleline(&mut text).desired_width(ui.available_width().clamp(160.0, 520.0))).changed() {
                 match crate::core::mhfdat::encode_fixed_text(&text, width) {
                     Ok(b) => {
                         *bytes = b;
@@ -1828,6 +1820,16 @@ impl MhfdatApp {
             ui.heading(title);
         });
         ui.separator();
+    }
+
+    /// "Delete last" next to "Add New". Tables the game reads by position only lose their last row: the rows before it keep
+    /// their numbers. `blocked` is the reason the row has to stay (shown on hover); true when the button was clicked.
+    pub fn delete_last_button(ui: &mut egui::Ui, len: usize, blocked: Option<&str>) -> bool {
+        let button = ui.add_enabled(len > 0 && blocked.is_none(), egui::Button::new("Delete last"));
+        match blocked {
+            Some(why) => button.on_disabled_hover_text(why).clicked(),
+            None => button.on_hover_text("Removes the last row only: the rows before it keep their numbers").clicked(),
+        }
     }
 
     /// Export a slice of serializable items to pretty JSON, prepending each entry

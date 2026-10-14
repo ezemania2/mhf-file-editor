@@ -123,11 +123,7 @@ pub const SHARPNESS_INNER_BY_INDEX: [usize; 11] = [
 pub const SIGIL_RECIPES_COUNT_INNER: usize = 0x23C;
 pub const BEGINNER_QUESTS_COUNT_INNER: usize = 0x3C;
 pub const TUTORIAL_EQUIP_SETS_COUNT_INNER: usize = 0x48;
-pub const RASTA_NPCS_COUNT_INNER: usize = 0x1E8;
-pub const RASTA_WEAPONS_COUNT_INNER: usize = 0x1EA;
-pub const RASTA_ARMOR_SETS_COUNT_INNER: usize = 0x1EC;
 pub const HORN_MELODIES_COUNT_INNER: usize = 0x258;
-pub const GUNLANCE_SHELLING_PACK_SPAN_INNER: usize = 0x25C;
 pub const VOYAGE_COUNT_INNER: usize = 0x370; // docs: "counts come from +0x370 / +0x372", which is which is not documented
 pub const RANKING_COUNT_INNER: usize = 0x372;
 pub const TOWER_JEWEL_RECIPES_COUNT_INNER: usize = 0x38A;
@@ -143,9 +139,10 @@ pub const GR_MENU_G6_PTR: u32 = 0x6DC;
 pub const GR_MENU_G8_PTR: u32 = 0x740;
 pub const GR_MENU_G9_PTR: u32 = 0x744;
 pub const GR_MENU_G10_PTR: u32 = 0x748;
-pub const GR_MENU_PTRS: [u32; 9] = [
+/// G1 to G10 in order; G7 is `GR_QUEST_LIST_PTR`.
+pub const GR_MENU_PTRS: [u32; 10] = [
     GR_MENU_G1_PTR, GR_MENU_G2_PTR, GR_MENU_G3_PTR, GR_MENU_G4_PTR, GR_MENU_G5_PTR,
-    GR_MENU_G6_PTR, GR_MENU_G8_PTR, GR_MENU_G9_PTR, GR_MENU_G10_PTR,
+    GR_MENU_G6_PTR, GR_QUEST_LIST_PTR, GR_MENU_G8_PTR, GR_MENU_G9_PTR, GR_MENU_G10_PTR,
 ];
 pub const BEGINNER_QUEST_IDS_PTR: u32 = 0x1B8;
 
@@ -159,36 +156,33 @@ pub const VOYAGE_ROUTES_PTR: u32 = 0x22C; // 0xA1C bytes per route, ends on an e
 pub const VOYAGE_LEVEL_INDEX_PTR: u32 = 0x230; // 15 levels x 12 s32
 pub const RANKING_ROUTES_PTR: u32 = 0x91C; // 16 group offsets, records of 0x10C
 
+// Caravan gems (hunter pearls). mhfo-hd.dll: hunterPearl_lookup_gem_level 0x10494EA0, hunterPearl_check_caravan_unlock
+// 0x104954D0, hunterPearl_build_available_skill_list 0x10494CA0, caravanTier_get_pts_cap 0x104957A0,
+// caravanTier_check_unlock_req 0x104958B0.
+pub const HUNTER_PEARL_SKILLS_PTR: u32 = 0xF0; // 0x30-byte entries, the list ends on a skill id of -1
+pub const HUNTER_PEARL_SKILL_LISTS_PTR: u32 = 0xF4; // pointers, indexed by the caravan tier, to s16 skill id lists ending on -1
+pub const CARAVAN_TIERS_PTR: u32 = 0x234; // 8-byte rows indexed by the same tier
+/// The tier byte only takes the values 0..=8: FUN_10496200 (the only code that raises it) stops at 8. So the pointer
+/// array behind 0xF4 and the table behind 0x234 are used for 9 tiers; nothing in the header gives their length.
+pub const CARAVAN_TIER_COUNT: usize = 9;
+
 // ---- Hunting Road -------------------------------------------------------------------------------------------------
 pub const ROAD_SKILL_META_PTR: u32 = 0x910; // u16 skill count at +8
-pub const ROAD_UNK_928_PTR: u32 = 0x928; // +0x8C4: weight bonus by Road skill level (shape not documented)
 pub const ROAD_SKILLS_PTR: u32 = 0x930;
 pub const ROAD_COUNTERS_PTR: u32 = 0xB04; // +4 felyne shop count, +8 monster point count
 pub const ROAD_CAT_SHOP_PTR: u32 = 0xB10;
 pub const ROAD_MONSTER_POINTS_PTR: u32 = 0xB20;
-pub const SPECIAL_SHOPS_PTR: u32 = 0xB2C; // first dword = ptRoadShop (16-byte rows)
 
-// ---- Crafting not covered by the Shop tab -----------------------------------------------------------------------
+// ---- Crafting tables shown on the Shop tab ---------------------------------------------------------------------
 pub const SPECIAL_WEAPON_FORGING_PTR: u32 = 0x7AC;
 pub const ARMOR_PREMIUM_FORGING_PTR: u32 = 0x7B0;
-pub const TRANSMOG_FORGING_2_PTR: u32 = 0xABC;
 pub const COMBINE_SHOP_PTR: u32 = 0xBAC;
 pub const TOWER_JEWEL_RECIPES_PTR: u32 = 0x938;
 pub const TOWER_UPGRADE_COST_TABLES_PTR: u32 = 0x93C; // pointers, ending on a 0 pointer, to 24-byte steps; a block ends on an all-zero step
 pub const TOWER_SEAL_FORGING_PTR: u32 = 0x944; // 0x14 bytes per recipe, ends on item id 0
 
-// ---- Weapon parameter tables ---------------------------------------------------------------------------------------
-pub const WEAPON_ACTION_THRESHOLDS_PTR: u32 = 0xA0; // 4 bytes x 0x34 (count provisional in the pattern)
-pub const WEAPON_COATING_MODIFIERS_PTR: u32 = 0xB0; // 23 rows of 0x18, then at +0x258 32 rows of 8
+// ---- Hunting horn melodies ---------------------------------------------------------------------------------------
 pub const HUNTING_HORN_MELODIES_PTR: u32 = 0x670; // 5 bytes x important_nums+0x258
-pub const GUNLANCE_RANDOM_SHELL_TYPES_PTR: u32 = 0x4F0; // u8[3]
-pub const GUNLANCE_RANDOM_PARAM_PAIRS_PTR: u32 = 0x4F8; // 64 pairs of u8
-pub const SWITCH_AXE_PHIAL_STRENGTH_PTR: u32 = 0xA88; // struct; pointer at +0x1C -> i16[5]
-pub const WEAPON_ACTION_DESCRIPTORS_PTR: u32 = 0x63C; // 0x35 rows of 0x88
-pub const WEAPON_ACTION_DESCRIPTORS_ALT_PTR: u32 = 0x74C;
-pub const RASTA_NPCS_PTR: u32 = 0x56C;
-pub const RASTA_WEAPONS_PTR: u32 = 0x570;
-pub const RASTA_ARMOR_SETS_PTR: u32 = 0x574;
 
 // ---- Arena / tutorial sets -----------------------------------------------------------------------------------------
 pub const ARENA_ITEMS_PTR: u32 = 0x144; // 68 pointers to {u16 quantity, u16 id} lists ending on quantity -1

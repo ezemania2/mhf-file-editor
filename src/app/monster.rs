@@ -377,15 +377,43 @@ impl MhfdatApp {
         MhfdatApp::pagination_controls(ui, &mut self.part_break_parts_page, total_pages);
     }
     
+    /// A new monster: its description and its crown row. Both tables use the monster count of important_nums, so they
+    /// grow together (the other per-monster tables of the game files have to be extended by hand).
+    pub(in crate::app) fn add_monster_entry(&mut self) {
+        let id = self.monster_descriptions.len();
+        self.monster_descriptions.push(String::new());
+        self.monster_descriptions_modified = true;
+        self.monster_descriptions_count = self.monster_descriptions.len() as u16;
+        self.monster_descriptions_count_modified = true;
+        if let Some(mut crown) = self.crowns.last().cloned() {
+            crown.monster_id = u8::try_from(id).unwrap_or(u8::MAX);
+            crown.monster_id_2 = crown.monster_id;
+            self.crowns.push(crown);
+            self.crowns_modified = true;
+        }
+    }
+
+    /// The last monster goes away from both tables.
+    pub(in crate::app) fn remove_last_monster_entry(&mut self) {
+        if self.monster_descriptions.pop().is_some() {
+            self.monster_descriptions_modified = true;
+            self.monster_descriptions_count = self.monster_descriptions.len() as u16;
+            self.monster_descriptions_count_modified = true;
+        }
+        if self.crowns.pop().is_some() {
+            self.crowns_modified = true;
+        }
+    }
+
     fn show_monster_descriptions_list(&mut self, ui: &mut egui::Ui) {
         let desc_count = self.monster_descriptions.len();
         
         MhfdatApp::section_header(ui, &format!("Monster Descriptions ({} entries)", desc_count), |ui| {
-            if ui.button("Add Description").clicked() {
-                self.monster_descriptions.push(String::new());
-                self.monster_descriptions_modified = true;
-                self.monster_descriptions_count = self.monster_descriptions.len() as u16;
-                self.monster_descriptions_count_modified = true;
+            if ui.button("Add Description").on_hover_text("Adds a monster: an empty description and a crown row (the count is shared)").clicked() {
+                self.add_monster_entry();
+            }
+            if MhfdatApp::delete_last_button(ui, desc_count, None) {
+                self.remove_last_monster_entry();
             }
             if ui.button("Export to JSON").clicked() {
                 if let Ok(Some(path)) = native_dialog::FileDialog::new()

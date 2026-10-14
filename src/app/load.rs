@@ -465,8 +465,8 @@ impl MhfdatApp {
     }
 
     pub fn load_quests(&mut self) {
-        use crate::model::mhfdat_pointers::{HR_QUEST_LIST_PTR, GR_QUEST_LIST_PTR};
-        use crate::core::mhfdat::{read_hr_quests, read_gr_quests};
+        use crate::model::mhfdat_pointers::HR_QUEST_LIST_PTR;
+        use crate::core::mhfdat::read_hr_quests;
         
         fn read_ptr(buffer: &[u8], ptr_offset: u32) -> Option<u32> {
             if buffer.len() >= ptr_offset as usize + 4 {
@@ -483,12 +483,7 @@ impl MhfdatApp {
             self.hr_quests = read_hr_quests(&self.buffer, off);
         }
 
-        // Load GR Quests
-        if let Some(off) = read_ptr(&self.buffer, GR_QUEST_LIST_PTR) {
-            self.original_gr_quests_offset = Some(off);
-            self.gr_quests_modified = false;
-            self.gr_quests = read_gr_quests(&self.buffer, off);
-        }
+        // The GR lists (G1 to G10) are read with the other tables that have their own slot: see load_inplace_tables.
     }
 
     pub fn load_g50_weapon_upgrades(&mut self) {
@@ -759,13 +754,11 @@ impl MhfdatApp {
         for (slot, name) in [
             (SPECIAL_WEAPON_FORGING_PTR, "special weapon forging (header 0x7AC)"),
             (ARMOR_PREMIUM_FORGING_PTR, "armor premium forging (header 0x7B0)"),
-            (TRANSMOG_FORGING_2_PTR, "second transmog forging (header 0xABC)"),
         ] {
             match read_forging_rows(&self.buffer, name, slot) {
                 Ok((_, rows)) => match slot {
                     SPECIAL_WEAPON_FORGING_PTR => self.special_weapon_forging = rows,
-                    ARMOR_PREMIUM_FORGING_PTR => self.armor_premium_forging = rows,
-                    _ => self.transmog_forging_2 = rows,
+                    _ => self.armor_premium_forging = rows,
                 },
                 Err(e) => self.table_problems.push(("craft", e)),
             }
@@ -787,9 +780,10 @@ impl MhfdatApp {
             Err(e) => self.table_problems.push(("craft", e)),
         }
 
-        let (params, _, problems) = read_weapon_params(&self.buffer);
-        self.weapon_params = params;
-        self.table_problems.extend(problems.into_iter().map(|e| ("weapon", e)));
+        match read_horn_melodies(&self.buffer) {
+            Ok((_, rows)) => self.horn_melodies = rows,
+            Err(e) => self.table_problems.push(("weapon", e)),
+        }
 
         let (arena, _, problems) = read_arena(&self.buffer);
         self.arena = arena;
@@ -807,12 +801,11 @@ impl MhfdatApp {
         self.road = Default::default();
         self.special_weapon_forging.clear();
         self.armor_premium_forging.clear();
-        self.transmog_forging_2.clear();
         self.combine_shop.clear();
         self.tower_jewels.clear();
         self.sigil_tower_entries.clear();
         self.tower_costs.clear();
-        self.weapon_params = Default::default();
+        self.horn_melodies.clear();
         self.arena = Default::default();
 
         self.gr_menus_modified = false;
@@ -822,11 +815,9 @@ impl MhfdatApp {
         self.caravan_modified = false;
         self.road_modified = false;
         self.craft_more_modified = false;
-        self.weapon_params_modified = false;
+        self.horn_melodies_modified = false;
         self.arena_modified = false;
 
-        self.selected_gr_menu = 0;
-        self.gr_menu_page = 0;
         self.crowns_page = 0;
         self.crowns_selected = None;
         self.skill_effects_page = 0;
@@ -837,8 +828,8 @@ impl MhfdatApp {
         self.road_selected = None;
         self.craft_more_page = 0;
         self.craft_more_selected = None;
-        self.weapon_params_page = 0;
-        self.weapon_params_selected = 0;
+        self.horn_melodies_page = 0;
+        self.horn_melodies_selected = None;
         self.arena_selected = 0;
     }
 }

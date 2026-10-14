@@ -66,6 +66,9 @@ impl MhfdatApp {
             if ui.selectable_label(self.weapon_tab == WeaponTab::G50Tower, "G50 Tower Params").clicked() {
                 self.weapon_tab = WeaponTab::G50Tower;
             }
+            if ui.selectable_label(self.weapon_tab == WeaponTab::HornMelodies, "Horn Melodies").clicked() {
+                self.weapon_tab = WeaponTab::HornMelodies;
+            }
         });
         ui.separator();
 
@@ -100,6 +103,7 @@ impl MhfdatApp {
                     ViewMode::Details => self.show_g50_tower_details(ui),
                 }
             }
+            WeaponTab::HornMelodies => self.show_horn_melodies(ui),
         }
     }
 
