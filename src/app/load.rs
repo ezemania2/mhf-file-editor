@@ -734,6 +734,30 @@ impl MhfdatApp {
             Ok((_, rows)) => self.skill_effects = rows,
             Err(e) => self.table_problems.push(("skills", e)),
         }
+        match read_skill_tree(&self.buffer) {
+            Ok((_, rows)) => self.skill_tree = rows,
+            Err(e) => self.table_problems.push(("skills", e)),
+        }
+        match read_vampirism(&self.buffer) {
+            Ok((_, rows)) => self.vampirism = rows,
+            Err(e) => self.table_problems.push(("skills", e)),
+        }
+        match read_crit_conversion(&self.buffer) {
+            Ok((_, rows)) => self.crit_conversion = rows,
+            Err(e) => self.table_problems.push(("skills", e)),
+        }
+        match read_rush(&self.buffer) {
+            Ok(rows) => self.rush = rows,
+            Err(e) => self.table_problems.push(("skills", e)),
+        }
+        match read_obscurity(&self.buffer) {
+            Ok(rows) => self.obscurity = rows,
+            Err(e) => self.table_problems.push(("skills", e)),
+        }
+        match read_obscurity_up(&self.buffer) {
+            Ok(rows) => self.obscurity_up = rows,
+            Err(e) => self.table_problems.push(("skills", e)),
+        }
 
         let (menus, problems) = read_gr_menus(&self.buffer);
         self.gr_menus = menus;
@@ -784,6 +808,18 @@ impl MhfdatApp {
             Ok((_, rows)) => self.horn_melodies = rows,
             Err(e) => self.table_problems.push(("weapon", e)),
         }
+        match read_weapon_params(&self.buffer) {
+            Ok((_, rows)) => self.weapon_params = rows,
+            Err(e) => self.table_problems.push(("weapon", e)),
+        }
+        match read_weapon_bonus_slots(&self.buffer) {
+            Ok((_, rows)) => self.weapon_bonus_slots = rows,
+            Err(e) => self.table_problems.push(("weapon", e)),
+        }
+        match read_coating_modifiers(&self.buffer) {
+            Ok((_, rows)) => self.coating_modifiers = rows,
+            Err(e) => self.table_problems.push(("weapon", e)),
+        }
 
         let (arena, _, problems) = read_arena(&self.buffer);
         self.arena = arena;
@@ -806,6 +842,15 @@ impl MhfdatApp {
         self.sigil_tower_entries.clear();
         self.tower_costs.clear();
         self.horn_melodies.clear();
+        self.skill_tree.clear();
+        self.vampirism.clear();
+        self.crit_conversion.clear();
+        self.rush.clear();
+        self.obscurity.clear();
+        self.obscurity_up.clear();
+        self.weapon_params.clear();
+        self.weapon_bonus_slots.clear();
+        self.coating_modifiers.clear();
         self.arena = Default::default();
 
         self.gr_menus_modified = false;
@@ -816,6 +861,15 @@ impl MhfdatApp {
         self.road_modified = false;
         self.craft_more_modified = false;
         self.horn_melodies_modified = false;
+        self.skill_tree_modified = false;
+        self.vampirism_modified = false;
+        self.crit_conversion_modified = false;
+        self.rush_modified = false;
+        self.obscurity_modified = false;
+        self.obscurity_up_modified = false;
+        self.weapon_params_modified = false;
+        self.weapon_bonus_slots_modified = false;
+        self.coating_modifiers_modified = false;
         self.arena_modified = false;
 
         self.crowns_page = 0;
@@ -830,6 +884,10 @@ impl MhfdatApp {
         self.craft_more_selected = None;
         self.horn_melodies_page = 0;
         self.horn_melodies_selected = None;
+        self.skill_tree_page = 0;
+        self.skill_tree_selected = None;
+        self.weapon_params_selected = None;
+        self.obscurity_class = 0;
         self.arena_selected = 0;
     }
 }

@@ -12,6 +12,10 @@ use crate::core::mhfdat::{
     read_forging_rows, forging_rows_plan, read_combine_shop, combine_shop_plan, read_tower_jewels, tower_jewels_plan,
     read_tower_seals, tower_seals_plan, read_tower_costs, tower_costs_plan,
     read_horn_melodies, horn_melodies_plan, read_arena, arena_plan,
+    read_skill_tree, skill_tree_plan, read_vampirism, vampirism_plan, read_crit_conversion, crit_conversion_plan,
+    read_weapon_params, weapon_params_plan, read_weapon_bonus_slots, weapon_bonus_slots_plan,
+    read_coating_modifiers, coating_modifiers_plan,
+    rush_plan, obscurity_plan, obscurity_up_plan,
 };
 use crate::model::mhfdat_pointers::{
     MELEE_WEAPONS_PTR, RANGED_WEAPONS_PTR,
@@ -304,6 +308,39 @@ impl MhfdatApp {
         if self.horn_melodies_modified {
             let (off, rows) = read_horn_melodies(buf).map_err(bad)?;
             plan.extend(horn_melodies_plan(buf, Some(off), rows.len(), &self.horn_melodies).map_err(bad)?);
+        }
+        if self.skill_tree_modified {
+            let (off, rows) = read_skill_tree(buf).map_err(bad)?;
+            plan.extend(skill_tree_plan(buf, Some(off), rows.len(), &self.skill_tree).map_err(bad)?);
+        }
+        if self.vampirism_modified {
+            let (off, rows) = read_vampirism(buf).map_err(bad)?;
+            plan.extend(vampirism_plan(Some(off), rows.len(), &self.vampirism).map_err(bad)?);
+        }
+        if self.crit_conversion_modified {
+            let (off, _) = read_crit_conversion(buf).map_err(bad)?;
+            plan.extend(crit_conversion_plan(Some(off), &self.crit_conversion).map_err(bad)?);
+        }
+        if self.rush_modified {
+            plan.extend(rush_plan(buf, &self.rush).map_err(bad)?);
+        }
+        if self.obscurity_modified {
+            plan.extend(obscurity_plan(buf, &self.obscurity).map_err(bad)?);
+        }
+        if self.obscurity_up_modified {
+            plan.extend(obscurity_up_plan(buf, &self.obscurity_up).map_err(bad)?);
+        }
+        if self.weapon_params_modified {
+            let (off, _) = read_weapon_params(buf).map_err(bad)?;
+            plan.extend(weapon_params_plan(Some(off), &self.weapon_params).map_err(bad)?);
+        }
+        if self.weapon_bonus_slots_modified {
+            let (off, _) = read_weapon_bonus_slots(buf).map_err(bad)?;
+            plan.extend(weapon_bonus_slots_plan(Some(off), &self.weapon_bonus_slots).map_err(bad)?);
+        }
+        if self.coating_modifiers_modified {
+            let (off, _) = read_coating_modifiers(buf).map_err(bad)?;
+            plan.extend(coating_modifiers_plan(Some(off), &self.coating_modifiers).map_err(bad)?);
         }
         if self.arena_modified {
             let (orig, offsets, _) = read_arena(buf);

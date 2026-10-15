@@ -66,6 +66,16 @@ impl MhfdatApp {
             if ui.selectable_label(self.weapon_tab == WeaponTab::G50Tower, "G50 Tower Params").clicked() {
                 self.weapon_tab = WeaponTab::G50Tower;
             }
+            for (tab, label) in [
+                (WeaponTab::Params, "Weapon Params"),
+                (WeaponTab::BonusSlots, "Upgrade Bonus Slots"),
+                (WeaponTab::Coatings, "Coating Modifiers"),
+            ] {
+                if ui.selectable_label(self.weapon_tab == tab, label).clicked() {
+                    self.weapon_tab = tab;
+                    self.back_category_list("weapon_params");
+                }
+            }
             if ui.selectable_label(self.weapon_tab == WeaponTab::HornMelodies, "Horn Melodies").clicked() {
                 self.weapon_tab = WeaponTab::HornMelodies;
             }
@@ -104,6 +114,9 @@ impl MhfdatApp {
                 }
             }
             WeaponTab::HornMelodies => self.show_horn_melodies(ui),
+            WeaponTab::Params => self.show_weapon_params(ui),
+            WeaponTab::BonusSlots => self.show_weapon_bonus_slots(ui),
+            WeaponTab::Coatings => self.show_coating_modifiers(ui),
         }
     }
 

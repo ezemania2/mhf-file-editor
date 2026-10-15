@@ -1,5 +1,11 @@
 use super::*;
 use crate::core::mhfdat::preview_text_at;
+use crate::utils::automatic_skills::auto_skill_name;
+
+/// Name of a gem skill id: the ids are active skill ids (the game asks player_has_equip_skill_id about them).
+fn gem_skill_name(id: i16) -> &'static str {
+    u16::try_from(id).map_or("?", auto_skill_name)
+}
 
 #[derive(PartialEq, Clone, Copy, Default)]
 pub enum CaravanTab {
@@ -25,12 +31,12 @@ fn ptr_row(ui: &mut egui::Ui, label: &str, value: &mut u32, buffer: &[u8]) -> bo
 }
 
 /// Number of columns a details page can use: one per `min_width` pixels, at most `max`.
-fn page_columns(ui: &egui::Ui, min_width: f32, max: usize) -> usize {
+pub(in crate::app) fn page_columns(ui: &egui::Ui, min_width: f32, max: usize) -> usize {
     ((ui.available_width() / min_width) as usize).clamp(1, max)
 }
 
 /// Lays `sections` blocks over `columns` columns, left to right; when there are fewer columns the last one stacks the rest.
-fn in_columns(ui: &mut egui::Ui, columns: usize, sections: usize, mut add: impl FnMut(&mut egui::Ui, usize)) {
+pub(in crate::app) fn in_columns(ui: &mut egui::Ui, columns: usize, sections: usize, mut add: impl FnMut(&mut egui::Ui, usize)) {
     ui.columns(columns, |cols| {
         for section in 0..sections {
             add(&mut cols[section.min(columns - 1)], section);
@@ -451,7 +457,10 @@ impl MhfdatApp {
         }
         let query = self.gem_skills_search.trim().to_string();
         let filtered: Vec<usize> = (0..total)
-            .filter(|&i| query.is_empty() || self.caravan.gem_skills[i].skill_id.to_string().contains(&query))
+            .filter(|&i| {
+                let id = self.caravan.gem_skills[i].skill_id;
+                query.is_empty() || id.to_string().contains(&query) || crate::utils::text::contains_ci(gem_skill_name(id), &query)
+            })
             .collect();
         let (start, end, total_pages) = crate::app::list_window(&mut self.caravan_page, filtered.len());
         let rows: Vec<(usize, i16, i16)> = filtered[start..end].iter().map(|&i| {
@@ -469,7 +478,7 @@ impl MhfdatApp {
                         self.caravan_selected = Some(*idx);
                         self.open_category_details("caravan");
                     }
-                    ui.label(skill_id.to_string());
+                    ui.label(format!("{skill_id} {}", gem_skill_name(*skill_id)));
                     ui.label(level.to_string());
                     ui.end_row();
                 }
@@ -495,7 +504,10 @@ impl MhfdatApp {
             egui::Grid::new("gem_skill_details").num_columns(2).show(ui, |ui| {
                 // -1 ends the list in the file, so it cannot be typed here
                 ui.label("Skill ID:");
-                changed |= ui.add(egui::DragValue::new(&mut g.skill_id).clamp_range(0..=i16::MAX)).changed();
+                ui.horizontal(|ui| {
+                    changed |= ui.add(egui::DragValue::new(&mut g.skill_id).clamp_range(0..=i16::MAX)).changed();
+                    ui.label(gem_skill_name(g.skill_id));
+                });
                 ui.end_row();
                 // the game reads the low byte only; the high byte stays as it is
                 ui.label("Gem level:");
@@ -610,7 +622,10 @@ impl MhfdatApp {
             egui::Grid::new(("gem_list_details", sel)).num_columns(2).show(ui, |ui| {
                 for (k, id) in self.caravan.gem_lists[sel].rows.iter_mut().enumerate() {
                     ui.label(format!("Skill #{k}:"));
-                    changed |= ui.add(egui::DragValue::new(id).clamp_range(0..=i16::MAX)).changed();
+                    ui.horizontal(|ui| {
+                        changed |= ui.add(egui::DragValue::new(id).clamp_range(0..=i16::MAX)).changed();
+                        ui.label(gem_skill_name(*id));
+                    });
                     ui.end_row();
                 }
             });

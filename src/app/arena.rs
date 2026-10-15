@@ -36,7 +36,6 @@ fn block_note<T>(ui: &mut egui::Ui, blocks: &[PointerBlock<T>], sel: usize) -> b
         ui.label("Null pointer: nothing to edit here.");
         return false;
     }
-    ui.label(format!("List at file offset 0x{:X}", b.offset));
     if let Some(first) = b.alias_of {
         ui.label(format!("Same list as #{first}: edit it there."));
         return false;
@@ -141,23 +140,28 @@ impl MhfdatApp {
             return;
         }
         let (start, end, total_pages) = crate::app::list_window(&mut self.arena_chunk, total);
-        let rows: Vec<(usize, u32, usize)> = (start..end).map(|i| {
+        // the first items of each list, by name
+        let rows: Vec<(usize, usize, String)> = (start..end).map(|i| {
             let b = if items { &self.arena.items[i] } else { &self.arena.ammo[i] };
-            (i, b.offset, b.rows.len())
+            let mut preview = b.rows.iter().take(4).map(|r| format!("{}x {}", r.quantity, MhfdatApp::item_label(&self.item_names, r.id))).collect::<Vec<_>>().join(", ");
+            if b.rows.len() > 4 {
+                preview.push_str(", ...");
+            }
+            (i, b.rows.len(), preview)
         }).collect();
         MhfdatApp::entity_list(ui, if items { "arena_items_scroll" } else { "arena_ammo_scroll" }, "List", start, end, total, |ui| {
             egui::Grid::new((title, "list")).striped(true).show(ui, |ui| {
                 ui.label("ID");
-                ui.label("Offset");
                 ui.label("Rows");
+                ui.label("Items");
                 ui.end_row();
-                for (i, offset, rows) in &rows {
+                for (i, rows, preview) in &rows {
                     if ui.selectable_label(false, i.to_string()).clicked() {
                         self.arena_selected = *i;
                         self.open_category_details(key);
                     }
-                    ui.label(format!("0x{offset:X}"));
                     ui.label(rows.to_string());
+                    ui.label(preview);
                     ui.end_row();
                 }
             });
@@ -165,35 +169,53 @@ impl MhfdatApp {
         MhfdatApp::pagination_controls(ui, &mut self.arena_chunk, total_pages);
     }
 
+    /// Name of the weapon of an arena set (equip type 6 = melee, 7 = ranged).
+    fn arena_weapon_name(&self, equip_type: u16, weapon_id: u16) -> String {
+        self.get_weapon_name(equip_type as u8, weapon_id)
+    }
+
+    /// Name of an armor piece of an arena set; id 0 is an empty slot.
+    fn arena_armor_name(&self, armor_type: u8, armor_id: u16) -> String {
+        if armor_id == 0 {
+            return "none".to_string();
+        }
+        let name = self.get_armor_name(armor_type, armor_id);
+        if name.is_empty() { format!("#{armor_id}") } else { name }
+    }
+
+    /// Arena equipment (header 0x148): one list per arena course, each with the four sets the player can pick. The game
+    /// shows "n/4" and wraps after the fourth set, so the lists keep their four sets.
     fn show_arena_equipment(&mut self, ui: &mut egui::Ui) {
         if self.category_details("arena") {
             self.show_arena_equipment_details(ui);
             return;
         }
         let total = self.arena.equipment.len();
-        MhfdatApp::section_header(ui, &format!("Equipment (found: {total})"), |_| {});
+        MhfdatApp::section_header(ui, &format!("Equipment lists (found: {total})"), |_| {});
+        ui.label("One list per arena course; each holds the four sets the player picks from. The weapons of the four sets are listed.");
         if total == 0 {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No arena equipment found!");
             return;
         }
         let (start, end, total_pages) = crate::app::list_window(&mut self.arena_chunk, total);
-        let rows: Vec<(usize, u32, usize)> = (start..end).map(|i| {
+        let rows: Vec<(usize, usize, String)> = (start..end).map(|i| {
             let b = &self.arena.equipment[i];
-            (i, b.offset, b.rows.len())
+            let weapons = b.rows.iter().map(|d| self.arena_weapon_name(d.weapon_class, d.weapon_id)).collect::<Vec<_>>().join(" / ");
+            (i, b.rows.len(), weapons)
         }).collect();
-        MhfdatApp::entity_list(ui, "arena_equipment_scroll", "Set", start, end, total, |ui| {
+        MhfdatApp::entity_list(ui, "arena_equipment_scroll", "List", start, end, total, |ui| {
             egui::Grid::new("arena_equipment_list").striped(true).show(ui, |ui| {
                 ui.label("ID");
-                ui.label("Offset");
-                ui.label("Rows");
+                ui.label("Sets");
+                ui.label("Weapons");
                 ui.end_row();
-                for (i, offset, n) in &rows {
+                for (i, n, weapons) in &rows {
                     if ui.selectable_label(false, i.to_string()).clicked() {
                         self.arena_selected = *i;
                         self.open_category_details("arena");
                     }
-                    ui.label(format!("0x{offset:X}"));
                     ui.label(n.to_string());
+                    ui.label(weapons);
                     ui.end_row();
                 }
             });
@@ -211,32 +233,60 @@ impl MhfdatApp {
             return;
         }
         let sel = self.arena_selected.min(self.arena.equipment.len() - 1);
-        ui.heading(format!("Edit Equipment set #{sel}"));
+        ui.heading(format!("Edit Equipment list #{sel}"));
         ui.separator();
         if !block_note(ui, &self.arena.equipment, sel) {
             return;
         }
+        ui.label("The game picks among four sets per list (it shows n/4), so sets cannot be added to a list. Armor id 0 is an empty slot.");
+        // the sets are taken out while they are edited so that the weapon and armor names can be read from the other tables
+        let mut sets = std::mem::take(&mut self.arena.equipment[sel].rows);
         let mut changed = false;
-        egui::Grid::new(("arena_equipment", sel)).striped(true).show(ui, |ui| {
-            for h in ["ID", "Weapon class", "Weapon ID", "Head", "Chest", "Arms", "Waist", "Legs", "Set idx", "Multi"] {
-                ui.label(h);
-            }
-            ui.end_row();
-            for (i, d) in self.arena.equipment[sel].rows.iter_mut().enumerate() {
-                ui.label(i.to_string());
-                changed |= ui.add(egui::DragValue::new(&mut d.weapon_class)).changed();
-                changed |= ui.add(egui::DragValue::new(&mut d.weapon_id)).changed();
-                changed |= ui.add(egui::DragValue::new(&mut d.head)).changed();
-                changed |= ui.add(egui::DragValue::new(&mut d.chest)).changed();
-                changed |= ui.add(egui::DragValue::new(&mut d.arms)).changed();
-                changed |= ui.add(egui::DragValue::new(&mut d.waist)).changed();
-                changed |= ui.add(egui::DragValue::new(&mut d.legs)).changed();
-                changed |= ui.add(egui::DragValue::new(&mut d.set_idx)).changed();
-                changed |= ui.add(egui::DragValue::new(&mut d.multi)).changed();
-                ui.end_row();
-            }
+        egui::ScrollArea::vertical().id_source("arena_equipment_details_scroll").show(ui, |ui| {
+            let columns = crate::app::caravan::page_columns(ui, 380.0, 4).min(sets.len().max(1));
+            ui.columns(columns, |cols| {
+                for (i, d) in sets.iter_mut().enumerate() {
+                    let ui = &mut cols[i % columns];
+                    ui.group(|ui| {
+                        ui.strong(format!("Set {}", i + 1));
+                        egui::Grid::new(("arena_set", sel, i)).num_columns(3).show(ui, |ui| {
+                            ui.label("Weapon type");
+                            changed |= ui.add(egui::DragValue::new(&mut d.weapon_class)).changed();
+                            ui.label(match d.weapon_class { 6 => "melee", 7 => "ranged", _ => "?" });
+                            ui.end_row();
+                            ui.label("Weapon ID");
+                            changed |= ui.add(egui::DragValue::new(&mut d.weapon_id)).changed();
+                            ui.label(self.arena_weapon_name(d.weapon_class, d.weapon_id));
+                            ui.end_row();
+                            changed |= self.arena_armor_row(ui, "Head", 2, &mut d.head);
+                            changed |= self.arena_armor_row(ui, "Chest", 3, &mut d.chest);
+                            changed |= self.arena_armor_row(ui, "Arms", 4, &mut d.arms);
+                            changed |= self.arena_armor_row(ui, "Waist", 5, &mut d.waist);
+                            changed |= self.arena_armor_row(ui, "Legs", 0, &mut d.legs);
+                            ui.label("Set idx");
+                            changed |= ui.add(egui::DragValue::new(&mut d.set_idx)).changed();
+                            ui.label("");
+                            ui.end_row();
+                            ui.label("Multi");
+                            changed |= ui.add(egui::DragValue::new(&mut d.multi)).changed();
+                            ui.label("");
+                            ui.end_row();
+                        });
+                    });
+                }
+            });
         });
+        self.arena.equipment[sel].rows = sets;
         if changed { self.arena_modified = true; }
+    }
+
+    /// One armor slot of a set: label, id and the name of the piece.
+    fn arena_armor_row(&self, ui: &mut egui::Ui, label: &str, armor_type: u8, id: &mut u16) -> bool {
+        ui.label(label);
+        let changed = ui.add(egui::DragValue::new(id)).changed();
+        ui.label(self.arena_armor_name(armor_type, *id));
+        ui.end_row();
+        changed
     }
 
     fn show_arena_stages(&mut self, ui: &mut egui::Ui) {
@@ -355,18 +405,34 @@ impl MhfdatApp {
             return;
         }
         let mut changed = false;
-        let Some(t) = self.arena.tutorial[sel].rows.first_mut() else {
+        // edited on a copy so that the names can be read from the other tables while it is shown
+        let Some(mut t) = self.arena.tutorial[sel].rows.first().cloned() else {
             ui.label("Empty set.");
             return;
         };
         ui.horizontal(|ui| { ui.label("Equip type:"); changed |= ui.add(egui::DragValue::new(&mut t.weapon_equip_type)).changed(); });
-        ui.horizontal(|ui| { ui.label("Weapon ID:"); changed |= ui.add(egui::DragValue::new(&mut t.weapon_id)).changed(); });
+        ui.horizontal(|ui| {
+            ui.label("Weapon ID:");
+            changed |= ui.add(egui::DragValue::new(&mut t.weapon_id)).changed();
+            ui.label(self.arena_weapon_name(t.weapon_equip_type as u16, t.weapon_id));
+        });
         ui.horizontal(|ui| { ui.label("Weapon level:"); changed |= ui.add(egui::DragValue::new(&mut t.weapon_level)).changed(); });
-        ui.horizontal(|ui| { ui.label("Head:"); changed |= ui.add(egui::DragValue::new(&mut t.head)).changed(); });
-        ui.horizontal(|ui| { ui.label("Chest:"); changed |= ui.add(egui::DragValue::new(&mut t.chest)).changed(); });
-        ui.horizontal(|ui| { ui.label("Arms:"); changed |= ui.add(egui::DragValue::new(&mut t.arms)).changed(); });
-        ui.horizontal(|ui| { ui.label("Waist:"); changed |= ui.add(egui::DragValue::new(&mut t.waist)).changed(); });
-        ui.horizontal(|ui| { ui.label("Legs:"); changed |= ui.add(egui::DragValue::new(&mut t.legs)).changed(); });
-        if changed { self.arena_modified = true; }
+        for (label, armor_type, id) in [
+            ("Head:", 2u8, &mut t.head),
+            ("Chest:", 3, &mut t.chest),
+            ("Arms:", 4, &mut t.arms),
+            ("Waist:", 5, &mut t.waist),
+            ("Legs:", 0, &mut t.legs),
+        ] {
+            ui.horizontal(|ui| {
+                ui.label(label);
+                changed |= ui.add(egui::DragValue::new(id)).changed();
+                ui.label(self.arena_armor_name(armor_type, *id));
+            });
+        }
+        if changed {
+            self.arena.tutorial[sel].rows[0] = t;
+            self.arena_modified = true;
+        }
     }
 }

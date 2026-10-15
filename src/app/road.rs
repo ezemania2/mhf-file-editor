@@ -1,4 +1,5 @@
 use super::*;
+use crate::utils::road_skills::road_skill_name;
 
 #[derive(PartialEq, Clone, Copy, Default)]
 pub enum RoadTab {
@@ -310,7 +311,7 @@ impl MhfdatApp {
                         self.road_selected = Some(*idx);
                         self.open_category_details("road");
                     }
-                    ui.label(skill_id.to_string());
+                    ui.label(format!("{skill_id} {}", road_skill_name(*skill_id)));
                     ui.label(level.to_string());
                     ui.label(cost.to_string());
                     ui.end_row();
@@ -334,7 +335,11 @@ impl MhfdatApp {
         let d = &mut self.road.skills[sel];
         let mut changed = false;
         egui::ScrollArea::vertical().id_source("road_skill_details_scroll").show(ui, |ui| {
-            ui.horizontal(|ui| { ui.label("Skill ID:"); changed |= ui.add(egui::DragValue::new(&mut d.skill_id)).changed(); });
+            ui.horizontal(|ui| {
+                ui.label("Skill ID:");
+                changed |= ui.add(egui::DragValue::new(&mut d.skill_id)).changed();
+                ui.label(road_skill_name(d.skill_id));
+            });
             ui.horizontal(|ui| { ui.label("Level:"); changed |= ui.add(egui::DragValue::new(&mut d.level)).changed(); });
             ui.horizontal(|ui| { ui.label("Category:"); changed |= ui.add(egui::DragValue::new(&mut d.category)).changed(); });
             ui.horizontal(|ui| { ui.label("Desc ID:"); changed |= ui.add(egui::DragValue::new(&mut d.desc_id)).changed(); });
@@ -347,6 +352,7 @@ impl MhfdatApp {
                 ui.horizontal(|ui| {
                     ui.label(format!("Req {} skill:", i + 1));
                     changed |= ui.add(egui::DragValue::new(&mut p.skill_id)).changed();
+                    ui.label(road_skill_name(p.skill_id));
                     ui.label("Lv:");
                     changed |= ui.add(egui::DragValue::new(&mut p.level)).changed();
                 });

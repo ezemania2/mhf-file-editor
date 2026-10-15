@@ -1,4 +1,18 @@
 use super::*;
+use crate::utils::automatic_skills::auto_skill_name;
+
+/// Name of an active skill id (the ids of the effect rows and of the skills they grant).
+fn active_skill_name(id: u32) -> &'static str {
+    u16::try_from(id).map_or("?", auto_skill_name)
+}
+
+/// Effect id with the skill it names: types 1 to 4 grant that skill and type 6 disables it; type 5 is a leaf effect id, not a skill.
+fn effect_target_label(effect_type: u32, effect_id: u32) -> String {
+    match effect_type {
+        1..=4 | 6 => format!("{effect_id} {}", active_skill_name(effect_id)),
+        _ => effect_id.to_string(),
+    }
+}
 
 /// docs/reverse/skill_cargo.md: the meaning of `effect_type`
 fn effect_type_name(t: u32) -> &'static str {
@@ -13,16 +27,55 @@ fn effect_type_name(t: u32) -> &'static str {
     }
 }
 
+#[derive(PartialEq, Clone, Copy, Default)]
+pub enum SkillTab {
+    #[default]
+    Effects,
+    Tree,
+    Vampirism,
+    CritConversion,
+    Rush,
+    Obscurity,
+}
+
 impl MhfdatApp {
     /// Skill effect / cargo records (header 0x594, 0x1C bytes, count = u16 at +2 of the block behind header 0x988).
     /// Rows can be added and deleted. The client builds its per-skill index from the table, so the rows of one skill have
     /// to stay together: a new row goes at the end of the run of its skill, and the save refuses a split run.
+    /// The Skills tab: skill effects (0x594), the skill tree (0xEC) and the skill parameter tables (Vampirism 0x7A0, Crit
+    /// Conversion 0xA1C, Rush and Obscurity).
     pub fn show_skill_effects_tab(&mut self, ui: &mut egui::Ui) {
         self.show_table_problems(ui, "skills");
-        if self.category_details("skill_effects") {
-            self.show_skill_effect_details(ui);
-        } else {
-            self.show_skill_effect_list(ui);
+        ui.horizontal_wrapped(|ui| {
+            for (tab, label) in [
+                (SkillTab::Effects, "Skill effects"),
+                (SkillTab::Tree, "Skill tree"),
+                (SkillTab::Vampirism, "Vampirism"),
+                (SkillTab::CritConversion, "Crit Conversion"),
+                (SkillTab::Rush, "Rush"),
+                (SkillTab::Obscurity, "Obscurity"),
+            ] {
+                if ui.selectable_label(self.skill_tab == tab, label).clicked() {
+                    self.skill_tab = tab;
+                    self.back_category_list("skill_effects");
+                    self.back_category_list("skill_tree");
+                }
+            }
+        });
+        ui.separator();
+        match self.skill_tab {
+            SkillTab::Effects => {
+                if self.category_details("skill_effects") {
+                    self.show_skill_effect_details(ui);
+                } else {
+                    self.show_skill_effect_list(ui);
+                }
+            }
+            SkillTab::Tree => self.show_skill_tree(ui),
+            SkillTab::Vampirism => self.show_vampirism(ui),
+            SkillTab::CritConversion => self.show_crit_conversion(ui),
+            SkillTab::Rush => self.show_rush(ui),
+            SkillTab::Obscurity => self.show_obscurity(ui),
         }
     }
 
@@ -31,6 +84,7 @@ impl MhfdatApp {
         MhfdatApp::section_header(ui, &format!("Skill effects (found: {total})"), |ui| {
             ui.label("Skill ID:");
             ui.add(egui::DragValue::new(&mut self.skill_effects_new_skill).clamp_range(0..=crate::core::mhfdat::SKILL_ID_COUNT - 1));
+            ui.label(active_skill_name(self.skill_effects_new_skill));
             if ui.button("Add New").on_hover_text("Adds a row to this skill, after the rows it already has").clicked() {
                 let skill_id = self.skill_effects_new_skill;
                 // after the last row of the skill when it has some (a copy of that row), otherwise at the end of the table
@@ -54,11 +108,20 @@ impl MhfdatApp {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No skill effect table found!");
             return;
         }
-        let wanted = self.skill_effects_search.trim().parse::<u32>().ok();
+        // a number matches a skill id or an effect id, a text matches the name of the skill or of the skill it grants
+        let query = self.skill_effects_search.trim().to_lowercase();
+        let wanted = query.parse::<u32>().ok();
         let shown: Vec<usize> = (0..total)
             .filter(|&i| {
                 let e = &self.skill_effects[i];
-                wanted.map_or(true, |w| e.skill_id == w || e.effect_id == w)
+                match wanted {
+                    Some(w) => e.skill_id == w || e.effect_id == w,
+                    None => {
+                        query.is_empty()
+                            || crate::utils::text::contains_ci(active_skill_name(e.skill_id), &query)
+                            || (matches!(e.effect_type, 1..=4 | 6) && crate::utils::text::contains_ci(active_skill_name(e.effect_id), &query))
+                    }
+                }
             })
             .collect();
         let (start, end, total_pages) = crate::app::list_window(&mut self.skill_effects_page, shown.len());
@@ -78,9 +141,9 @@ impl MhfdatApp {
                         self.skill_effects_selected = Some(*idx);
                         self.open_category_details("skill_effects");
                     }
-                    ui.label(skill_id.to_string());
+                    ui.label(format!("{skill_id} {}", active_skill_name(*skill_id)));
                     ui.label(effect_type_name(*effect_type));
-                    ui.label(effect_id.to_string());
+                    ui.label(effect_target_label(*effect_type, *effect_id));
                     ui.end_row();
                 }
             });
@@ -108,13 +171,23 @@ impl MhfdatApp {
         ui.separator();
         let row = &mut self.skill_effects[idx];
         let mut changed = false;
-        ui.horizontal(|ui| { ui.label("Skill ID:"); changed |= ui.add(egui::DragValue::new(&mut row.skill_id)).changed(); });
+        ui.horizontal(|ui| {
+            ui.label("Skill ID:");
+            changed |= ui.add(egui::DragValue::new(&mut row.skill_id)).changed();
+            ui.label(active_skill_name(row.skill_id));
+        });
         ui.horizontal(|ui| {
             ui.label("Type:");
             changed |= ui.add(egui::DragValue::new(&mut row.effect_type)).changed();
             ui.label(effect_type_name(row.effect_type));
         });
-        ui.horizontal(|ui| { ui.label("Effect ID:"); changed |= ui.add(egui::DragValue::new(&mut row.effect_id)).changed(); });
+        ui.horizontal(|ui| {
+            ui.label("Effect ID:");
+            changed |= ui.add(egui::DragValue::new(&mut row.effect_id)).changed();
+            if matches!(row.effect_type, 1..=4 | 6) {
+                ui.label(active_skill_name(row.effect_id));
+            }
+        });
         ui.horizontal(|ui| { ui.label("Value:"); changed |= ui.add(egui::DragValue::new(&mut row.value)).changed(); });
         ui.horizontal(|ui| { ui.label("Range min:"); changed |= ui.add(egui::DragValue::new(&mut row.range_min)).changed(); });
         ui.horizontal(|ui| { ui.label("Range max:"); changed |= ui.add(egui::DragValue::new(&mut row.range_max)).changed(); });

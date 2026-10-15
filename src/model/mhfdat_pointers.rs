@@ -191,3 +191,17 @@ pub const ARENA_STAGE_IDS_1_PTR: u32 = 0x14C; // u16[34]
 pub const ARENA_STAGE_IDS_0_PTR: u32 = 0x154; // u16[28]
 pub const ARENA_AMMO_PTR: u32 = 0x158; // 23 pointers to item lists
 pub const TUTORIAL_EQUIP_SETS_PTR: u32 = 0x15C; // important_nums+0x48 pointers (null = none) to 20-byte sets
+
+// ---- Skill tree, skill parameter tables and weapon parameters ----------------------------------------------------------
+pub const SKILL_TREE_PTR: u32 = 0xEC; // 34-byte rows, the game stops at the first row whose id is -1
+pub const WEAPON_BONUS_SLOTS_PTR: u32 = 0xA8; // 11 rows of 4 x s16
+pub const WEAPON_COATING_MODIFIERS_PTR: u32 = 0xB0; // 23 rows of 0x18 bytes
+pub const VAMPIRISM_PTR: u32 = 0x7A0; // 2-byte rows x u16 at *(SKILL_COUNT_HOST_PTR)+4
+pub const CRIT_CONVERSION_PTR: u32 = 0xA1C; // 4 x u16, the block behind it is shared with other systems
+pub const WEAPON_PARAMS_PTR: u32 = 0x65C; // 14 rows of 0xE4 bytes, indexed by weapon class
+
+// ---- Rush and Obscurity ------------------------------------------------------------------------------------------------
+pub const RUSH_THRESHOLDS_PTR: u32 = 0x648; // big block shared with other skills; the Rush gauge thresholds are at +0x64 and +0x68
+pub const SKILL_CELLS_PTR: u32 = 0xB94; // cell shared with Furious and Ceaseless; +4 leads to the Rush UP stage 3 block
+pub const OBSCURITY_PTR: u32 = 0xAA0; // Obscurity
+pub const OBSCURITY_UP_PTR: u32 = 0xB78; // Obscurity UP, the Zenith version

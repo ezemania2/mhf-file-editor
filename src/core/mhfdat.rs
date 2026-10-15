@@ -4904,3 +4904,492 @@ pub fn read_tower_costs(buffer: &[u8]) -> Res<Vec<PointerBlock<TowerUpgradeStep>
 pub fn tower_costs_plan(blocks: &[PointerBlock<TowerUpgradeStep>], original_rows: &[usize]) -> Res<Plan> {
     block_plan("tower upgrade costs", blocks, original_rows, write_tower_step, None)
 }
+
+// ---- skill tree, skill parameter tables and weapon parameters ---------------------------------------------------------
+use crate::model::mhfdat::{
+    SkillTreeRow, VampirismRow, CritConversion, WeaponBonusSlotRow, CoatingModifierRow, PoseXform, DrawSheatheMotion,
+    WeaponParamsRow,
+};
+
+const SKILL_TREE_ROW_SIZE: usize = 34;
+/// Highest skill tree id the client indexes (skill_tree_points_to_active_skill / skill_tree_build_active_index).
+pub const SKILL_TREE_ID_MAX: i16 = 0xE0;
+/// Highest active skill id the client indexes.
+pub const SKILL_TREE_ACTIVE_MAX: i16 = 0x216;
+
+fn read_skill_tree_row<R: Read>(r: &mut R) -> Result<SkillTreeRow> {
+    let mut row = SkillTreeRow { tree_id: r.read_i16::<LittleEndian>()?, ..Default::default() };
+    for k in 0..8 {
+        row.thresholds[k] = r.read_i16::<LittleEndian>()?;
+        row.active_skills[k] = r.read_i16::<LittleEndian>()?;
+    }
+    Ok(row)
+}
+
+fn write_skill_tree_row(w: &mut Vec<u8>, row: &SkillTreeRow) -> Result<()> {
+    w.write_i16::<LittleEndian>(row.tree_id)?;
+    for k in 0..8 {
+        w.write_i16::<LittleEndian>(row.thresholds[k])?;
+        w.write_i16::<LittleEndian>(row.active_skills[k])?;
+    }
+    Ok(())
+}
+
+/// Skill tree table (header 0xEC). The loader stops at the first row whose id is -1; the client builds its index from the
+/// rows whose id is 0..=0xE0.
+pub fn read_skill_tree(buffer: &[u8]) -> Res<(u32, Vec<SkillTreeRow>)> {
+    let name = "skill tree (header 0xEC)";
+    let offset = header_target(buffer, name, SKILL_TREE_PTR)?;
+    let count = count_rows(buffer, offset, SKILL_TREE_ROW_SIZE, 1024, |r| u16::from_le_bytes([r[0], r[1]]) > SKILL_TREE_ID_MAX as u16);
+    Ok((offset as u32, read_table(buffer, name, offset, SKILL_TREE_ROW_SIZE, count, read_skill_tree_row)?))
+}
+
+/// The client maps a skill tree id to ONE row (a second row with the same id would hide the first), the ids it knows are
+/// 1..=0xE0 and the active skills 0..=0x216. The row that ends the table (id -1) is copied from where the old table ended.
+pub fn skill_tree_plan(buffer: &[u8], offset: Option<u32>, original_rows: usize, rows: &[SkillTreeRow]) -> Res<Plan> {
+    for (i, r) in rows.iter().enumerate() {
+        let id = r.tree_id;
+        if !(1..=SKILL_TREE_ID_MAX).contains(&id) {
+            return Err(format!("skill tree: row {i} has tree id {id}, the game knows 1..={SKILL_TREE_ID_MAX} (-1 ends the table)"));
+        }
+        if rows[..i].iter().any(|o| o.tree_id == id) {
+            return Err(format!("skill tree: tree id {id} is used by two rows (row {i}); the game keeps only one row per id"));
+        }
+        if let Some(k) = r.active_skills.iter().position(|a| !(0..=SKILL_TREE_ACTIVE_MAX).contains(a)) {
+            return Err(format!(
+                "skill tree: row {i} (tree {id}) has active skill {} in slot {}, the game knows 0..={SKILL_TREE_ACTIVE_MAX}",
+                r.active_skills[k], k + 1
+            ));
+        }
+    }
+    let terminator = offset.map(|o| bytes_after(buffer, o, original_rows, SKILL_TREE_ROW_SIZE, SKILL_TREE_ROW_SIZE)).unwrap_or_default();
+    let growth = Growth { pointers_at: vec![SKILL_TREE_PTR as u64], terminator, max_rows: Some(SKILL_TREE_ID_MAX as usize), ..Default::default() };
+    flat_plan("skill tree", offset, original_rows, rows, write_skill_tree_row, Some(growth))
+}
+
+/// Vampirism (header 0x7A0): the count is the u16 at +4 of the block behind header 0x988 (the same block that counts the skill
+/// effects at +2); 28 = 14 weapon classes x 2 tiers in every build that has the table.
+pub fn read_vampirism(buffer: &[u8]) -> Res<(u32, Vec<VampirismRow>)> {
+    let name = "vampirism (header 0x7A0)";
+    let host = header_target(buffer, "vampirism row count (header 0x988)", SKILL_COUNT_HOST_PTR)?;
+    let count = buffer
+        .get(host + 4..host + 6)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]) as usize)
+        .ok_or_else(|| format!("{name}: the block behind header 0x988 ends before its +4 count"))?;
+    let offset = header_target(buffer, name, VAMPIRISM_PTR)?;
+    let rows = read_table(buffer, name, offset, 2, count, |r| Ok(VampirismRow { heal_percent: r.read_u8()?, proc_chance: r.read_u8()? }))?;
+    Ok((offset as u32, rows))
+}
+
+/// Rows are weapon class * 2 + tier: the table keeps its size.
+pub fn vampirism_plan(offset: Option<u32>, original_rows: usize, rows: &[VampirismRow]) -> Res<Plan> {
+    flat_plan("vampirism", offset, original_rows, rows, |w, r| {
+        w.write_u8(r.heal_percent)?;
+        w.write_u8(r.proc_chance)
+    }, None)
+}
+
+/// Crit Conversion (header 0xA1C): only its first 8 bytes belong to the skill.
+pub fn read_crit_conversion(buffer: &[u8]) -> Res<(u32, Vec<CritConversion>)> {
+    let name = "crit conversion (header 0xA1C)";
+    let offset = header_target(buffer, name, CRIT_CONVERSION_PTR)?;
+    let rows = read_table(buffer, name, offset, 8, 1, |r| {
+        Ok(CritConversion {
+            rate: [r.read_u16::<LittleEndian>()?, r.read_u16::<LittleEndian>()?],
+            affinity: [r.read_u16::<LittleEndian>()?, r.read_u16::<LittleEndian>()?],
+        })
+    })?;
+    Ok((offset as u32, rows))
+}
+
+pub fn crit_conversion_plan(offset: Option<u32>, rows: &[CritConversion]) -> Res<Plan> {
+    flat_plan("crit conversion", offset, 1, rows, |w, c| {
+        for v in c.rate.iter().chain(c.affinity.iter()) {
+            w.write_u16::<LittleEndian>(*v)?;
+        }
+        Ok(())
+    }, None)
+}
+
+const WEAPON_BONUS_SLOT_ROWS: usize = 11;
+
+pub fn read_weapon_bonus_slots(buffer: &[u8]) -> Res<(u32, Vec<WeaponBonusSlotRow>)> {
+    let name = "weapon upgrade bonus slots (header 0xA8)";
+    let offset = header_target(buffer, name, WEAPON_BONUS_SLOTS_PTR)?;
+    let rows = read_table(buffer, name, offset, 8, WEAPON_BONUS_SLOT_ROWS, |r| {
+        let mut row = WeaponBonusSlotRow::default();
+        for s in row.slots.iter_mut() {
+            *s = r.read_i16::<LittleEndian>()?;
+        }
+        Ok(row)
+    })?;
+    Ok((offset as u32, rows))
+}
+
+pub fn weapon_bonus_slots_plan(offset: Option<u32>, rows: &[WeaponBonusSlotRow]) -> Res<Plan> {
+    flat_plan("weapon upgrade bonus slots", offset, WEAPON_BONUS_SLOT_ROWS, rows, |w, row| {
+        for s in &row.slots {
+            w.write_i16::<LittleEndian>(*s)?;
+        }
+        Ok(())
+    }, None)
+}
+
+const COATING_MODIFIER_ROWS: usize = 23;
+const COATING_MODIFIER_SIZE: usize = 0x18;
+
+pub fn read_coating_modifiers(buffer: &[u8]) -> Res<(u32, Vec<CoatingModifierRow>)> {
+    let name = "coating modifiers (header 0xB0)";
+    let offset = header_target(buffer, name, WEAPON_COATING_MODIFIERS_PTR)?;
+    let rows = read_table(buffer, name, offset, COATING_MODIFIER_SIZE, COATING_MODIFIER_ROWS, |r| {
+        let mut row = CoatingModifierRow { delta: r.read_i16::<LittleEndian>()?, ..Default::default() };
+        r.read_exact(&mut row.unused)?;
+        Ok(row)
+    })?;
+    Ok((offset as u32, rows))
+}
+
+pub fn coating_modifiers_plan(offset: Option<u32>, rows: &[CoatingModifierRow]) -> Res<Plan> {
+    flat_plan("coating modifiers", offset, COATING_MODIFIER_ROWS, rows, |w, row| {
+        w.write_i16::<LittleEndian>(row.delta)?;
+        w.extend_from_slice(&row.unused);
+        Ok(())
+    }, None)
+}
+
+fn read_f32x3<R: Read>(r: &mut R) -> Result<[f32; 3]> {
+    Ok([r.read_f32::<LittleEndian>()?, r.read_f32::<LittleEndian>()?, r.read_f32::<LittleEndian>()?])
+}
+
+fn write_f32s(w: &mut Vec<u8>, values: &[f32]) -> Result<()> {
+    for v in values {
+        w.write_f32::<LittleEndian>(*v)?;
+    }
+    Ok(())
+}
+
+fn read_pose<R: Read>(r: &mut R) -> Result<PoseXform> {
+    Ok(PoseXform { pos: read_f32x3(r)?, rot: read_f32x3(r)? })
+}
+
+fn write_pose(w: &mut Vec<u8>, p: &PoseXform) -> Result<()> {
+    write_f32s(w, &p.pos)?;
+    write_f32s(w, &p.rot)
+}
+
+fn read_draw_motion<R: Read>(r: &mut R) -> Result<DrawSheatheMotion> {
+    Ok(DrawSheatheMotion { motion_id: r.read_u16::<LittleEndian>()?, duration: r.read_i8()?, tick_action: r.read_i8()? })
+}
+
+fn write_draw_motion(w: &mut Vec<u8>, m: &DrawSheatheMotion) -> Result<()> {
+    w.write_u16::<LittleEndian>(m.motion_id)?;
+    w.write_i8(m.duration)?;
+    w.write_i8(m.tick_action)
+}
+
+const WEAPON_PARAMS_ROWS: usize = 14;
+const WEAPON_PARAMS_SIZE: usize = 0xE4;
+
+fn read_weapon_params_row<R: Read>(r: &mut R) -> Result<WeaponParamsRow> {
+    let mut w = WeaponParamsRow {
+        unk00: r.read_u8()?,
+        weapon_class_flags: r.read_u8()?,
+        charge_hud_seed: r.read_u8()?,
+        adaptation_gauge_seed: r.read_u8()?,
+        ..Default::default()
+    };
+    r.read_exact(&mut w.unk04)?;
+    w.onhit_multiplier = r.read_f32::<LittleEndian>()?;
+    w.weapon_coefficient = r.read_u32::<LittleEndian>()?;
+    w.pose_variant0 = read_pose(r)?;
+    w.pose_variant1 = read_pose(r)?;
+    w.pose_variant2 = read_pose(r)?;
+    w.pose_sheathe_draw = read_pose(r)?;
+    w.hud_view_default_z = r.read_f32::<LittleEndian>()?;
+    w.hud_view_pos = read_f32x3(r)?;
+    w.hud_view_pos_add = read_f32x3(r)?;
+    w.hud_view_rot = read_f32x3(r)?;
+    w.hud_view_rot_add = read_f32x3(r)?;
+    w.melee_hold_input_gate = r.read_u8()?;
+    w.unk_a5 = r.read_u8()?;
+    w.recovery_motion_3ec_action = r.read_i16::<LittleEndian>()?;
+    r.read_exact(&mut w.unk_a8)?;
+    w.draw = read_draw_motion(r)?;
+    w.draw_alt = read_draw_motion(r)?;
+    w.sheathe = read_draw_motion(r)?;
+    w.sheathe_alt = read_draw_motion(r)?;
+    w.melee_hitstop_frames = r.read_u8()?;
+    w.melee_hitstop_reduction = r.read_u8()?;
+    w.unk_be = r.read_u8()?;
+    w.fencing_bonus_hit_sound = r.read_u8()?;
+    w.red_soul_gauge_threshold = r.read_u16::<LittleEndian>()?;
+    w.red_soul_tier_bonus = r.read_u16::<LittleEndian>()?;
+    w.turn_rate_states_c8_f1 = r.read_u32::<LittleEndian>()?;
+    w.category_switch_penalty = r.read_i16::<LittleEndian>()?;
+    w.thunder_clad_gauge_decay = r.read_i16::<LittleEndian>()?;
+    w.rush_onhit_gauge_mult = r.read_u32::<LittleEndian>()?;
+    w.rush_gauge_increment = r.read_u8()?;
+    w.pad_d1 = r.read_u8()?;
+    w.rush_tier0_unread = r.read_u16::<LittleEndian>()?;
+    w.rush_tier1_bonus = r.read_i16::<LittleEndian>()?;
+    w.rush_tier2_bonus = r.read_i16::<LittleEndian>()?;
+    r.read_exact(&mut w.rush_t3_or_slayer)?;
+    w.ceaseless_timer = r.read_u16::<LittleEndian>()?;
+    for t in w.ceaseless_thresh.iter_mut() {
+        *t = r.read_u16::<LittleEndian>()?;
+    }
+    r.read_exact(&mut w.unk_e2)?;
+    Ok(w)
+}
+
+fn write_weapon_params_row(out: &mut Vec<u8>, w: &WeaponParamsRow) -> Result<()> {
+    out.write_u8(w.unk00)?;
+    out.write_u8(w.weapon_class_flags)?;
+    out.write_u8(w.charge_hud_seed)?;
+    out.write_u8(w.adaptation_gauge_seed)?;
+    out.extend_from_slice(&w.unk04);
+    out.write_f32::<LittleEndian>(w.onhit_multiplier)?;
+    out.write_u32::<LittleEndian>(w.weapon_coefficient)?;
+    write_pose(out, &w.pose_variant0)?;
+    write_pose(out, &w.pose_variant1)?;
+    write_pose(out, &w.pose_variant2)?;
+    write_pose(out, &w.pose_sheathe_draw)?;
+    out.write_f32::<LittleEndian>(w.hud_view_default_z)?;
+    write_f32s(out, &w.hud_view_pos)?;
+    write_f32s(out, &w.hud_view_pos_add)?;
+    write_f32s(out, &w.hud_view_rot)?;
+    write_f32s(out, &w.hud_view_rot_add)?;
+    out.write_u8(w.melee_hold_input_gate)?;
+    out.write_u8(w.unk_a5)?;
+    out.write_i16::<LittleEndian>(w.recovery_motion_3ec_action)?;
+    out.extend_from_slice(&w.unk_a8);
+    write_draw_motion(out, &w.draw)?;
+    write_draw_motion(out, &w.draw_alt)?;
+    write_draw_motion(out, &w.sheathe)?;
+    write_draw_motion(out, &w.sheathe_alt)?;
+    out.write_u8(w.melee_hitstop_frames)?;
+    out.write_u8(w.melee_hitstop_reduction)?;
+    out.write_u8(w.unk_be)?;
+    out.write_u8(w.fencing_bonus_hit_sound)?;
+    out.write_u16::<LittleEndian>(w.red_soul_gauge_threshold)?;
+    out.write_u16::<LittleEndian>(w.red_soul_tier_bonus)?;
+    out.write_u32::<LittleEndian>(w.turn_rate_states_c8_f1)?;
+    out.write_i16::<LittleEndian>(w.category_switch_penalty)?;
+    out.write_i16::<LittleEndian>(w.thunder_clad_gauge_decay)?;
+    out.write_u32::<LittleEndian>(w.rush_onhit_gauge_mult)?;
+    out.write_u8(w.rush_gauge_increment)?;
+    out.write_u8(w.pad_d1)?;
+    out.write_u16::<LittleEndian>(w.rush_tier0_unread)?;
+    out.write_i16::<LittleEndian>(w.rush_tier1_bonus)?;
+    out.write_i16::<LittleEndian>(w.rush_tier2_bonus)?;
+    out.extend_from_slice(&w.rush_t3_or_slayer);
+    out.write_u16::<LittleEndian>(w.ceaseless_timer)?;
+    for t in &w.ceaseless_thresh {
+        out.write_u16::<LittleEndian>(*t)?;
+    }
+    out.extend_from_slice(&w.unk_e2);
+    Ok(())
+}
+
+/// Weapon params (header 0x65C): 14 rows, one per weapon class.
+pub fn read_weapon_params(buffer: &[u8]) -> Res<(u32, Vec<WeaponParamsRow>)> {
+    let name = "weapon params (header 0x65C)";
+    let offset = header_target(buffer, name, WEAPON_PARAMS_PTR)?;
+    let rows = read_table(buffer, name, offset, WEAPON_PARAMS_SIZE, WEAPON_PARAMS_ROWS, read_weapon_params_row)?;
+    Ok((offset as u32, rows))
+}
+
+pub fn weapon_params_plan(offset: Option<u32>, rows: &[WeaponParamsRow]) -> Res<Plan> {
+    flat_plan("weapon params", offset, WEAPON_PARAMS_ROWS, rows, write_weapon_params_row, None)
+}
+
+// ---- Rush and Obscurity -------------------------------------------------------------------------------------------------
+use crate::model::mhfdat::{RushParams, ObscurityParams, ObscurityUpParams};
+
+pub const OBSCURITY_WEAPONS: usize = 14;
+/// The stack counter of Obscurity is one byte.
+pub const OBSCURITY_STACKS_MAX: i16 = 255;
+/// Stack values in the list of Obscurity UP, in every build that has it.
+pub const OBSCURITY_UP_STACK_VALUES: usize = 48;
+
+/// Pointer stored at `at`: Err when null or outside the buffer.
+fn pointer_in(buffer: &[u8], name: &str, at: usize) -> Res<usize> {
+    let p = buffer
+        .get(at..at + 4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+        .ok_or_else(|| format!("{name}: the pointer at 0x{at:X} is outside the {}-byte file", buffer.len()))?;
+    match p {
+        0 => Err(format!("{name}: the pointer at 0x{at:X} is null")),
+        p if p > buffer.len() => Err(format!("{name}: the pointer at 0x{at:X} points to 0x{p:X}, outside the {}-byte file", buffer.len())),
+        p => Ok(p),
+    }
+}
+
+fn read_s16s(buffer: &[u8], name: &str, at: usize, n: usize) -> Res<Vec<i16>> {
+    read_table(buffer, name, at, 2, n, |r| r.read_i16::<LittleEndian>())
+}
+
+fn array14(v: Vec<i16>) -> [i16; OBSCURITY_WEAPONS] {
+    let mut a = [0i16; OBSCURITY_WEAPONS];
+    a.copy_from_slice(&v);
+    a
+}
+
+fn s16_bytes(v: &[i16]) -> Vec<u8> {
+    v.iter().flat_map(|x| x.to_le_bytes()).collect()
+}
+
+/// The Rush gauge thresholds are s32 at +0x64 (stage 1) and +0x68 (stage 2) of the block behind header 0x648; +0x60 would be
+/// stage 0, which the client never reads. The stage 3 block of Rush UP (the Zenith version) is behind the cell of
+/// header 0xB94, at +4.
+const RUSH_THRESHOLDS_AT: usize = 0x64;
+const RUSH_UP_BLOCK_SIZE: usize = 12;
+
+/// File offsets of the two Rush blocks.
+fn rush_locations(buffer: &[u8]) -> Res<(usize, usize)> {
+    let name = "rush (header 0x648 and 0xB94)";
+    let thresholds = header_target(buffer, "rush thresholds (header 0x648)", RUSH_THRESHOLDS_PTR)? + RUSH_THRESHOLDS_AT;
+    let cell = header_target(buffer, "rush UP stage 3 (header 0xB94)", SKILL_CELLS_PTR)?;
+    let up = pointer_in(buffer, "rush UP stage 3 (header 0xB94 + 4)", cell + 4)?;
+    check_table_fits(name, thresholds as u64, 8, 1, buffer.len())?;
+    check_table_fits(name, up as u64, RUSH_UP_BLOCK_SIZE, 1, buffer.len())?;
+    Ok((thresholds, up))
+}
+
+pub fn read_rush(buffer: &[u8]) -> Res<Vec<RushParams>> {
+    let (thresholds, up) = rush_locations(buffer)?;
+    let i32_at = |o: usize| i32::from_le_bytes([buffer[o], buffer[o + 1], buffer[o + 2], buffer[o + 3]]);
+    Ok(vec![RushParams {
+        stage1_threshold: i32_at(thresholds),
+        stage2_threshold: i32_at(thresholds + 4),
+        up_stage3_bonus: i16::from_le_bytes([buffer[up], buffer[up + 1]]),
+        up_stage3_threshold: i32_at(up + 4),
+        up_stage3_timer: f32::from_le_bytes([buffer[up + 8], buffer[up + 9], buffer[up + 10], buffer[up + 11]]),
+    }])
+}
+
+/// Only the fields the client reads are written: the bytes around them are not Rush's.
+pub fn rush_plan(buffer: &[u8], rows: &[RushParams]) -> Res<Plan> {
+    let [r] = rows else { return Err(format!("rush: {} rows, there is exactly one", rows.len())) };
+    if !r.up_stage3_timer.is_finite() {
+        return Err("rush: the stage 3 timer is not a finite number".to_string());
+    }
+    let (thresholds, up) = rush_locations(buffer)?;
+    let mut thresholds_bytes = r.stage1_threshold.to_le_bytes().to_vec();
+    thresholds_bytes.extend_from_slice(&r.stage2_threshold.to_le_bytes());
+    let mut plan = Plan::default();
+    for (table, at, bytes) in [
+        ("rush gauge thresholds", thresholds, thresholds_bytes),
+        ("rush UP stage 3 attack bonus", up, r.up_stage3_bonus.to_le_bytes().to_vec()),
+        ("rush UP stage 3 threshold", up + 4, r.up_stage3_threshold.to_le_bytes().to_vec()),
+        ("rush UP stage 3 timer", up + 8, r.up_stage3_timer.to_le_bytes().to_vec()),
+    ] {
+        plan.patches.push(InPlacePatch { table: table.to_string(), offset: at as u64, bytes });
+    }
+    Ok(plan)
+}
+
+/// Obscurity without up (header 0xAA0): {ptr to s16[14] attack per stack, ptr to s16[14] most stacks, s16 delay at +8}.
+fn obscurity_locations(buffer: &[u8]) -> Res<(usize, usize, usize)> {
+    let name = "obscurity (header 0xAA0)";
+    let t = header_target(buffer, name, OBSCURITY_PTR)?;
+    check_table_fits(name, t as u64, 10, 1, buffer.len())?;
+    Ok((pointer_in(buffer, name, t)?, pointer_in(buffer, name, t + 4)?, t + 8))
+}
+
+pub fn read_obscurity(buffer: &[u8]) -> Res<Vec<ObscurityParams>> {
+    let name = "obscurity (header 0xAA0)";
+    let (attack_at, max_at, delay_at) = obscurity_locations(buffer)?;
+    Ok(vec![ObscurityParams {
+        attack_per_stack: array14(read_s16s(buffer, name, attack_at, OBSCURITY_WEAPONS)?),
+        max_stacks: array14(read_s16s(buffer, name, max_at, OBSCURITY_WEAPONS)?),
+        stack_delay: i16::from_le_bytes([buffer[delay_at], buffer[delay_at + 1]]),
+    }])
+}
+
+pub fn obscurity_plan(buffer: &[u8], rows: &[ObscurityParams]) -> Res<Plan> {
+    let [r] = rows else { return Err(format!("obscurity: {} rows, there is exactly one", rows.len())) };
+    if let Some(c) = r.max_stacks.iter().position(|m| !(0..=OBSCURITY_STACKS_MAX).contains(m)) {
+        return Err(format!("obscurity: most stacks of weapon class {c} is {}, the stack counter is a byte (0 to {OBSCURITY_STACKS_MAX})", r.max_stacks[c]));
+    }
+    if r.stack_delay < 0 {
+        return Err(format!("obscurity: the delay between two stacks is {}, it cannot be negative", r.stack_delay));
+    }
+    let (attack_at, max_at, delay_at) = obscurity_locations(buffer)?;
+    let mut plan = Plan::default();
+    for (table, at, bytes) in [
+        ("obscurity attack per stack", attack_at, s16_bytes(&r.attack_per_stack)),
+        ("obscurity most stacks", max_at, s16_bytes(&r.max_stacks)),
+        ("obscurity delay between stacks", delay_at, r.stack_delay.to_le_bytes().to_vec()),
+    ] {
+        plan.patches.push(InPlacePatch { table: table.to_string(), offset: at as u64, bytes });
+    }
+    Ok(plan)
+}
+
+/// Obscurity UP, the Zenith version (header 0xB78): four pointers, to the attack of every stack (all weapon classes one after the
+/// other), the most stacks per weapon class, and two s16[14] of sharpness amounts.
+fn obscurity_up_locations(buffer: &[u8]) -> Res<[usize; 4]> {
+    let name = "obscurity UP (header 0xB78)";
+    let t = header_target(buffer, name, OBSCURITY_UP_PTR)?;
+    check_table_fits(name, t as u64, 16, 1, buffer.len())?;
+    Ok([pointer_in(buffer, name, t)?, pointer_in(buffer, name, t + 4)?, pointer_in(buffer, name, t + 8)?, pointer_in(buffer, name, t + 12)?])
+}
+
+/// Stack values the client indexes: the most stacks of the classes before a class plus its own (the sum), as a class reads
+/// them after the classes before it.
+fn stack_values(max_stacks: &[i16]) -> Res<usize> {
+    let mut total = 0usize;
+    for (c, m) in max_stacks.iter().enumerate() {
+        if !(0..=OBSCURITY_STACKS_MAX).contains(m) {
+            return Err(format!("obscurity UP: most stacks of weapon class {c} is {m}, the stack counter is a byte (0 to {OBSCURITY_STACKS_MAX})"));
+        }
+        total += *m as usize;
+    }
+    Ok(total)
+}
+
+/// The list holds 48 values in every build that has it (8 weapon classes x 6 stacks) and the bytes after it belong to another
+/// table. The size is not stored, so it is never taken from the most stacks alone: they may add up to less and be raised again.
+fn stack_room(max_stacks: &[i16]) -> Res<usize> {
+    Ok(stack_values(max_stacks)?.max(OBSCURITY_UP_STACK_VALUES))
+}
+
+pub fn read_obscurity_up(buffer: &[u8]) -> Res<Vec<ObscurityUpParams>> {
+    let name = "obscurity UP (header 0xB78)";
+    let [bonus_at, max_at, sharp_at, alt_at] = obscurity_up_locations(buffer)?;
+    let max_stacks = array14(read_s16s(buffer, name, max_at, OBSCURITY_WEAPONS)?);
+    let room = stack_room(&max_stacks)?;
+    Ok(vec![ObscurityUpParams {
+        max_stacks,
+        stack_bonus: read_s16s(buffer, name, bonus_at, room)?,
+        sharpness: array14(read_s16s(buffer, name, sharp_at, OBSCURITY_WEAPONS)?),
+        sharpness_alt: array14(read_s16s(buffer, name, alt_at, OBSCURITY_WEAPONS)?),
+    }])
+}
+
+/// The list of stack values keeps its room: the most stacks may move between classes but their sum cannot pass it, or the
+/// client would read the bytes of the table after it.
+pub fn obscurity_up_plan(buffer: &[u8], rows: &[ObscurityUpParams]) -> Res<Plan> {
+    let [r] = rows else { return Err(format!("obscurity UP: {} rows, there is exactly one", rows.len())) };
+    let [bonus_at, max_at, sharp_at, alt_at] = obscurity_up_locations(buffer)?;
+    let name = "obscurity UP (header 0xB78)";
+    let was = stack_room(&array14(read_s16s(buffer, name, max_at, OBSCURITY_WEAPONS)?))?;
+    let now = stack_values(&r.max_stacks)?;
+    if r.stack_bonus.len() != was {
+        return Err(format!("obscurity UP: {} stack values, the file has room for {was}", r.stack_bonus.len()));
+    }
+    if now > was {
+        return Err(format!("obscurity UP: the most stacks add up to {now}, the file has room for {was} stack values"));
+    }
+    let mut plan = Plan::default();
+    for (table, at, bytes) in [
+        ("obscurity UP attack per stack", bonus_at, s16_bytes(&r.stack_bonus)),
+        ("obscurity UP most stacks", max_at, s16_bytes(&r.max_stacks)),
+        ("obscurity UP sharpness", sharp_at, s16_bytes(&r.sharpness)),
+        ("obscurity UP sharpness, alternate", alt_at, s16_bytes(&r.sharpness_alt)),
+    ] {
+        plan.patches.push(InPlacePatch { table: table.to_string(), offset: at as u64, bytes });
+    }
+    Ok(plan)
+}

@@ -1737,6 +1737,137 @@ pub struct TowerJewelRecipe {
     pub mats: [TowerJewelMat; 3],
 }
 
+/// One skill tree of the skill tree table (mhfdat+0xEC, 34 bytes): a skill series and eight (points threshold, active skill)
+/// pairs. The first three pairs are the negative side (points <= threshold), the last five the positive one (points >=
+/// threshold). skill_tree.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SkillTreeRow {
+    pub tree_id: i16,
+    pub thresholds: [i16; 8],
+    pub active_skills: [i16; 8],
+}
+
+/// Vampirism row (mhfdat+0x7A0, 2 bytes), index = weapon class * 2 + tier. vampirism_0x7a0_standalone.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct VampirismRow {
+    pub heal_percent: u8,
+    pub proc_chance: u8,
+}
+
+/// Crit Conversion parameters: the first 8 bytes of the block behind header 0xA1C (the rest belongs to other systems and is
+/// never written). crit_conversion_0xa1c_standalone.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CritConversion {
+    pub rate: [u16; 2],
+    pub affinity: [u16; 2],
+}
+
+/// Rush (skill 516): gauge thresholds (header 0x648 +0x64 / +0x68) and the stage 3 block of Rush UP, the Zenith version
+/// (header 0xB94, cell +4).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RushParams {
+    pub stage1_threshold: i32,
+    pub stage2_threshold: i32,
+    pub up_stage3_bonus: i16,
+    pub up_stage3_threshold: i32,
+    pub up_stage3_timer: f32,
+}
+
+/// Obscurity (skill 514, header 0xAA0): attack per stack and most stacks per weapon class, and the delay between two stacks
+/// (also used by Obscurity UP).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ObscurityParams {
+    pub attack_per_stack: [i16; 14],
+    pub max_stacks: [i16; 14],
+    pub stack_delay: i16,
+}
+
+/// Obscurity UP, the Zenith version (header 0xB78). `stack_bonus` holds the attack of every stack of
+/// every weapon class one after the other: the class c owns `max_stacks[c]` values after those of the classes before it.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ObscurityUpParams {
+    pub max_stacks: [i16; 14],
+    pub stack_bonus: Vec<i16>,
+    pub sharpness: [i16; 14],
+    pub sharpness_alt: [i16; 14],
+}
+
+/// Weapon upgrade bonus slot row (mhfdat+0xA8, 8 bytes). weapon_bonus_slot_0xa8_standalone.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct WeaponBonusSlotRow {
+    pub slots: [i16; 4],
+}
+
+/// Coating modifier row (mhfdat+0xB0, 0x18 bytes); the bytes after the delta are never read. weapon_coating_modifier_0xb0_standalone.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CoatingModifierRow {
+    pub delta: i16,
+    pub unused: [u8; 0x16],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PoseXform {
+    pub pos: [f32; 3],
+    pub rot: [f32; 3],
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DrawSheatheMotion {
+    pub motion_id: u16,
+    pub duration: i8,
+    pub tick_action: i8,
+}
+
+/// One weapon class of the weapon params table (mhfdat+0x65C, 0xE4 bytes, 14 rows indexed by weapon class). The bytes the
+/// pattern does not name stay in the `unk*` fields and are written back as they were. weapon_params_0x65c_standalone.hexpat
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct WeaponParamsRow {
+    pub unk00: u8,
+    pub weapon_class_flags: u8,
+    pub charge_hud_seed: u8,
+    pub adaptation_gauge_seed: u8,
+    pub unk04: [u8; 4],
+    pub onhit_multiplier: f32,
+    pub weapon_coefficient: u32,
+    pub pose_variant0: PoseXform,
+    pub pose_variant1: PoseXform,
+    pub pose_variant2: PoseXform,
+    pub pose_sheathe_draw: PoseXform,
+    pub hud_view_default_z: f32,
+    pub hud_view_pos: [f32; 3],
+    pub hud_view_pos_add: [f32; 3],
+    pub hud_view_rot: [f32; 3],
+    pub hud_view_rot_add: [f32; 3],
+    pub melee_hold_input_gate: u8,
+    pub unk_a5: u8,
+    pub recovery_motion_3ec_action: i16,
+    pub unk_a8: [u8; 4],
+    pub draw: DrawSheatheMotion,
+    pub draw_alt: DrawSheatheMotion,
+    pub sheathe: DrawSheatheMotion,
+    pub sheathe_alt: DrawSheatheMotion,
+    pub melee_hitstop_frames: u8,
+    pub melee_hitstop_reduction: u8,
+    pub unk_be: u8,
+    pub fencing_bonus_hit_sound: u8,
+    pub red_soul_gauge_threshold: u16,
+    pub red_soul_tier_bonus: u16,
+    pub turn_rate_states_c8_f1: u32,
+    pub category_switch_penalty: i16,
+    pub thunder_clad_gauge_decay: i16,
+    pub rush_onhit_gauge_mult: u32,
+    pub rush_gauge_increment: u8,
+    pub pad_d1: u8,
+    pub rush_tier0_unread: u16,
+    pub rush_tier1_bonus: i16,
+    pub rush_tier2_bonus: i16,
+    /// Rush tier 3 (s16) or Consumption Slayer (two u8): the same two bytes.
+    pub rush_t3_or_slayer: [u8; 2],
+    pub ceaseless_timer: u16,
+    pub ceaseless_thresh: [u16; 3],
+    pub unk_e2: [u8; 2],
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct HornMelody {
     pub song_id: u8,

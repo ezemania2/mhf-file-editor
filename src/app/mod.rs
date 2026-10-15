@@ -30,6 +30,9 @@ pub mod caravan;
 pub mod road;
 pub mod craft_more;
 pub mod horn_melodies;
+pub mod skill_tree;
+pub mod skill_params;
+pub mod weapon_params;
 pub mod arena;
 
 pub use mhfjmp::MhfjmpApp;
@@ -199,6 +202,9 @@ pub enum WeaponTab {
     G50Ranged,
     G50Tower,
     HornMelodies,
+    Params,
+    BonusSlots,
+    Coatings,
 }
 
 impl Default for WeaponTab {
@@ -564,6 +570,30 @@ pub struct MhfdatApp {
     pub craft_more_modified: bool,
     pub craft_more_page: u32,
     pub craft_more_selected: Option<usize>,
+    pub skill_tab: skill_effects::SkillTab,
+    pub skill_tree: Vec<crate::model::mhfdat::SkillTreeRow>,
+    pub skill_tree_modified: bool,
+    pub skill_tree_page: u32,
+    pub skill_tree_selected: Option<usize>,
+    pub skill_tree_search: String,
+    pub vampirism: Vec<crate::model::mhfdat::VampirismRow>,
+    pub vampirism_modified: bool,
+    pub crit_conversion: Vec<crate::model::mhfdat::CritConversion>,
+    pub crit_conversion_modified: bool,
+    pub rush: Vec<crate::model::mhfdat::RushParams>,
+    pub rush_modified: bool,
+    pub obscurity: Vec<crate::model::mhfdat::ObscurityParams>,
+    pub obscurity_modified: bool,
+    pub obscurity_up: Vec<crate::model::mhfdat::ObscurityUpParams>,
+    pub obscurity_up_modified: bool,
+    pub obscurity_class: usize,
+    pub weapon_bonus_slots: Vec<crate::model::mhfdat::WeaponBonusSlotRow>,
+    pub weapon_bonus_slots_modified: bool,
+    pub coating_modifiers: Vec<crate::model::mhfdat::CoatingModifierRow>,
+    pub coating_modifiers_modified: bool,
+    pub weapon_params: Vec<crate::model::mhfdat::WeaponParamsRow>,
+    pub weapon_params_modified: bool,
+    pub weapon_params_selected: Option<usize>,
     pub horn_melodies: Vec<crate::model::mhfdat::HornMelody>,
     pub horn_melodies_modified: bool,
     pub horn_melodies_page: u32,
@@ -935,6 +965,30 @@ impl Default for MhfdatApp {
             craft_more_modified: false,
             craft_more_page: 0,
             craft_more_selected: None,
+            skill_tab: Default::default(),
+            skill_tree: Vec::new(),
+            skill_tree_modified: false,
+            skill_tree_page: 0,
+            skill_tree_selected: None,
+            skill_tree_search: String::new(),
+            vampirism: Vec::new(),
+            vampirism_modified: false,
+            crit_conversion: Vec::new(),
+            crit_conversion_modified: false,
+            rush: Vec::new(),
+            rush_modified: false,
+            obscurity: Vec::new(),
+            obscurity_modified: false,
+            obscurity_up: Vec::new(),
+            obscurity_up_modified: false,
+            obscurity_class: 0,
+            weapon_bonus_slots: Vec::new(),
+            weapon_bonus_slots_modified: false,
+            coating_modifiers: Vec::new(),
+            coating_modifiers_modified: false,
+            weapon_params: Vec::new(),
+            weapon_params_modified: false,
+            weapon_params_selected: None,
             horn_melodies: Vec::new(),
             horn_melodies_modified: false,
             horn_melodies_page: 0,
@@ -1561,7 +1615,7 @@ impl MhfdatApp {
                     self.main_tab = MainTab::SeasonalEvents;
                 }
                 for (tab, label) in [
-                    (MainTab::SkillEffects, "Skill Effects"),
+                    (MainTab::SkillEffects, "Skills"),
                     (MainTab::Caravan, "Caravan"),
                     (MainTab::HuntingRoad, "Hunting Road"),
                     (MainTab::Arena, "Arena"),
