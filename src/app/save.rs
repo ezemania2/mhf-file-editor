@@ -15,7 +15,7 @@ use crate::core::mhfdat::{
     read_skill_tree, skill_tree_plan, read_vampirism, vampirism_plan, read_crit_conversion, crit_conversion_plan,
     read_weapon_params, weapon_params_plan, read_weapon_bonus_slots, weapon_bonus_slots_plan,
     read_coating_modifiers, coating_modifiers_plan,
-    rush_plan, obscurity_plan, obscurity_up_plan,
+    rush_plan, obscurity_plan, obscurity_up_plan, guild_shop_plan,
 };
 use crate::model::mhfdat_pointers::{
     MELEE_WEAPONS_PTR, RANGED_WEAPONS_PTR,
@@ -348,6 +348,9 @@ impl MhfdatApp {
             let ammo: Vec<usize> = orig.ammo.iter().map(|b| b.rows.len()).collect();
             let tutorial: Vec<usize> = orig.tutorial.iter().map(|b| b.rows.len()).collect();
             plan.extend(arena_plan(buf, &self.arena, &offsets, &items, &ammo, &tutorial).map_err(bad)?);
+        }
+        if self.guild_shop_modified {
+            plan.extend(guild_shop_plan(buf, &self.guild_shop).map_err(bad)?);
         }
 
         // Everything that is written over the file must be inside it.

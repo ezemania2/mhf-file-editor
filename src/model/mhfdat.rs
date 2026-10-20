@@ -1929,3 +1929,43 @@ pub struct TowerUpgradeStep {
     pub ok_cost: [[u8; 2]; 10],
     pub bow: [u8; 4],
 }
+
+// ---- Guild Shop (header 0xC8, record 7) ----------------------------------------------------------------------------------
+
+/// One hall of the Guild Shop: the items sold for Guild Tickets and their ticket prices (same index in both lists). An id
+/// of 0 ends the item list in the file, so it cannot be an item.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct GuildShopHall {
+    pub name: String,
+    pub items: PointerBlock<u16>,
+    pub prices: PointerBlock<u16>,
+}
+
+// ---- Cross references checked before a deletion ---------------------------------------------------------------------------
+// Only the references that hold in every real file (rain, jp): the gem tier lists name gem skills, the Road skill
+// prerequisites name (skill, level) rows, the automatic skills name active skills granted by the skill tree.
+
+impl Caravan {
+    /// When gem skill row `row` is deleted, the skill it defines is still named by the skill list of a tier and no other row
+    /// defines it: (skill id, tier of that list).
+    pub fn gem_skill_used_by_tier(&self, row: usize) -> Option<(i16, usize)> {
+        let id = self.gem_skills.get(row)?.skill_id;
+        if self.gem_skills.iter().enumerate().any(|(i, g)| i != row && g.skill_id == id) {
+            return None;
+        }
+        self.gem_lists.iter().position(|list| list.rows.contains(&id)).map(|tier| (id, tier))
+    }
+}
+
+impl RoadData {
+    /// When Road skill row `row` is deleted, another row still asks for its (skill, level) as a prerequisite and no other row
+    /// defines it: the index of the first row that asks for it.
+    pub fn skill_required_by(&self, row: usize) -> Option<usize> {
+        let target = self.skills.get(row)?;
+        let key = (target.skill_id, target.level);
+        if key.0 == 0 || self.skills.iter().enumerate().any(|(i, s)| i != row && (s.skill_id, s.level) == key) {
+            return None;
+        }
+        self.skills.iter().enumerate().position(|(i, s)| i != row && s.prereqs.iter().any(|p| (p.skill_id, p.level) == key))
+    }
+}

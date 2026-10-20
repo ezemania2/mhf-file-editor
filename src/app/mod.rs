@@ -34,6 +34,7 @@ pub mod skill_tree;
 pub mod skill_params;
 pub mod weapon_params;
 pub mod arena;
+pub mod guild_shop;
 
 pub use mhfjmp::MhfjmpApp;
 
@@ -140,6 +141,7 @@ pub enum WorkshopCategory {
     Deco,
     Combine,
     TowerSeals,
+    GuildShop,
 }
 
 impl Default for WorkshopCategory {
@@ -601,6 +603,10 @@ pub struct MhfdatApp {
     pub horn_melodies_search: String,
     pub arena: crate::model::mhfdat::Arena,
     pub arena_modified: bool,
+    pub guild_shop: Vec<crate::model::mhfdat::GuildShopHall>,
+    pub guild_shop_modified: bool,
+    pub guild_shop_hall: usize,
+    pub guild_shop_page: u32,
     pub arena_tab: arena::ArenaTab,
     pub arena_selected: usize,
     pub arena_chunk: u32,
@@ -996,6 +1002,10 @@ impl Default for MhfdatApp {
             horn_melodies_search: String::new(),
             arena: Default::default(),
             arena_modified: false,
+            guild_shop: Vec::new(),
+            guild_shop_modified: false,
+            guild_shop_hall: 0,
+            guild_shop_page: 0,
             arena_tab: Default::default(),
             arena_selected: 0,
             arena_chunk: 0,

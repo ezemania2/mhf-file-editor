@@ -90,6 +90,24 @@ impl MhfdatApp {
         MhfdatApp::pagination_controls(ui, &mut self.skill_tree_page, total_pages);
     }
 
+    /// Why row `idx` cannot be deleted: an automatic skill (equipment skill) uses an active skill that only this row grants.
+    pub(in crate::app) fn skill_tree_delete_blocked(&self, idx: usize) -> Option<String> {
+        let row = self.skill_tree.get(idx)?;
+        for &skill in row.active_skills.iter().filter(|&&s| s > 0) {
+            if self.skill_tree.iter().enumerate().any(|(i, r)| i != idx && r.active_skills.contains(&skill)) {
+                continue;
+            }
+            let users = self.automatic_skills.iter().filter(|a| a.skill_id as i16 == skill).count();
+            if users > 0 {
+                return Some(format!(
+                    "Active skill {skill} ({}) is granted only by this tree and {users} automatic skill{} use it: change those first",
+                    active_name(skill), if users == 1 { "" } else { "s" }
+                ));
+            }
+        }
+        None
+    }
+
     fn show_skill_tree_details(&mut self, ui: &mut egui::Ui) {
         if ui.button("← Back to List").clicked() {
             self.back_category_list("skill_tree");
@@ -100,12 +118,16 @@ impl MhfdatApp {
             return;
         };
         ui.heading(format!("Edit Skill tree #{idx} ({})", series_name(self.skill_tree[idx].tree_id)));
-        if ui.button("Delete this row").clicked() {
+        let blocked = self.skill_tree_delete_blocked(idx);
+        if ui.add_enabled(blocked.is_none(), egui::Button::new("Delete this row")).clicked() {
             self.skill_tree.remove(idx);
             self.skill_tree_modified = true;
             self.skill_tree_selected = None;
             self.back_category_list("skill_tree");
             return;
+        }
+        if let Some(why) = &blocked {
+            ui.colored_label(egui::Color32::from_rgb(220, 70, 70), why);
         }
         ui.separator();
         let tree_id = self.skill_tree[idx].tree_id;

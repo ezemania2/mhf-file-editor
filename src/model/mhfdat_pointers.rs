@@ -205,3 +205,6 @@ pub const RUSH_THRESHOLDS_PTR: u32 = 0x648; // big block shared with other skill
 pub const SKILL_CELLS_PTR: u32 = 0xB94; // cell shared with Furious and Ceaseless; +4 leads to the Rush UP stage 3 block
 pub const OBSCURITY_PTR: u32 = 0xAA0; // Obscurity
 pub const OBSCURITY_UP_PTR: u32 = 0xB78; // Obscurity UP, the Zenith version
+
+// ---- Guild Shop ------------------------------------------------------------------------------------------------------------
+pub const SHOP_CATALOGS_PTR: u32 = 0xC8; // 15 records of 16 bytes {listsA, listsB, listsC, count}; the editor uses record 7, the Guild Hall shop

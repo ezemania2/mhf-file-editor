@@ -720,7 +720,7 @@ impl MhfdatApp {
                 "this file's header word at 0xC is {}, not 0xBC8: the header layout of this build is not documented, so this tab is not read",
                 word.map_or("missing".to_string(), |w| format!("0x{w:X}"))
             );
-            for tab in ["quests", "crowns", "skills", "caravan", "road", "craft", "weapon", "arena"] {
+            for tab in ["quests", "crowns", "skills", "caravan", "road", "craft", "weapon", "arena", "guild_shop"] {
                 self.table_problems.push((tab, why.clone()));
             }
             return;
@@ -824,6 +824,11 @@ impl MhfdatApp {
         let (arena, _, problems) = read_arena(&self.buffer);
         self.arena = arena;
         self.table_problems.extend(problems.into_iter().map(|e| ("arena", e)));
+
+        match read_guild_shop(&self.buffer) {
+            Ok(halls) => self.guild_shop = halls,
+            Err(e) => self.table_problems.push(("guild_shop", e)),
+        }
     }
 
     /// Empties the in-place tables and clears their modified flags (file closed, or reloaded after a save).
@@ -852,6 +857,9 @@ impl MhfdatApp {
         self.weapon_bonus_slots.clear();
         self.coating_modifiers.clear();
         self.arena = Default::default();
+        self.guild_shop.clear();
+        self.guild_shop_hall = 0;
+        self.guild_shop_page = 0;
 
         self.gr_menus_modified = false;
         self.beginner_quests_modified = false;
@@ -871,6 +879,7 @@ impl MhfdatApp {
         self.weapon_bonus_slots_modified = false;
         self.coating_modifiers_modified = false;
         self.arena_modified = false;
+        self.guild_shop_modified = false;
 
         self.crowns_page = 0;
         self.crowns_selected = None;

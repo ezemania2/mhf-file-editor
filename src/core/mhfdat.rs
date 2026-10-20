@@ -5393,3 +5393,79 @@ pub fn obscurity_up_plan(buffer: &[u8], rows: &[ObscurityUpParams]) -> Res<Plan>
     }
     Ok(plan)
 }
+
+// ---- Guild Shop (header 0xC8, record 7) ----------------------------------------------------------------------------------
+use crate::model::mhfdat::GuildShopHall;
+
+/// The block behind header 0xC8 is 15 records of {listsA, listsB, listsC, count}; record 7 is the Guild Hall shop.
+const SHOP_CATALOG_RECORDS: usize = 15;
+const SHOP_RECORD_SIZE: usize = 16;
+const GUILD_HALL_RECORD: usize = 7;
+const GUILD_HALL_PAGES: u32 = 20;
+const SHOP_LIST_SCAN_MAX: usize = 4096;
+/// (item page, price page, name) of the four halls of record 7.
+const GUILD_SHOP_HALLS: [(usize, usize, &str); 4] = [
+    (3, 6, "Guild Hall Lv1"), (4, 7, "Guild Hall Lv2"), (5, 8, "Guild Hall Lv Max"), (18, 19, "Diva event hall"),
+];
+
+/// A block behind the pointer cell at `cell`, without rows. The cell must be in the file.
+fn guild_shop_empty_block(buffer: &[u8], name: &str, cell: usize) -> Res<PointerBlock<u16>> {
+    check_table_fits(&format!("{name} pointer"), cell as u64, 4, 1, buffer.len())?;
+    let ptr = u32::from_le_bytes(buffer[cell..cell + 4].try_into().unwrap());
+    Ok(PointerBlock { name: name.to_string(), offset: ptr, cell: cell as u32, alias_of: None, rows: Vec::new() })
+}
+
+/// The four halls of the Guild Shop: for each one the item ids sold for Guild Tickets (a list ended by 0) and, at the same
+/// index in another list, their ticket prices. Read or nothing: a block that does not look like the documented one is reported.
+pub fn read_guild_shop(buffer: &[u8]) -> Res<Vec<GuildShopHall>> {
+    let name = "guild shop (header 0xC8, record 7)";
+    let table = header_target(buffer, name, SHOP_CATALOGS_PTR)?;
+    let records = read_table(buffer, name, table, SHOP_RECORD_SIZE, SHOP_CATALOG_RECORDS, |r| {
+        Ok([r.read_u32::<LittleEndian>()?, r.read_u32::<LittleEndian>()?, r.read_u32::<LittleEndian>()?, r.read_u32::<LittleEndian>()?])
+    })?;
+    let [pages, _, _, count] = records[GUILD_HALL_RECORD];
+    if pages == 0 || count != GUILD_HALL_PAGES {
+        return Err(format!("{name}: {count} pages at 0x{pages:X}, the client reads exactly {GUILD_HALL_PAGES}"));
+    }
+    check_table_fits(&format!("{name} pointer array"), pages as u64, 4, count as usize, buffer.len())?;
+    let cell = |page: usize| pages as usize + 4 * page;
+    let mut halls = Vec::with_capacity(GUILD_SHOP_HALLS.len());
+    for (items_page, prices_page, label) in GUILD_SHOP_HALLS {
+        let mut items = guild_shop_empty_block(buffer, &format!("{label} items (page {items_page})"), cell(items_page))?;
+        if items.offset != 0 {
+            let n = count_rows(buffer, items.offset as usize, 2, SHOP_LIST_SCAN_MAX, |r| r[0] == 0 && r[1] == 0);
+            items.rows = read_table(buffer, &items.name, items.offset as usize, 2, n, |r| r.read_u16::<LittleEndian>())?;
+        }
+        let mut prices = guild_shop_empty_block(buffer, &format!("{label} prices (page {prices_page})"), cell(prices_page))?;
+        if prices.offset != 0 {
+            prices.rows = read_table(buffer, &prices.name, prices.offset as usize, 2, items.rows.len(), |r| r.read_u16::<LittleEndian>())?;
+        }
+        halls.push(GuildShopHall { name: label.to_string(), items, prices });
+    }
+    Ok(halls)
+}
+
+/// Saves the Guild Shop. A list that changes length is written again at the end of the file and its pointer follows. The
+/// save is refused when the client would read it wrong: an id of 0 ends a list, and the price is read at the index of the item.
+pub fn guild_shop_plan(buffer: &[u8], edited: &[GuildShopHall]) -> Res<Plan> {
+    let orig = read_guild_shop(buffer)?;
+    if edited.len() != orig.len() {
+        return Err(format!("guild shop: {} halls, the file has {}", edited.len(), orig.len()));
+    }
+    for h in edited {
+        if h.items.rows.len() != h.prices.rows.len() {
+            return Err(format!("{}: {} items but {} prices. The client reads the price at the index of the item", h.name, h.items.rows.len(), h.prices.rows.len()));
+        }
+        if h.items.rows.contains(&0) {
+            return Err(format!("{}: an item id of 0 ends the list in the file, so it cannot be an item", h.name));
+        }
+    }
+    let grow = || Some(BlockGrowth { buffer, stride: 2, term: Term::Zero(2), max_rows: None });
+    let write_u16 = |w: &mut Vec<u8>, v: &u16| w.write_u16::<LittleEndian>(*v);
+    let mut plan = Plan::default();
+    for (h, o) in edited.iter().zip(&orig) {
+        plan.extend(block_plan("guild shop", std::slice::from_ref(&h.items), &[o.items.rows.len()], write_u16, grow())?);
+        plan.extend(block_plan("guild shop", std::slice::from_ref(&h.prices), &[o.prices.rows.len()], write_u16, grow())?);
+    }
+    Ok(plan)
+}

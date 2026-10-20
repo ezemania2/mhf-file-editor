@@ -8,7 +8,7 @@ A GUI editor for Monster Hunter Frontier data files.
   quests (HR, GR G1-G10, beginner), sigils, sharpness, bullet sets, seasonal events, and the tables read from their
   own header slots: monster crowns, Caravan routes and gems, skill effects, skill tree, Vampirism, Crit Conversion, Rush and Obscurity,
   Hunting Road tables, horn melodies, weapon params, upgrade bonus slots, coating modifiers, extra crafting tables,
-  arena sets.
+  arena sets, the Guild Shop.
 - mhfjmp.bin: menu/area and strings.
 
 ## Build
@@ -57,7 +57,7 @@ SHA-256 of the file.
   file with absolute pointers and the header pointer is updated; the old copy is left where it is.
 - The tabs **Skills, Caravan, Hunting Road, Arena**, the **Crowns** list of the Monsters tab, the **Horn Melodies**,
   **Weapon Params**, **Upgrade Bonus Slots** and **Coating Modifiers** lists of the Weapons tab, the quest sub-tabs and the tables hosted by the Shop tab (special / premium forging, combine
-  shop, tower jewels, tower seals) read their tables from header slots, never from fixed addresses. Bytes the
+  shop, tower jewels, tower seals, Guild Shop) read their tables from header slots, never from fixed addresses. Bytes the
   documentation does not name are shown as raw integers labelled with their offset (`unk +0x0A`) or kept as they are.
   A table that cannot be read when the file is opened is reported in red on its tab (the other tabs keep working); a
   build whose header word at 0xC is not 0xBC8 (the Vita file) does not load these tabs at all.
@@ -78,6 +78,7 @@ SHA-256 of the file.
   | Weapons | horn melodies | |
   | Arena | items of the item and ammo lists (the equipment lists show the weapon and armor names but keep their four sets: the game picks among "n/4" sets and wraps after the fourth) | quantity 65535 (-1, ends a list) |
   | Shop | special / premium forging, combine shop, tower jewel recipes, tower seals | equip type 255, combine item id 0 or above 16700, tower seal item id 0 |
+  | Shop > Guild Shop | the items of each hall with their ticket price (an item and its price grow together) | item id 0 (ends the list), a different number of items and prices |
 
   These keep their size and are refused if forced: the Caravan level index (15) and gem tiers (9), the arena stage ids
   (28 / 34), the arena equipment blocks (17 x 4), the tutorial sets, the tower upgrade costs, Vampirism (14 weapon
@@ -86,10 +87,19 @@ SHA-256 of the file.
   weapon classes but cannot add up to more), the upgrade bonus slots (11), the coating modifiers (23) and the weapon
   params (14 classes); the number of lists in a pointer array never changes. The Obscurity stack counts are refused
   above 255 (a byte).
+- **Deleting entries.** A delete button is greyed out, with the reason in red, while something else in the file still refers to
+  the entry: the last voyage route while a slot of the Level index points at it, the last gem skill while a tier skill list
+  carries it, the last Road skill while another Road skill asks for it as a prerequisite, and a skill tree row while an
+  automatic skill uses an active skill that only this row grants. Only references that hold in the real files are checked
+  (horn melodies, for instance, are looked up by their notes and nothing points at them).
 - **Skills tab, what the new pages are.** *Rush* edits the gauge thresholds (header 0x648 +0x64 / +0x68) and the third
   stage of Rush UP, the Zenith version (cell of header 0xB94, +4); the per-weapon values of Rush are in Weapons >
   Weapon Params. *Obscurity* edits the tables of Obscurity (header 0xAA0) and of Obscurity UP, the Zenith version of the
   skill (header 0xB78).
+- **Shop > Guild Shop.** The four halls of the Guild Shop (Lv1, Lv2, Lv Max and the Diva event hall) sell items for
+  Guild Tickets: the tab lists each hall's items with their ticket price (header 0xC8, record 7, pages 3 to 8 and
+  18 and 19). An item and its price are added and removed together; a list of another length is written again at
+  the end of the file and its pointer is updated.
 - Where the code lives: header slots and `important_nums` offsets in `src/model/mhfdat_pointers.rs`, row structs in
   `src/model/mhfdat.rs`, reading/writing in `src/core/mhfdat.rs`, loading in `src/app/load.rs`
   (`load_inplace_tables`), saving in `src/app/save.rs` (`table_plan`), one file per tab in `src/app/`.

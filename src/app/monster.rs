@@ -442,6 +442,7 @@ impl MhfdatApp {
                 }
             }
         });
+        let desc_count = self.monster_descriptions.len();
         
         if desc_count == 0 {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No monster descriptions found!");

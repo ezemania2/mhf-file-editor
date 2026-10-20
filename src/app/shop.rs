@@ -48,6 +48,9 @@ impl MhfdatApp {
                 self.craft_more_page = 0;
                 self.craft_more_selected = None;
             }
+            if ui.selectable_label(matches!(self.workshop_category, super::WorkshopCategory::GuildShop), "Guild Shop").clicked() {
+                self.workshop_category = super::WorkshopCategory::GuildShop;
+            }
         });
         ui.separator();
 
@@ -237,6 +240,9 @@ impl MhfdatApp {
             super::WorkshopCategory::TowerSeals => {
                 self.show_table_problems(ui, "craft");
                 self.show_tower_seals(ui);
+            }
+            super::WorkshopCategory::GuildShop => {
+                self.show_guild_shop(ui);
             }
         }
     }

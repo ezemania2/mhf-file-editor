@@ -29,6 +29,7 @@ impl MhfdatApp {
                 self.remove_last_monster_entry();
             }
         });
+        let total = self.crowns.len();
         ui.label("Thresholds as stored (the community size tables show them divided by 100). Silver is awarded from silver + 2, gold from gold + 4, mini at or under mini + 6. -1 = no crowns.");
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");

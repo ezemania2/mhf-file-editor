@@ -100,6 +100,10 @@ impl MhfdatApp {
                 self.caravan_modified = true;
             }
         });
+        let total = self.caravan.voyage.len();
+        if used_by_level {
+            ui.colored_label(egui::Color32::from_rgb(220, 70, 70), "Delete last is unavailable: a slot of the Level index still points at the last route. Change that slot first.");
+        }
         ui.label("Add New copies the last route. A route is offered by the game once a slot of the Level index points at its number.");
         if total == 0 {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No voyage route found!");
@@ -303,6 +307,7 @@ impl MhfdatApp {
                 self.caravan_modified = true;
             }
         });
+        let total = self.caravan.ranking[group].rows.len();
         if offset == 0 {
             ui.label("Unused group slot (offset 0).");
             return;
@@ -432,6 +437,10 @@ impl MhfdatApp {
             return;
         }
         let total = self.caravan.gem_skills.len();
+        // the skill lists of the tiers name gem skills: the last one cannot go while a list still carries it
+        let gem_blocked = total.checked_sub(1).and_then(|last| self.caravan.gem_skill_used_by_tier(last)).map(|(id, tier)| {
+            format!("Gem skill {id} ({}) is still in the skill list of tier {tier}: remove it from that list first", gem_skill_name(id))
+        });
         MhfdatApp::section_header(ui, &format!("Gem skills (found: {total})"), |ui| {
             if ui.add_enabled(total > 0, egui::Button::new("Add New")).on_disabled_hover_text("The list is empty: nothing to copy the new gem skill from").clicked() {
                 let gem = self.caravan.gem_skills[total - 1].clone();
@@ -440,11 +449,15 @@ impl MhfdatApp {
                 self.caravan_selected = Some(total);
                 self.open_category_details("caravan");
             }
-            if MhfdatApp::delete_last_button(ui, total, None) {
+            if MhfdatApp::delete_last_button(ui, total, gem_blocked.as_deref()) {
                 self.caravan.gem_skills.pop();
                 self.caravan_modified = true;
             }
         });
+        let total = self.caravan.gem_skills.len();
+        if let Some(why) = &gem_blocked {
+            ui.colored_label(egui::Color32::from_rgb(220, 70, 70), format!("Delete last is unavailable: {why}"));
+        }
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             if ui.text_edit_singleline(&mut self.gem_skills_search).changed() {

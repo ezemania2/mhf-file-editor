@@ -190,6 +190,7 @@ impl MhfdatApp {
                 self.road_modified = true;
             }
         });
+        let total = self.road.cat_shop.len();
         if total == 0 {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No Felyne shop table found!");
             return;
@@ -277,6 +278,14 @@ impl MhfdatApp {
             return;
         }
         let total = self.road.skills.len();
+        // another skill may ask for the last one as a prerequisite
+        let skill_blocked = total.checked_sub(1).and_then(|last| self.road.skill_required_by(last).map(|by| (last, by))).map(|(last, by)| {
+            let (d, r) = (&self.road.skills[last], &self.road.skills[by]);
+            format!(
+                "Road skill {} {} level {} is a prerequisite of {} {} level {} (row {by}): change that prerequisite first",
+                d.skill_id, road_skill_name(d.skill_id), d.level, r.skill_id, road_skill_name(r.skill_id), r.level
+            )
+        });
         MhfdatApp::section_header(ui, &format!("Road skills (found: {total})"), |ui| {
             if ui.add_enabled(total > 0, egui::Button::new("Add New")).on_disabled_hover_text("The list is empty: nothing to copy the new skill from").clicked() {
                 let skill = self.road.skills[total - 1].clone();
@@ -285,11 +294,15 @@ impl MhfdatApp {
                 self.road_modified = true;
                 self.open_category_details("road");
             }
-            if MhfdatApp::delete_last_button(ui, total, None) {
+            if MhfdatApp::delete_last_button(ui, total, skill_blocked.as_deref()) {
                 self.road.skills.pop();
                 self.road_modified = true;
             }
         });
+        let total = self.road.skills.len();
+        if let Some(why) = &skill_blocked {
+            ui.colored_label(egui::Color32::from_rgb(220, 70, 70), format!("Delete last is unavailable: {why}"));
+        }
         if total == 0 {
             ui.colored_label(egui::Color32::YELLOW, "Warning: No Hunting Road skill table found!");
             return;

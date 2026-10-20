@@ -42,6 +42,7 @@ impl MhfdatApp {
                 self.horn_melodies_modified = true;
             }
         });
+        let total = self.horn_melodies.len();
         ui.label("Notes are stored in the reverse of the play order. 0 = end, 1-8 = colours, 9 = pitch change (~).");
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");

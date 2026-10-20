@@ -48,6 +48,7 @@ impl MhfdatApp {
                 self.craft_more_modified = true;
             }
         });
+        let total = self.forging_len(which);
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
@@ -185,6 +186,7 @@ impl MhfdatApp {
                 self.craft_more_modified = true;
             }
         });
+        let total = self.combine_shop.len();
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
@@ -290,6 +292,7 @@ impl MhfdatApp {
                 self.craft_more_modified = true;
             }
         });
+        let total = self.tower_jewels.len();
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
@@ -392,6 +395,7 @@ impl MhfdatApp {
                 self.craft_more_modified = true;
             }
         });
+        let total = self.sigil_tower_entries.len();
         MhfdatApp::responsive_row(ui, |ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search_query);
