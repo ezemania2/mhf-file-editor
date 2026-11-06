@@ -1826,8 +1826,12 @@ pub struct WeaponParamsRow {
     pub weapon_class_flags: u8,
     pub charge_hud_seed: u8,
     pub adaptation_gauge_seed: u8,
-    pub unk04: [u8; 4],
-    pub onhit_multiplier: f32,
+    /// Degrees each side of the front (player_guard_angle_check).
+    pub guard_angle: i16,
+    /// Added to guard_angle when skill 0x14 is active.
+    pub guard_angle_skill_bonus: i16,
+    /// Not damage: the hitstop request is the hit's hitstop byte x this (on_hit_effects_dispatch).
+    pub hitstop_multiplier: f32,
     pub weapon_coefficient: u32,
     pub pose_variant0: PoseXform,
     pub pose_variant1: PoseXform,
@@ -1848,7 +1852,7 @@ pub struct WeaponParamsRow {
     pub sheathe_alt: DrawSheatheMotion,
     pub melee_hitstop_frames: u8,
     pub melee_hitstop_reduction: u8,
-    pub unk_be: u8,
+    pub fencing_hitstop_frames: u8,
     pub fencing_bonus_hit_sound: u8,
     pub red_soul_gauge_threshold: u16,
     pub red_soul_tier_bonus: u16,
@@ -1856,9 +1860,8 @@ pub struct WeaponParamsRow {
     pub category_switch_penalty: i16,
     pub thunder_clad_gauge_decay: i16,
     pub rush_onhit_gauge_mult: u32,
-    pub rush_gauge_increment: u8,
-    pub pad_d1: u8,
-    pub rush_tier0_unread: u16,
+    /// Added to the Rush gauge by player_rush_gauge_add (a u32: 10000 or 0).
+    pub rush_gauge_gain: u32,
     pub rush_tier1_bonus: i16,
     pub rush_tier2_bonus: i16,
     /// Rush tier 3 (s16) or Consumption Slayer (two u8): the same two bytes.

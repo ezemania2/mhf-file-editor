@@ -5098,8 +5098,9 @@ fn read_weapon_params_row<R: Read>(r: &mut R) -> Result<WeaponParamsRow> {
         adaptation_gauge_seed: r.read_u8()?,
         ..Default::default()
     };
-    r.read_exact(&mut w.unk04)?;
-    w.onhit_multiplier = r.read_f32::<LittleEndian>()?;
+    w.guard_angle = r.read_i16::<LittleEndian>()?;
+    w.guard_angle_skill_bonus = r.read_i16::<LittleEndian>()?;
+    w.hitstop_multiplier = r.read_f32::<LittleEndian>()?;
     w.weapon_coefficient = r.read_u32::<LittleEndian>()?;
     w.pose_variant0 = read_pose(r)?;
     w.pose_variant1 = read_pose(r)?;
@@ -5120,7 +5121,7 @@ fn read_weapon_params_row<R: Read>(r: &mut R) -> Result<WeaponParamsRow> {
     w.sheathe_alt = read_draw_motion(r)?;
     w.melee_hitstop_frames = r.read_u8()?;
     w.melee_hitstop_reduction = r.read_u8()?;
-    w.unk_be = r.read_u8()?;
+    w.fencing_hitstop_frames = r.read_u8()?;
     w.fencing_bonus_hit_sound = r.read_u8()?;
     w.red_soul_gauge_threshold = r.read_u16::<LittleEndian>()?;
     w.red_soul_tier_bonus = r.read_u16::<LittleEndian>()?;
@@ -5128,9 +5129,7 @@ fn read_weapon_params_row<R: Read>(r: &mut R) -> Result<WeaponParamsRow> {
     w.category_switch_penalty = r.read_i16::<LittleEndian>()?;
     w.thunder_clad_gauge_decay = r.read_i16::<LittleEndian>()?;
     w.rush_onhit_gauge_mult = r.read_u32::<LittleEndian>()?;
-    w.rush_gauge_increment = r.read_u8()?;
-    w.pad_d1 = r.read_u8()?;
-    w.rush_tier0_unread = r.read_u16::<LittleEndian>()?;
+    w.rush_gauge_gain = r.read_u32::<LittleEndian>()?;
     w.rush_tier1_bonus = r.read_i16::<LittleEndian>()?;
     w.rush_tier2_bonus = r.read_i16::<LittleEndian>()?;
     r.read_exact(&mut w.rush_t3_or_slayer)?;
@@ -5147,8 +5146,9 @@ fn write_weapon_params_row(out: &mut Vec<u8>, w: &WeaponParamsRow) -> Result<()>
     out.write_u8(w.weapon_class_flags)?;
     out.write_u8(w.charge_hud_seed)?;
     out.write_u8(w.adaptation_gauge_seed)?;
-    out.extend_from_slice(&w.unk04);
-    out.write_f32::<LittleEndian>(w.onhit_multiplier)?;
+    out.write_i16::<LittleEndian>(w.guard_angle)?;
+    out.write_i16::<LittleEndian>(w.guard_angle_skill_bonus)?;
+    out.write_f32::<LittleEndian>(w.hitstop_multiplier)?;
     out.write_u32::<LittleEndian>(w.weapon_coefficient)?;
     write_pose(out, &w.pose_variant0)?;
     write_pose(out, &w.pose_variant1)?;
@@ -5169,7 +5169,7 @@ fn write_weapon_params_row(out: &mut Vec<u8>, w: &WeaponParamsRow) -> Result<()>
     write_draw_motion(out, &w.sheathe_alt)?;
     out.write_u8(w.melee_hitstop_frames)?;
     out.write_u8(w.melee_hitstop_reduction)?;
-    out.write_u8(w.unk_be)?;
+    out.write_u8(w.fencing_hitstop_frames)?;
     out.write_u8(w.fencing_bonus_hit_sound)?;
     out.write_u16::<LittleEndian>(w.red_soul_gauge_threshold)?;
     out.write_u16::<LittleEndian>(w.red_soul_tier_bonus)?;
@@ -5177,9 +5177,7 @@ fn write_weapon_params_row(out: &mut Vec<u8>, w: &WeaponParamsRow) -> Result<()>
     out.write_i16::<LittleEndian>(w.category_switch_penalty)?;
     out.write_i16::<LittleEndian>(w.thunder_clad_gauge_decay)?;
     out.write_u32::<LittleEndian>(w.rush_onhit_gauge_mult)?;
-    out.write_u8(w.rush_gauge_increment)?;
-    out.write_u8(w.pad_d1)?;
-    out.write_u16::<LittleEndian>(w.rush_tier0_unread)?;
+    out.write_u32::<LittleEndian>(w.rush_gauge_gain)?;
     out.write_i16::<LittleEndian>(w.rush_tier1_bonus)?;
     out.write_i16::<LittleEndian>(w.rush_tier2_bonus)?;
     out.extend_from_slice(&w.rush_t3_or_slayer);

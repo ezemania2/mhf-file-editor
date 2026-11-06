@@ -188,7 +188,12 @@ fn general_and_draw_section(ui: &mut egui::Ui, sel: usize, w: &mut WeaponParamsR
         changed |= MhfdatApp::num_row(ui, "Class flags (1 melee, 2 gunner)", &mut w.weapon_class_flags);
         changed |= MhfdatApp::num_row(ui, "Melee hold-input gate", &mut w.melee_hold_input_gate);
         changed |= MhfdatApp::num_row(ui, "True raw coefficient", &mut w.weapon_coefficient);
-        changed |= MhfdatApp::float_row(ui, "On-hit multiplier", &mut w.onhit_multiplier);
+        changed |= MhfdatApp::float_row(ui, "Hitstop multiplier (not damage)", &mut w.hitstop_multiplier);
+        // weapon_class_can_guard (0x10A637B0): the other classes never guard, their angle is never read
+        if matches!(sel, 0 | 1 | 3 | 4 | 7 | 9 | 11 | 12 | 13) {
+            changed |= MhfdatApp::num_row(ui, "Guard angle (degrees each side)", &mut w.guard_angle);
+            changed |= MhfdatApp::num_row(ui, "Guard angle skill bonus", &mut w.guard_angle_skill_bonus);
+        }
         changed |= MhfdatApp::num_row(ui, "Charge HUD seed", &mut w.charge_hud_seed);
         changed |= MhfdatApp::num_row(ui, "Adaptation gauge seed", &mut w.adaptation_gauge_seed);
         changed |= MhfdatApp::num_row(ui, "Recovery action (motion 0x3EC)", &mut w.recovery_motion_3ec_action);
@@ -212,6 +217,7 @@ fn skills_section(ui: &mut egui::Ui, sel: usize, w: &mut WeaponParamsRow) -> boo
         ui.end_row();
         changed |= MhfdatApp::num_row(ui, "Hitstop frames", &mut w.melee_hitstop_frames);
         changed |= MhfdatApp::num_row(ui, "Hitstop reduction", &mut w.melee_hitstop_reduction);
+        changed |= MhfdatApp::num_row(ui, "Fencing hitstop frames", &mut w.fencing_hitstop_frames);
         changed |= MhfdatApp::num_row(ui, "Bonus-hit sound", &mut w.fencing_bonus_hit_sound);
         ui.label(egui::RichText::new("Red Soul (458)").strong());
         ui.end_row();
@@ -223,7 +229,7 @@ fn skills_section(ui: &mut egui::Ui, sel: usize, w: &mut WeaponParamsRow) -> boo
         ui.label(egui::RichText::new("Rush (527 / 528)").strong());
         ui.end_row();
         changed |= MhfdatApp::num_row(ui, "On-hit gauge multiplier", &mut w.rush_onhit_gauge_mult);
-        changed |= MhfdatApp::num_row(ui, "Gauge increment", &mut w.rush_gauge_increment);
+        changed |= MhfdatApp::num_row(ui, "Gauge gain", &mut w.rush_gauge_gain);
         changed |= MhfdatApp::num_row(ui, "Tier 1 bonus", &mut w.rush_tier1_bonus);
         changed |= MhfdatApp::num_row(ui, "Tier 2 bonus", &mut w.rush_tier2_bonus);
         // the same two bytes are Rush tier 3 (s16) and the Consumption Slayer thresholds (two u8)
